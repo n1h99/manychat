@@ -4,11 +4,28 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "require": "./dist/server.js",
+      "default": "./dist/server.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "require": "./dist/web.js",
+      "default": "./dist/web.js"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/clean-output.mjs packages/config/dist && tsc -p tsconfig.build.json",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

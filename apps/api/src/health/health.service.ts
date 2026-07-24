@@ -17,14 +17,28 @@ export class HealthService {
     const [database, redis] = await Promise.allSettled([this.database.check(), this.redis.check()]);
 
     if (database.status === 'rejected' || redis.status === 'rejected') {
-      throw new ServiceUnavailableException({
-        code: 'DEPENDENCY_UNAVAILABLE',
-        details: {
-          database: database.status === 'fulfilled' ? database.value : { status: 'down' },
-          redis: redis.status === 'fulfilled' ? redis.value : { status: 'down' },
+      const dependencyErrors = [
+        ...(database.status === 'rejected'
+          ? [new Error('Database readiness failed', { cause: database.reason })]
+          : []),
+        ...(redis.status === 'rejected'
+          ? [new Error('Redis readiness failed', { cause: redis.reason })]
+          : []),
+      ];
+
+      throw new ServiceUnavailableException(
+        {
+          code: 'DEPENDENCY_UNAVAILABLE',
+          details: {
+            database: database.status === 'fulfilled' ? database.value : { status: 'down' },
+            redis: redis.status === 'fulfilled' ? redis.value : { status: 'down' },
+          },
+          message: 'One or more required dependencies are unavailable',
         },
-        message: 'One or more required dependencies are unavailable',
-      });
+        {
+          cause: new AggregateError(dependencyErrors, 'One or more readiness dependencies failed'),
+        },
+      );
     }
 
     return {

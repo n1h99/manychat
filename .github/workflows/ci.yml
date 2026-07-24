@@ -13,7 +13,39 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      APP_ENV: test
+      CORS_ALLOWED_ORIGINS: http://127.0.0.1:4173
+      DATABASE_URL: postgresql://omnicus:omnicus@127.0.0.1:5432/omnicus
+      DEMO_JOB_ENABLED: 'false'
+      NODE_ENV: test
+      REDIS_URL: redis://127.0.0.1:6379/0
+      RUN_SERVICE_INTEGRATION: 'true'
+      VITE_API_URL: http://127.0.0.1:3000
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: omnicus
+          POSTGRES_PASSWORD: omnicus
+          POSTGRES_USER: omnicus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omnicus -d omnicus"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -21,25 +53,61 @@ jobs:
           version: 10.5.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
-      - name: Install
+      - name: Tool versions and preflight
+        run: |
+          pnpm versions
+          pnpm preflight
+      - name: Frozen install
         run: pnpm install --frozen-lockfile
-      - name: Prisma validate
-        run: pnpm db:validate
-      - name: Prisma generate
-        run: pnpm db:generate
       - name: Format check
         run: pnpm format:check
       - name: Lint
         run: pnpm lint
+      - name: Workspace boundaries
+        run: pnpm check:boundaries
+      - name: Prisma validate and SQL invariant review
+        run: |
+          pnpm db:validate
+          pnpm db:diff:check
       - name: Typecheck
         run: pnpm typecheck
-      - name: Unit and API integration tests
+      - name: Unit and integration tests
         run: pnpm test
-      - name: Production build
+      - name: Production build and runtime artifacts
         run: pnpm build
+      - name: Production web server regressions
+        run: pnpm --filter @omnicus/web test:production
+      - name: API production runtime and PORT smoke
+        run: node scripts/api-production-smoke.mjs
+      - name: Worker production readiness and PORT smoke
+        run: node scripts/worker-production-smoke.mjs
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
-      - name: Browser smoke test
+      - name: Browser smoke against production start
         run: pnpm test:e2e
+      - name: Production dependency audit
+        run: pnpm audit:production
+
+  windows-line-endings:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Force Windows checkout conversion policy
+        run: git config --global core.autocrlf true
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Versions and frozen install
+        run: |
+          pnpm versions
+          pnpm preflight
+          pnpm install --frozen-lockfile
+      - name: Format check after CRLF-enabled clone
+        run: pnpm format:check

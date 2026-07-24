@@ -4,16 +4,20 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "dist",
     "prisma"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "db:format": "prisma format --schema prisma/schema.prisma",
-    "db:generate": "prisma generate --config prisma.config.ts",
-    "db:seed": "pnpm build && node dist/seed.js",
-    "db:validate": "prisma validate --config prisma.config.ts",
+    "build": "node ../../scripts/clean-output.mjs packages/database/dist && tsc -p tsconfig.build.json",
+    "db:seed": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts && node ../../scripts/pnpm.mjs --filter @omnicus/database build && node dist/seed.js",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

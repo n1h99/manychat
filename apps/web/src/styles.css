@@ -21,6 +21,12 @@ body {
   min-width: 320px;
 }
 
+.bootstrap-error {
+  margin: 10vh auto;
+  max-width: 42rem;
+  padding: 2rem;
+}
+
 .app-shell {
   min-height: 100vh;
 }

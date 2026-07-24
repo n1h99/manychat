@@ -1,7 +1,7 @@
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { Button, Layout, Menu, Space, Typography } from 'antd';
 import { useMemo } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { navigationItems } from './navigation';

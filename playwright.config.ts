@@ -17,8 +17,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm --filter @omnicus/web dev --host 127.0.0.1 --port 4173',
-    reuseExistingServer: !process.env.CI,
+    command: 'node scripts/pnpm.mjs start:web',
+    env: {
+      HOST: '127.0.0.1',
+      PORT: '4173',
+    },
+    reuseExistingServer: false,
     timeout: 120_000,
     url: 'http://127.0.0.1:4173/health/live',
   },

@@ -5,7 +5,7 @@ import { DemoQueueService } from './queue/demo-queue.service';
 
 interface WorkerReadiness {
   dependencies: {
-    redis: HealthDependency;
+    bullmq: HealthDependency;
   };
   status: 'ready';
 }
@@ -35,7 +35,7 @@ export class WorkerHealthController {
       return {
         data: {
           dependencies: {
-            redis: await this.queue.check(),
+            bullmq: await this.queue.check(),
           },
           status: 'ready',
         },
@@ -44,7 +44,7 @@ export class WorkerHealthController {
     } catch {
       throw new ServiceUnavailableException({
         code: 'DEPENDENCY_UNAVAILABLE',
-        message: 'Redis is unavailable',
+        message: 'BullMQ producer or consumer is unavailable',
       });
     }
   }

@@ -1,9 +1,9 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "corepack enable && corepack prepare pnpm@10.5.0 --activate && pnpm install --frozen-lockfile && pnpm build:worker"
+buildCommand = "pnpm versions && pnpm preflight && pnpm build:worker"
 
 [deploy]
-startCommand = "pnpm start:worker"
+startCommand = "node .runtime/worker/dist/main.js"
 healthcheckPath = "/health/ready"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"

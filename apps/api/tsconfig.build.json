@@ -1,7 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "incremental": false
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "sourceMap": false
   },
   "exclude": ["src/**/*.spec.ts", "test", "dist"]
 }

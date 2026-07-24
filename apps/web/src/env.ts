@@ -1,3 +1,5 @@
-import { validateWebEnvironment } from '@omnicus/config';
+import { validateWebEnvironment } from '@omnicus/config/web';
 
-export const webEnvironment = validateWebEnvironment(import.meta.env);
+export function readWebEnvironment() {
+  return validateWebEnvironment(import.meta.env, { production: import.meta.env.PROD });
+}

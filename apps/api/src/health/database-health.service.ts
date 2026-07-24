@@ -1,6 +1,6 @@
 import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ApiEnvironment } from '@omnicus/config';
+import type { ApiEnvironment } from '@omnicus/config/server';
 import type { HealthDependency } from '@omnicus/contracts';
 import { createDatabaseHandle, type DatabaseHandle } from '@omnicus/database';
 

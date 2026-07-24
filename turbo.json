@@ -1,8 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["OMNICUS_TOOLCHAIN_NODE_VERSION"],
+  "globalPassThroughEnv": ["OMNICUS_NODE_EXECUTABLE", "OMNICUS_PNPM_EXECUTABLE"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["VITE_API_URL"],
       "outputs": ["dist/**"]
     },
     "clean": {

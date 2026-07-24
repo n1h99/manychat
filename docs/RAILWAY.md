@@ -1,65 +1,82 @@
-# Railway configuration
+# Railway deployment
 
-Stage 0 defines three independent Railway services from the same monorepo. No
-deployment has been performed.
+Stage 0 is Railway-ready but has not been deployed.
 
-## Service configuration
+Create three services from the same repository. Keep the repository root as the
+service root; each service points to its own configuration file:
 
-For each service, keep the repository root as the source directory and select the
-following Railway config file:
+- Web: `apps/web/railway.toml`
+- API: `apps/api/railway.toml`
+- Worker: `apps/worker/railway.toml`
 
-| Service | Config file                 | Start command       | Healthcheck     |
-| ------- | --------------------------- | ------------------- | --------------- |
-| web     | `/apps/web/railway.toml`    | `pnpm start:web`    | `/health/live`  |
-| api     | `/apps/api/railway.toml`    | `pnpm start:api`    | `/health/ready` |
-| worker  | `/apps/worker/railway.toml` | `pnpm start:worker` | `/health/ready` |
+Railpack reads `packageManager`, `engines`, and `pnpm-lock.yaml`, so custom build
+commands do not run a second install. Each build logs actual Node/pnpm versions,
+runs the strict preflight, and builds only the selected application plus its
+workspace dependencies.
 
-The web production server serves the built SPA and exposes a liveness endpoint.
-API readiness requires PostgreSQL and Redis. Worker readiness requires Redis.
+| Service | Build command                                          | Start command                       | Health path     |
+| ------- | ------------------------------------------------------ | ----------------------------------- | --------------- |
+| web     | `pnpm versions && pnpm preflight && pnpm build:web`    | `node .runtime/web/server.mjs`      | `/health/ready` |
+| api     | `pnpm versions && pnpm preflight && pnpm build:api`    | `node .runtime/api/dist/main.js`    | `/health/ready` |
+| worker  | `pnpm versions && pnpm preflight && pnpm build:worker` | `node .runtime/worker/dist/main.js` | `/health/ready` |
+
+All HTTP servers bind `0.0.0.0` and use Railway's `PORT` regardless of
+`APP_ENV`. The worker owns a small HTTP health server on that same process/port;
+readiness covers both the BullMQ producer and actual consumer.
 
 ## Variables
 
-### API
+Shared server variables:
 
-| Variable               | Required | Notes                             |
-| ---------------------- | -------: | --------------------------------- |
-| `NODE_ENV`             |      yes | `production`                      |
-| `APP_ENV`              |      yes | `production` or `staging`         |
-| `DATABASE_URL`         |      yes | PostgreSQL private connection URL |
-| `REDIS_URL`            |      yes | Redis private connection URL      |
-| `API_HOST`             |       no | defaults to `0.0.0.0`             |
-| `API_PORT`             |       no | local default `3000`              |
-| `PORT`                 | supplied | assigned by Railway               |
-| `CORS_ALLOWED_ORIGINS` |      yes | comma-separated exact web origins |
+- `NODE_ENV=production`
+- `APP_ENV=production` (or `staging` for a staging environment)
+- `DATABASE_URL` using `postgres://` or `postgresql://`
+- `REDIS_URL` using `redis://` or `rediss://`
+- `CORS_ALLOWED_ORIGINS` as one or more comma-separated exact HTTP(S) origins
+- `TRUST_PROXY=loopback,linklocal,uniquelocal` unless an explicitly reviewed
+  proxy topology requires a narrower value
+- `SWAGGER_ENABLED=false`
+- `RAILPACK_PRUNE_DEPS=true`
 
-### Worker
+Web build:
 
-| Variable       | Required | Notes                                           |
-| -------------- | -------: | ----------------------------------------------- |
-| `NODE_ENV`     |      yes | `production`                                    |
-| `APP_ENV`      |      yes | `production` or `staging`                       |
-| `DATABASE_URL` |      yes | reserved for transactional work in later stages |
-| `REDIS_URL`    |      yes | BullMQ connection                               |
-| `WORKER_HOST`  |       no | defaults to `0.0.0.0`                           |
-| `WORKER_PORT`  |       no | local default `3001`                            |
-| `PORT`         | supplied | assigned by Railway                             |
+- `VITE_API_URL`: required exact API base URL for staging/production builds.
 
-### Web
+API:
 
-| Variable       | Required | Notes                                    |
-| -------------- | -------: | ---------------------------------------- |
-| `VITE_API_URL` |      yes | public API origin, embedded during build |
-| `PORT`         | supplied | read by the production static server     |
+- `API_PORT` is only a local fallback; Railway `PORT` wins.
 
-Do not copy local credentials into Railway variables. PostgreSQL and Redis
-references should be configured through Railway service variables. Stage 1 will
-document cookie domains and CSRF configuration before Auth is implemented.
+Worker:
 
-## Deployment gate
+- `WORKER_PORT` is only a local fallback; Railway `PORT` wins.
+- `WORKER_SHUTDOWN_TIMEOUT_MS` and `BULLMQ_READY_TIMEOUT_MS` may override
+  bounded defaults.
+- `DEMO_JOB_ENABLED` must remain false in staging/production; validation rejects
+  an enabled value there.
 
-Before a first deployment:
+Never commit real CRM credentials, database credentials, Redis credentials, or
+Railway-generated values. `.railway/` is ignored.
 
-1. all CI checks must pass from the lockfile;
-2. the initial Prisma migration SQL must be reviewed separately;
-3. backup/restore verification steps must be completed and recorded;
-4. deployment requires explicit approval.
+## Networking and health
+
+Use Railway private service URLs for PostgreSQL/Redis where Railway provides
+them, while still treating credentials and transport security as required
+controls. Private networking is not a substitute for authentication or
+encryption.
+
+The web readiness probe confirms its built assets, API readiness probes
+PostgreSQL and Redis, and worker readiness requires a running BullMQ consumer.
+Failed dependency probes return `503`.
+
+## Migration flow
+
+There is no approved migration in Stage 0 and no `preDeployCommand` is
+configured.
+
+After a migration receives the required schema/SQL report and approval, use
+exactly one designated release/migrator service or one designated API
+pre-deploy step to run `prisma migrate deploy` with the real `DATABASE_URL`.
+Do not configure that command on web/worker services, in replica start
+commands, or independently on multiple services. Application replicas start
+only after the single-run migration succeeds. Rollback and restore procedures
+must be rehearsed before the first production use.

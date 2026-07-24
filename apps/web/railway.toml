@@ -1,10 +1,10 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "corepack enable && corepack prepare pnpm@10.5.0 --activate && pnpm install --frozen-lockfile && pnpm build:web"
+buildCommand = "pnpm versions && pnpm preflight && pnpm build:web"
 
 [deploy]
-startCommand = "pnpm start:web"
-healthcheckPath = "/health/live"
+startCommand = "node .runtime/web/server.mjs"
+healthcheckPath = "/health/ready"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

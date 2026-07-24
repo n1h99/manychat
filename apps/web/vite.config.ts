@@ -1,21 +1,48 @@
-import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
-import { fileURLToPath, URL } from 'node:url';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-export default defineConfig({
-  build: {
-    sourcemap: true,
-  },
-  envDir: '../..',
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@omnicus/config': fileURLToPath(
-        new URL('../../packages/config/src/index.ts', import.meta.url),
-      ),
+import react from '@vitejs/plugin-react';
+import { validateWebEnvironment } from '@omnicus/config/web';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+
+const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
+
+function runtimeConfigPlugin(apiUrl: string): Plugin {
+  return {
+    name: 'omnicus-runtime-config',
+    async writeBundle(options) {
+      const outputDirectory =
+        typeof options.dir === 'string'
+          ? options.dir
+          : fileURLToPath(new URL('./dist', import.meta.url));
+      await mkdir(outputDirectory, { recursive: true });
+      await writeFile(
+        resolve(outputDirectory, 'runtime-config.json'),
+        `${JSON.stringify({ apiUrl })}\n`,
+        'utf8',
+      );
     },
-  },
-  server: {
-    host: '0.0.0.0',
-  },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const environment = validateWebEnvironment(
+    {
+      ...loadEnv(mode, repositoryRoot, ''),
+      ...process.env,
+    },
+    { production: mode === 'production' || mode === 'staging' },
+  );
+
+  return {
+    build: {
+      sourcemap: false,
+    },
+    envDir: repositoryRoot,
+    plugins: [react(), runtimeConfigPlugin(environment.VITE_API_URL)],
+    server: {
+      host: '0.0.0.0',
+    },
+  };
 });

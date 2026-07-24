@@ -1,7 +1,10 @@
-import type { ConnectionOptions } from 'bullmq';
+import type { RedisOptions } from 'bullmq';
 
-export function redisConnectionFromUrl(value: string): ConnectionOptions {
+export function redisConnectionFromUrl(value: string): RedisOptions {
   const url = new URL(value);
+  if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
+    throw new Error('REDIS_URL must use redis:// or rediss://');
+  }
   const database = url.pathname.length > 1 ? Number(url.pathname.slice(1)) : 0;
 
   if (!Number.isInteger(database) || database < 0) {

@@ -1,5 +1,7 @@
 /tmp
 /out-tsc
+**/.runtime/
+/.railway/
 
 /node_modules
 **/node_modules
