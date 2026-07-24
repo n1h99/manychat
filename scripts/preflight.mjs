@@ -4,14 +4,23 @@ import { resolve } from 'node:path';
 const packageJson = JSON.parse(
   readFileSync(resolve(import.meta.dirname, '..', 'package.json'), 'utf8'),
 );
+const expectedNode = readFileSync(
+  resolve(import.meta.dirname, '..', '.node-version'),
+  'utf8',
+).trim();
 const expectedPnpm = packageJson.packageManager.split('@').at(-1);
-const nodeMajor = Number(process.versions.node.split('.')[0]);
 const userAgent = process.env.npm_config_user_agent ?? '';
 const actualPnpm = userAgent.match(/(?:^|\s)pnpm\/([^\s]+)/)?.[1];
 const failures = [];
 
-if (nodeMajor !== 24) {
-  failures.push(`Node.js 24.x is required; received ${process.version}`);
+if (!/^24\.\d+\.\d+$/.test(expectedNode)) {
+  failures.push(
+    `.node-version must contain an exact Node.js 24.x version; received ${expectedNode}`,
+  );
+}
+
+if (process.versions.node !== expectedNode) {
+  failures.push(`Node.js ${expectedNode} is required; received ${process.version}`);
 }
 
 if (actualPnpm !== expectedPnpm) {

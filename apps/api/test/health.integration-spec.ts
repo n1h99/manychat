@@ -78,9 +78,15 @@ describe('API health (integration)', () => {
     });
   });
 
-  const dependencyTest = process.env.RUN_SERVICE_INTEGRATION === 'true' ? it : it.skip;
+  const dependencyTest =
+    process.env.RUN_SERVICE_INTEGRATION === 'true' ? it : process.env.CI === 'true' ? it : it.skip;
 
   dependencyTest('reports ready when PostgreSQL and Redis are reachable', async () => {
+    if (process.env.RUN_SERVICE_INTEGRATION !== 'true') {
+      throw new Error(
+        'RUN_SERVICE_INTEGRATION=true is required for the CI service integration suite',
+      );
+    }
     const response = await request(app.getHttpServer()).get('/health/ready').expect(200);
 
     expect(response.body).toMatchObject({

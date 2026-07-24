@@ -66,8 +66,13 @@ const corsOriginsSchema = z.string().superRefine((value, context) => {
 
 const trustProxySchema = z
   .string()
-  .default('loopback,linklocal,uniquelocal')
+  .min(1)
+  .optional()
   .superRefine((value, context) => {
+    if (value === undefined) {
+      return;
+    }
+
     const allowedNamedRanges = new Set(['linklocal', 'loopback', 'uniquelocal']);
     const entries = value
       .split(',')
@@ -98,7 +103,7 @@ const trustProxySchema = z
     ) {
       context.addIssue({
         code: 'custom',
-        message: 'TRUST_PROXY must contain only explicit IP/CIDR or named private ranges',
+        message: 'TRUST_PROXY must contain only explicit IP/CIDR or named proxy ranges',
       });
     }
   });
@@ -136,6 +141,17 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
         code: 'custom',
         message: 'Swagger cannot be enabled in production',
         path: ['SWAGGER_ENABLED'],
+      });
+    }
+
+    if (
+      (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
+      environment.TRUST_PROXY === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'TRUST_PROXY is required for staging and production',
+        path: ['TRUST_PROXY'],
       });
     }
 
@@ -202,8 +218,8 @@ export function parseCorsOrigins(value: string): string[] {
     .filter((origin) => origin.length > 0);
 }
 
-export function parseTrustProxy(value: string): string[] {
-  return value
+export function parseTrustProxy(value: string | undefined): string[] {
+  return (value ?? 'loopback')
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);

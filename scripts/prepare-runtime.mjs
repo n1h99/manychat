@@ -60,7 +60,7 @@ function deployWorkspace(service) {
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
   delete packageJson.devDependencies;
   delete packageJson.scripts;
-  packageJson.engines = { node: '>=24.13.0 <25' };
+  packageJson.engines = { node: '24.18.0' };
   writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
 
   const unintendedLegacyTarget = resolve(workspaceDirectory, '.runtime');
@@ -83,7 +83,7 @@ function deployWeb() {
     resolve(target, 'package.json'),
     `${JSON.stringify(
       {
-        engines: { node: '>=24.13.0 <25' },
+        engines: { node: '24.18.0' },
         name: '@omnicus/web-runtime',
         private: true,
         type: 'module',

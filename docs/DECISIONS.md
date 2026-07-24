@@ -241,7 +241,10 @@ acceptance pilot не должны требовать отложенные фу�
 
 **Статус:** Accepted.
 
-**Решение:** использовать Node.js 24.x, pnpm 10.5.0 и Turborepo. Приложения
+**Решение:** использовать точно Node.js 24.18.0, pnpm 10.5.0 и Turborepo. Node
+pin одновременно хранится в `.node-version`, `engines.node`, CI и generated
+runtime manifests; preflight сравнивает полную фактическую версию с
+`.node-version`. Приложения
 размещаются в `apps/web`, `apps/api`, `apps/worker`; инфраструктурные библиотеки —
 в `packages/database`, `packages/shared`, `packages/contracts`,
 `packages/config`, `packages/channel-core`, `packages/test-fixtures`. Версии
@@ -358,7 +361,7 @@ surface мал, а новая dependency не уменьшила бы review sco
 официальному v8 upgrade guide; declarative imports перенесены в `react-router`.
 
 **Последствия:** major Router upgrade принят только как security remediation.
-Минимальные v8 requirements выполняются Node 24.13+, React 19.2.8 и Vite 8.1.
+Минимальные v8 requirements выполняются Node 24.18.0, React 19.2.8 и Vite 8.1.
 Новые исключения допускаются только по процессу
 `docs/DEPENDENCY_EXCEPTIONS.md`; текущих исключений нет.
 
@@ -393,3 +396,26 @@ Prisma validate может использовать явный non-connecting pl
 migration/seed не могут его унаследовать. Текущий размер Stage 0 web chunk принят
 без route splitting; lazy route boundaries пересматриваются при добавлении
 первых business modules.
+
+## ADR-022. Active invitation reservation вместо partial unique Prisma selector
+
+**Статус:** Accepted.
+
+**Контекст:** partial `@@unique` для active invitations создавал PostgreSQL
+partial unique index, но Prisma Client одновременно генерировал обычный
+compound `WhereUniqueInput`. После появления historical accepted/revoked rows
+`findUnique`, `update` или `delete` по такому selector могли не включать
+predicate active-state и обращаться к нескольким history rows.
+
+**Решение:** хранить invitation history отдельно от active reservation.
+`GlobalActiveInviteReservation` использует primary key
+`(normalizedEmail, globalRoleId)`; `ProjectActiveInviteReservation` использует
+`(projectId, normalizedEmail)`. В обеих моделях `inviteTokenId` уникален и
+связан composite FK с historical invitation в том же scope. Future invitation
+service создаёт token и reservation в одной transaction; любой terminal
+transition обновляет token и удаляет reservation в той же transaction.
+
+**Последствия:** historical invitation могут сосуществовать, но ровно одна
+active reservation существует для заданного scope. Prisma preview feature
+`partialIndexes` больше не нужна в Stage 1 baseline. Baseline увеличивается с
+14 до 16 tables, но остаётся stage-sliced; migration по-прежнему не создана.

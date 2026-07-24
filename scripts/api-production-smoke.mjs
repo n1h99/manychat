@@ -37,6 +37,7 @@ const child = spawn(process.execPath, [resolve(repositoryRoot, '.runtime/api/dis
     PORT: String(port),
     REDIS_URL: serviceIntegration ? process.env.REDIS_URL : 'redis://127.0.0.1:1/0',
     SWAGGER_ENABLED: 'false',
+    TRUST_PROXY: 'loopback',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

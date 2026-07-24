@@ -48,6 +48,7 @@ const proposal = readFileSync(proposalPath, 'utf8').replaceAll('\r\n', '\n');
 const proposalSql = proposal.slice(proposal.indexOf('-- CreateSchema')).trim();
 const expectedTables = new Set([
   'audit_logs',
+  'global_active_invite_reservations',
   'global_role_permissions',
   'global_roles',
   'global_user_invite_tokens',
@@ -55,6 +56,7 @@ const expectedTables = new Set([
   'password_reset_tokens',
   'permissions',
   'project_memberships',
+  'project_active_invite_reservations',
   'project_role_permissions',
   'project_roles',
   'project_user_invite_tokens',
@@ -74,8 +76,10 @@ if (
 }
 
 const requiredSql = [
-  'CREATE UNIQUE INDEX "global_invites_active_email_role_key"',
-  'CREATE UNIQUE INDEX "project_invites_active_email_key"',
+  'CREATE TABLE "global_active_invite_reservations"',
+  'CREATE TABLE "project_active_invite_reservations"',
+  'CREATE UNIQUE INDEX "global_active_invite_reservations_inviteTokenId_key"',
+  'CREATE UNIQUE INDEX "project_active_invite_reservations_inviteTokenId_key"',
   'CREATE UNIQUE INDEX "sessions_replacedBySessionId_userId_tokenFamilyId_key"',
   'CREATE INDEX "global_role_permissions_permissionId_idx"',
   'CREATE INDEX "project_role_permissions_permissionId_idx"',
@@ -94,7 +98,8 @@ const requiredSql = [
   'ALTER TABLE "project_roles" ADD CONSTRAINT "project_roles_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT',
   'ALTER TABLE "project_memberships" ADD CONSTRAINT "project_memberships_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT',
   'ALTER TABLE "project_user_invite_tokens" ADD CONSTRAINT "project_user_invite_tokens_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT',
-  'WHERE ("acceptedAt" IS NULL AND "revokedAt" IS NULL)',
+  'FOREIGN KEY ("inviteTokenId", "globalRoleId") REFERENCES "global_user_invite_tokens"("id", "globalRoleId") ON DELETE CASCADE',
+  'FOREIGN KEY ("projectId", "inviteTokenId") REFERENCES "project_user_invite_tokens"("projectId", "id") ON DELETE CASCADE',
 ];
 
 for (const fragment of requiredSql) {
@@ -113,6 +118,14 @@ if (sql.includes('CONSTRAINT "sessions_replacedBySessionId_fkey"')) {
 
 if (sql.includes('audit_logs_projectId_id_key')) {
   failures.push('Dual-scope audit log regained a misleading nullable composite unique');
+}
+
+if (
+  sql.includes('WHERE ("acceptedAt" IS NULL AND "revokedAt" IS NULL)') ||
+  sql.includes('global_invites_active_email_role_key') ||
+  sql.includes('project_invites_active_email_key')
+) {
+  failures.push('Partial invitation unique selectors reappeared in the Prisma diff');
 }
 
 if (sql.includes('TIMESTAMP(3) ') || sql.includes('TIMESTAMP(3),')) {

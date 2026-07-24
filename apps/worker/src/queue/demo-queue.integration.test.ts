@@ -5,12 +5,21 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DemoQueueService } from './demo-queue.service';
 
 const integrationDescribe =
-  process.env.RUN_SERVICE_INTEGRATION === 'true' ? describe : describe.skip;
+  process.env.RUN_SERVICE_INTEGRATION === 'true'
+    ? describe
+    : process.env.CI === 'true'
+      ? describe
+      : describe.skip;
 
 integrationDescribe('DemoQueueService integration', () => {
   let service: DemoQueueService;
 
   beforeAll(async () => {
+    if (process.env.RUN_SERVICE_INTEGRATION !== 'true') {
+      throw new Error(
+        'RUN_SERVICE_INTEGRATION=true is required for the CI service integration suite',
+      );
+    }
     const environment = validateWorkerEnvironment({
       ...process.env,
       APP_ENV: 'test',

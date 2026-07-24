@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from '@nestjs/common';
@@ -22,6 +23,29 @@ import { redisConnectionFromUrl } from './redis-connection';
 export interface BullMqReadinessState {
   consumerReady: boolean;
   producerReady: boolean;
+}
+
+export const DEMO_QUEUE_CLIENTS = Symbol('DEMO_QUEUE_CLIENTS');
+
+export interface DemoQueueProducer {
+  add(name: string, data: DemoJobInput, options: { jobId: string }): Promise<unknown>;
+  close(): Promise<void>;
+  disconnect(): void;
+  getJobCounts(...types: string[]): Promise<unknown>;
+  waitUntilReady(): Promise<unknown>;
+}
+
+export interface DemoQueueConsumer {
+  close(force?: boolean): Promise<void>;
+  isRunning(): boolean;
+  on(event: 'closed' | 'ready', listener: () => void): unknown;
+  on(event: 'error', listener: (error: Error) => void): unknown;
+  waitUntilReady(): Promise<unknown>;
+}
+
+export interface DemoQueueClients {
+  producer: DemoQueueProducer;
+  consumer: DemoQueueConsumer;
 }
 
 export function assertBullMqReadiness(state: BullMqReadinessState): void {
@@ -62,11 +86,48 @@ async function withTimeout<T>(
   }
 }
 
+function createDemoQueueClients(redisUrl: string): DemoQueueClients {
+  const connection = redisConnectionFromUrl(redisUrl);
+  const producer = new Queue(DEMO_QUEUE_NAME, {
+    connection: {
+      ...connection,
+      maxRetriesPerRequest: 1,
+    },
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: {
+        delay: 1_000,
+        type: 'exponential',
+      },
+      removeOnComplete: 25,
+      removeOnFail: 50,
+    },
+  });
+  const consumer = new Worker(
+    DEMO_QUEUE_NAME,
+    async (job: Job<DemoJobInput, DemoJobResult, string>) => {
+      if (job.name !== DEMO_JOB_NAME) {
+        throw new Error(`Unsupported Stage 0 job: ${job.name}`);
+      }
+      return executeDemoJob(job.data);
+    },
+    {
+      concurrency: 1,
+      connection: {
+        ...connection,
+        maxRetriesPerRequest: null,
+      },
+    },
+  );
+
+  return { consumer, producer };
+}
+
 @Injectable()
 export class DemoQueueService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(DemoQueueService.name);
-  private readonly queue: Queue<DemoJobInput, DemoJobResult, string>;
-  private readonly worker: Worker<DemoJobInput, DemoJobResult, string>;
+  private readonly queue: DemoQueueProducer;
+  private readonly worker: DemoQueueConsumer;
   private consumerError: Error | undefined;
   private consumerReady = false;
   private shuttingDown = false;
@@ -74,39 +135,14 @@ export class DemoQueueService implements OnApplicationBootstrap, OnApplicationSh
   constructor(
     @Inject(ConfigService)
     private readonly config: ConfigService<WorkerEnvironment, true>,
+    @Optional()
+    @Inject(DEMO_QUEUE_CLIENTS)
+    clients?: DemoQueueClients,
   ) {
-    const connection = redisConnectionFromUrl(config.get('REDIS_URL', { infer: true }));
-    this.queue = new Queue(DEMO_QUEUE_NAME, {
-      connection: {
-        ...connection,
-        maxRetriesPerRequest: 1,
-      },
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: {
-          delay: 1_000,
-          type: 'exponential',
-        },
-        removeOnComplete: 25,
-        removeOnFail: 50,
-      },
-    });
-    this.worker = new Worker(
-      DEMO_QUEUE_NAME,
-      async (job: Job<DemoJobInput, DemoJobResult, string>) => {
-        if (job.name !== DEMO_JOB_NAME) {
-          throw new Error(`Unsupported Stage 0 job: ${job.name}`);
-        }
-        return executeDemoJob(job.data);
-      },
-      {
-        concurrency: 1,
-        connection: {
-          ...connection,
-          maxRetriesPerRequest: null,
-        },
-      },
-    );
+    const queueClients =
+      clients ?? createDemoQueueClients(config.get('REDIS_URL', { infer: true }));
+    this.queue = queueClients.producer;
+    this.worker = queueClients.consumer;
     this.worker.on('ready', () => {
       this.consumerError = undefined;
       this.consumerReady = true;

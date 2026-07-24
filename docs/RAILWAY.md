@@ -9,10 +9,10 @@ service root; each service points to its own configuration file:
 - API: `apps/api/railway.toml`
 - Worker: `apps/worker/railway.toml`
 
-Railpack reads `packageManager`, `engines`, and `pnpm-lock.yaml`, so custom build
-commands do not run a second install. Each build logs actual Node/pnpm versions,
-runs the strict preflight, and builds only the selected application plus its
-workspace dependencies.
+Railpack reads `packageManager`, exact `engines.node=24.18.0`, and
+`pnpm-lock.yaml`, so custom build commands do not run a second install. Each
+build logs actual Node/pnpm versions, runs the strict preflight, and builds only
+the selected application plus its workspace dependencies.
 
 | Service | Build command                                          | Start command                       | Health path     |
 | ------- | ------------------------------------------------------ | ----------------------------------- | --------------- |
@@ -33,8 +33,9 @@ Shared server variables:
 - `DATABASE_URL` using `postgres://` or `postgresql://`
 - `REDIS_URL` using `redis://` or `rediss://`
 - `CORS_ALLOWED_ORIGINS` as one or more comma-separated exact HTTP(S) origins
-- `TRUST_PROXY=loopback,linklocal,uniquelocal` unless an explicitly reviewed
-  proxy topology requires a narrower value
+- `TRUST_PROXY` is required in staging/production. Until Railway ingress CIDRs
+  and X-Forwarded-For overwrite behavior are explicitly verified, use a
+  fail-closed reviewed value; do not trust broad private ranges by default.
 - `SWAGGER_ENABLED=false`
 - `RAILPACK_PRUNE_DEPS=true`
 

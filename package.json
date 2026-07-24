@@ -5,7 +5,7 @@
   "description": "Omnicus omnichannel automation platform monorepo",
   "packageManager": "pnpm@10.5.0",
   "engines": {
-    "node": ">=24.13.0 <25",
+    "node": "24.18.0",
     "pnpm": "10.5.0"
   },
   "scripts": {

@@ -160,6 +160,16 @@ CREATE TABLE "global_user_invite_tokens" (
 );
 
 -- CreateTable
+CREATE TABLE "global_active_invite_reservations" (
+    "normalizedEmail" TEXT NOT NULL,
+    "globalRoleId" TEXT NOT NULL,
+    "inviteTokenId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "global_active_invite_reservations_pkey" PRIMARY KEY ("normalizedEmail","globalRoleId")
+);
+
+-- CreateTable
 CREATE TABLE "project_user_invite_tokens" (
     "id" TEXT NOT NULL,
     "projectId" TEXT NOT NULL,
@@ -175,6 +185,16 @@ CREATE TABLE "project_user_invite_tokens" (
     "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "project_user_invite_tokens_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "project_active_invite_reservations" (
+    "projectId" TEXT NOT NULL,
+    "normalizedEmail" TEXT NOT NULL,
+    "inviteTokenId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "project_active_invite_reservations_pkey" PRIMARY KEY ("projectId","normalizedEmail")
 );
 
 -- CreateTable
@@ -300,7 +320,16 @@ CREATE INDEX "global_user_invite_tokens_globalRoleId_idx" ON "global_user_invite
 CREATE INDEX "global_user_invite_tokens_invitedById_idx" ON "global_user_invite_tokens"("invitedById");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "global_invites_active_email_role_key" ON "global_user_invite_tokens"("normalizedEmail", "globalRoleId") WHERE ("acceptedAt" IS NULL AND "revokedAt" IS NULL);
+CREATE UNIQUE INDEX "global_user_invite_tokens_id_globalRoleId_key" ON "global_user_invite_tokens"("id", "globalRoleId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "global_active_invite_reservations_inviteTokenId_key" ON "global_active_invite_reservations"("inviteTokenId");
+
+-- CreateIndex
+CREATE INDEX "global_active_invite_reservations_globalRoleId_idx" ON "global_active_invite_reservations"("globalRoleId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "global_active_invite_reservations_inviteTokenId_globalRoleI_key" ON "global_active_invite_reservations"("inviteTokenId", "globalRoleId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "project_user_invite_tokens_tokenHash_key" ON "project_user_invite_tokens"("tokenHash");
@@ -318,7 +347,10 @@ CREATE INDEX "project_user_invite_tokens_invitedById_idx" ON "project_user_invit
 CREATE UNIQUE INDEX "project_user_invite_tokens_projectId_id_key" ON "project_user_invite_tokens"("projectId", "id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "project_invites_active_email_key" ON "project_user_invite_tokens"("projectId", "normalizedEmail") WHERE ("acceptedAt" IS NULL AND "revokedAt" IS NULL);
+CREATE UNIQUE INDEX "project_active_invite_reservations_inviteTokenId_key" ON "project_active_invite_reservations"("inviteTokenId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "project_active_invite_reservations_projectId_inviteTokenId_key" ON "project_active_invite_reservations"("projectId", "inviteTokenId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "projects_slug_key" ON "projects"("slug");
@@ -390,6 +422,12 @@ ALTER TABLE "global_user_invite_tokens" ADD CONSTRAINT "global_user_invite_token
 ALTER TABLE "global_user_invite_tokens" ADD CONSTRAINT "global_user_invite_tokens_invitedById_fkey" FOREIGN KEY ("invitedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "global_active_invite_reservations" ADD CONSTRAINT "global_active_invite_reservations_globalRoleId_fkey" FOREIGN KEY ("globalRoleId") REFERENCES "global_roles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "global_active_invite_reservations" ADD CONSTRAINT "global_active_invite_reservations_inviteTokenId_globalRole_fkey" FOREIGN KEY ("inviteTokenId", "globalRoleId") REFERENCES "global_user_invite_tokens"("id", "globalRoleId") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "project_user_invite_tokens" ADD CONSTRAINT "project_user_invite_tokens_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -397,6 +435,12 @@ ALTER TABLE "project_user_invite_tokens" ADD CONSTRAINT "project_user_invite_tok
 
 -- AddForeignKey
 ALTER TABLE "project_user_invite_tokens" ADD CONSTRAINT "project_user_invite_tokens_invitedById_fkey" FOREIGN KEY ("invitedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "project_active_invite_reservations" ADD CONSTRAINT "project_active_invite_reservations_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "project_active_invite_reservations" ADD CONSTRAINT "project_active_invite_reservations_projectId_inviteTokenId_fkey" FOREIGN KEY ("projectId", "inviteTokenId") REFERENCES "project_user_invite_tokens"("projectId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

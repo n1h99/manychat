@@ -17,8 +17,10 @@
   ],
   "scripts": {
     "build": "node ../../scripts/clean-output.mjs packages/database/dist && tsc -p tsconfig.build.json",
+    "db:generate": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts",
     "db:seed": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts && node ../../scripts/pnpm.mjs --filter @omnicus/database build && node dist/seed.js",
-    "test": "vitest run --passWithNoTests",
+    "db:validate": "node ../../scripts/run-prisma.mjs validate --config prisma.config.ts",
+    "test": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts && vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -13,6 +13,8 @@ corepack pnpm lint
 corepack pnpm check:boundaries
 corepack pnpm db:validate
 corepack pnpm db:diff:check
+corepack pnpm --dir packages/database db:validate
+corepack pnpm --dir packages/database db:generate
 corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm build
@@ -39,11 +41,19 @@ available. CI supplies isolated PostgreSQL and Redis service containers.
 Without those services, the relevant tests are explicitly skipped; a passing
 skip is not evidence that runtime connectivity works.
 
-The worker readiness suite also includes pure state tests for the asymmetric
-cases:
+Turbo forwards `RUN_SERVICE_INTEGRATION`, `APP_ENV`, `NODE_ENV`,
+`DATABASE_URL`, `REDIS_URL`, `CORS_ALLOWED_ORIGINS`, and `DEMO_JOB_ENABLED` to
+the non-cached `test:integration` task. In CI, a missing
+`RUN_SERVICE_INTEGRATION=true` makes the expected service test fail rather than
+silently skip.
+
+The worker readiness suite exercises `DemoQueueService` with controllable queue
+clients for the asymmetric and lifecycle cases:
 
 - producer ready, consumer failed;
 - producer failed, consumer ready.
+- consumer error, close, and `isRunning=false`;
+- HTTP 503 mapping and bounded forced shutdown.
 
 ## CI
 

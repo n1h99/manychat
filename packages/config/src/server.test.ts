@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   parseCorsOrigins,
+  parseTrustProxy,
   rootEnvironmentFilePath,
   validateApiEnvironment,
   validateWorkerEnvironment,
@@ -100,6 +101,24 @@ describe('server environment validation', () => {
       expect(() => validateApiEnvironment({ ...baseEnvironment, TRUST_PROXY: entry })).toThrow();
     },
   );
+
+  it.each(['production', 'staging'] as const)(
+    'requires an explicit trust proxy topology for %s',
+    (appEnvironment) => {
+      expect(() =>
+        validateApiEnvironment({
+          ...baseEnvironment,
+          APP_ENV: appEnvironment,
+          NODE_ENV: 'production',
+          TRUST_PROXY: undefined,
+        }),
+      ).toThrow();
+    },
+  );
+
+  it('uses loopback only as the local development default', () => {
+    expect(parseTrustProxy(undefined)).toEqual(['loopback']);
+  });
 
   it('parses worker feature flags without treating false as true', () => {
     const environment = validateWorkerEnvironment({

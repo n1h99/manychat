@@ -5,7 +5,6 @@ generator client {
   runtime             = "nodejs"
   moduleFormat        = "cjs"
   importFileExtension = "js"
-  previewFeatures     = ["partialIndexes"]
 }
 
 datasource db {
@@ -113,15 +112,16 @@ model Permission {
 }
 
 model GlobalRole {
-  id             String                  @id @default(uuid())
-  name           String
-  normalizedName String                  @unique
-  system         Boolean                 @default(false)
-  createdAt      DateTime                @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime                @updatedAt @db.Timestamptz(3)
-  permissions    GlobalRolePermission[]
-  userRoles      GlobalUserRole[]
-  inviteTokens   GlobalUserInviteToken[]
+  id                       String                          @id @default(uuid())
+  name                     String
+  normalizedName           String                          @unique
+  system                   Boolean                         @default(false)
+  createdAt                DateTime                        @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                        @updatedAt @db.Timestamptz(3)
+  permissions              GlobalRolePermission[]
+  userRoles                GlobalUserRole[]
+  inviteTokens             GlobalUserInviteToken[]
+  activeInviteReservations GlobalActiveInviteReservation[]
 
   @@map("global_roles")
 }
@@ -206,68 +206,97 @@ model ProjectMembership {
 }
 
 model GlobalUserInviteToken {
-  id                     String     @id @default(uuid())
+  id                     String                         @id @default(uuid())
   normalizedEmail        String
   emailSnapshot          String
   globalRoleId           String
-  tokenHash              String     @unique
+  tokenHash              String                         @unique
   invitedById            String?
   invitedByEmailSnapshot String
-  expiresAt              DateTime   @db.Timestamptz(3)
-  acceptedAt             DateTime?  @db.Timestamptz(3)
-  revokedAt              DateTime?  @db.Timestamptz(3)
-  createdAt              DateTime   @default(now()) @db.Timestamptz(3)
-  globalRole             GlobalRole @relation(fields: [globalRoleId], references: [id], onDelete: Restrict)
-  invitedBy              User?      @relation("GlobalInviteInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  expiresAt              DateTime                       @db.Timestamptz(3)
+  acceptedAt             DateTime?                      @db.Timestamptz(3)
+  revokedAt              DateTime?                      @db.Timestamptz(3)
+  createdAt              DateTime                       @default(now()) @db.Timestamptz(3)
+  globalRole             GlobalRole                     @relation(fields: [globalRoleId], references: [id], onDelete: Restrict)
+  invitedBy              User?                          @relation("GlobalInviteInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  activeReservation      GlobalActiveInviteReservation?
 
-  @@unique([normalizedEmail, globalRoleId], map: "global_invites_active_email_role_key", where: raw("\"acceptedAt\" IS NULL AND \"revokedAt\" IS NULL"))
+  @@unique([id, globalRoleId])
   @@index([normalizedEmail, expiresAt])
   @@index([globalRoleId])
   @@index([invitedById])
   @@map("global_user_invite_tokens")
 }
 
+model GlobalActiveInviteReservation {
+  normalizedEmail String
+  globalRoleId    String
+  inviteTokenId   String                @unique
+  createdAt       DateTime              @default(now()) @db.Timestamptz(3)
+  globalRole      GlobalRole            @relation(fields: [globalRoleId], references: [id], onDelete: Restrict)
+  inviteToken     GlobalUserInviteToken @relation(fields: [inviteTokenId, globalRoleId], references: [id, globalRoleId], onDelete: Cascade)
+
+  @@id([normalizedEmail, globalRoleId])
+  @@unique([inviteTokenId, globalRoleId])
+  @@index([globalRoleId])
+  @@map("global_active_invite_reservations")
+}
+
 model ProjectUserInviteToken {
-  id                     String      @id @default(uuid())
+  id                     String                          @id @default(uuid())
   projectId              String
   projectRoleId          String
   normalizedEmail        String
   emailSnapshot          String
-  tokenHash              String      @unique
+  tokenHash              String                          @unique
   invitedById            String?
   invitedByEmailSnapshot String
-  expiresAt              DateTime    @db.Timestamptz(3)
-  acceptedAt             DateTime?   @db.Timestamptz(3)
-  revokedAt              DateTime?   @db.Timestamptz(3)
-  createdAt              DateTime    @default(now()) @db.Timestamptz(3)
-  project                Project     @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectRole            ProjectRole @relation(fields: [projectId, projectRoleId], references: [projectId, id], onDelete: Restrict)
-  invitedBy              User?       @relation("ProjectInviteInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  expiresAt              DateTime                        @db.Timestamptz(3)
+  acceptedAt             DateTime?                       @db.Timestamptz(3)
+  revokedAt              DateTime?                       @db.Timestamptz(3)
+  createdAt              DateTime                        @default(now()) @db.Timestamptz(3)
+  project                Project                         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectRole            ProjectRole                     @relation(fields: [projectId, projectRoleId], references: [projectId, id], onDelete: Restrict)
+  invitedBy              User?                           @relation("ProjectInviteInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  activeReservation      ProjectActiveInviteReservation?
 
   @@unique([projectId, id])
-  @@unique([projectId, normalizedEmail], map: "project_invites_active_email_key", where: raw("\"acceptedAt\" IS NULL AND \"revokedAt\" IS NULL"))
   @@index([projectId, normalizedEmail, expiresAt])
   @@index([projectId, projectRoleId])
   @@index([invitedById])
   @@map("project_user_invite_tokens")
 }
 
+model ProjectActiveInviteReservation {
+  projectId       String
+  normalizedEmail String
+  inviteTokenId   String                 @unique
+  createdAt       DateTime               @default(now()) @db.Timestamptz(3)
+  project         Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  inviteToken     ProjectUserInviteToken @relation(fields: [projectId, inviteTokenId], references: [projectId, id], onDelete: Cascade)
+
+  @@id([projectId, normalizedEmail])
+  @@unique([projectId, inviteTokenId])
+  @@map("project_active_invite_reservations")
+}
+
 model Project {
-  id           String                   @id @default(uuid())
-  name         String
-  slug         String                   @unique
-  description  String?
-  status       ProjectStatus            @default(DRAFT)
-  timezone     String
-  locale       String
-  settings     Json
-  version      Int                      @default(1)
-  createdAt    DateTime                 @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime                 @updatedAt @db.Timestamptz(3)
-  roles        ProjectRole[]
-  memberships  ProjectMembership[]
-  inviteTokens ProjectUserInviteToken[]
-  auditLogs    AuditLog[]
+  id                       String                           @id @default(uuid())
+  name                     String
+  slug                     String                           @unique
+  description              String?
+  status                   ProjectStatus                    @default(DRAFT)
+  timezone                 String
+  locale                   String
+  settings                 Json
+  version                  Int                              @default(1)
+  createdAt                DateTime                         @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                         @updatedAt @db.Timestamptz(3)
+  roles                    ProjectRole[]
+  memberships              ProjectMembership[]
+  inviteTokens             ProjectUserInviteToken[]
+  activeInviteReservations ProjectActiveInviteReservation[]
+  auditLogs                AuditLog[]
 
   @@index([status, createdAt])
   @@map("projects")

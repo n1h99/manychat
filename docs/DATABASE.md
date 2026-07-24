@@ -43,14 +43,14 @@ schema. Поэтому первая migration не создаёт около 40 
 
 ## Stage-sliced migration map
 
-| Slice            | Executable models                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invites, `Permission`, global/project roles and assignments, `Project`, `AuditLog` |
-| Stage 2          | contacts, tags, custom field definitions and values                                                                                        |
-| Stage 3          | channel connections, webhook records, inbox/outbox, idempotency and messages                                                               |
-| Stage 4          | scenarios and execution journal                                                                                                            |
-| Stage 5          | project-specific CRM configuration after the CRM contract gate                                                                             |
-| Post-pilot       | broadcasts, Wait, Delay, Subflow and advanced media workflows                                                                              |
+| Slice            | Executable models                                                                                                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invite history and active-invite reservations, `Permission`, global/project roles and assignments, `Project`, `AuditLog` |
+| Stage 2          | contacts, tags, custom field definitions and values                                                                                                                              |
+| Stage 3          | channel connections, webhook records, inbox/outbox, idempotency and messages                                                                                                     |
+| Stage 4          | scenarios and execution journal                                                                                                                                                  |
+| Stage 5          | project-specific CRM configuration after the CRM contract gate                                                                                                                   |
+| Post-pilot       | broadcasts, Wait, Delay, Subflow and advanced media workflows                                                                                                                    |
 
 Каждый slice получает отдельный generated SQL review. Ни одна будущая модель не
 добавляется в Stage 1 baseline «про запас».
@@ -177,12 +177,13 @@ executable schema или pilot.
 
 Executable proposal использует отдельные физические boundaries:
 
-| Global boundary         | Project boundary                    |
-| ----------------------- | ----------------------------------- |
-| `GlobalRole`            | `ProjectRole(projectId)`            |
-| `GlobalRolePermission`  | `ProjectRolePermission(projectId)`  |
-| `GlobalUserRole`        | `ProjectMembership(projectId)`      |
-| `GlobalUserInviteToken` | `ProjectUserInviteToken(projectId)` |
+| Global boundary                 | Project boundary                            |
+| ------------------------------- | ------------------------------------------- |
+| `GlobalRole`                    | `ProjectRole(projectId)`                    |
+| `GlobalRolePermission`          | `ProjectRolePermission(projectId)`          |
+| `GlobalUserRole`                | `ProjectMembership(projectId)`              |
+| `GlobalUserInviteToken`         | `ProjectUserInviteToken(projectId)`         |
+| `GlobalActiveInviteReservation` | `ProjectActiveInviteReservation(projectId)` |
 
 Инварианты:
 
@@ -210,10 +211,21 @@ Executable proposal использует отдельные физические
   сохраняется для audit;
 - все FK, участвующие в delete/restrict/set-null checks, имеют supporting index;
 - все lifecycle timestamps используют `TIMESTAMPTZ(3)`;
-- active-invite partial uniqueness уже входит в generated Stage 1 SQL proposal:
-  одна active invitation на `(normalizedEmail, globalRoleId)` и одна на
-  `(projectId, normalizedEmail)`, где `acceptedAt IS NULL AND revokedAt IS NULL`;
-  фактическая migration всё ещё не создана и требует отдельного approval.
+- historical invitation не объявляет partial `@@unique`: Prisma Client иначе
+  трактует его как обычный `WhereUniqueInput`, что небезопасно для historical
+  rows;
+- `GlobalActiveInviteReservation` имеет primary key
+  `(normalizedEmail, globalRoleId)` и `inviteTokenId @unique`. Composite FK на
+  `(inviteTokenId, globalRoleId)` гарантирует, что reservation принадлежит
+  invitation того же global role;
+- `ProjectActiveInviteReservation` имеет primary key
+  `(projectId, normalizedEmail)` и `inviteTokenId @unique`. Composite FK на
+  `(projectId, inviteTokenId)` гарантирует тот же project boundary;
+- будущий invitation service обязан в одной PostgreSQL transaction создать
+  historical token и reservation. Accepted/revoked/expired terminal transition
+  обязан в той же transaction обновить historical token и удалить reservation;
+  это оставляет history и разрешает следующую active invitation;
+- фактическая migration всё ещё не создана и требует отдельного approval.
 
 Полная Prisma-форма этих моделей является единственным executable источником в
 `packages/database/prisma/schema.prisma`.
@@ -1023,6 +1035,8 @@ audit retention/purge workflow. Actor может стать `NULL`, но
 - сверить committed SQL proposal с повторным `prisma migrate diff`;
 - проверить отсутствие nullable RBAC composite foreign keys;
 - проверить project role/invite/member FKs по `(projectId, projectRoleId)`;
+- проверить active-invite reservation PK/unique и composite FKs к historical
+  invitation; partial `@@unique` для invitation не добавлять;
 - проверить `AuditLog.project ON DELETE RESTRICT` и immutable snapshots;
 - проверить, что lifecycle timestamps сгенерированы как
   `TIMESTAMP(3) WITH TIME ZONE`;

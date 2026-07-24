@@ -22,6 +22,17 @@
     },
     "test:integration": {
       "dependsOn": ["^build"],
+      "cache": false,
+      "env": [
+        "CI",
+        "RUN_SERVICE_INTEGRATION",
+        "APP_ENV",
+        "NODE_ENV",
+        "DATABASE_URL",
+        "REDIS_URL",
+        "CORS_ALLOWED_ORIGINS",
+        "DEMO_JOB_ENABLED"
+      ],
       "outputs": []
     },
     "typecheck": {
