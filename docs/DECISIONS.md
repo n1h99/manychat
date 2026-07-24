@@ -236,3 +236,65 @@ acceptance pilot не должны требовать отложенные фу�
 
 **Последствия:** это стартовые значения, которые пересматриваются после
 наблюдений pilot новым ADR.
+
+## ADR-013. Stage 0 toolchain и workspace
+
+**Статус:** Accepted.
+
+**Решение:** использовать Node.js 24.x, pnpm 10.5.0 и Turborepo. Приложения
+размещаются в `apps/web`, `apps/api`, `apps/worker`; инфраструктурные библиотеки —
+в `packages/database`, `packages/shared`, `packages/contracts`,
+`packages/config`, `packages/channel-core`, `packages/test-fixtures`. Версии
+runtime и package manager фиксируются в корневом `package.json`.
+
+**Последствия:** Telegram, CRM и automation packages не создаются на Этапе 0;
+чистая установка должна воспроизводиться из `pnpm-lock.yaml`.
+
+## ADR-014. Prisma ownership и initial migration gate
+
+**Статус:** Accepted.
+
+**Решение:** Prisma schema, configuration, generated client и будущие migrations
+принадлежат `packages/database`. Этап 0 создаёт и валидирует schema, но не создаёт
+initial migration. Migration допускается только после отдельного отчёта с review
+generated SQL. Seed разрешён только для development/test и не создаёт production
+данные.
+
+**Последствия:** health probe может проверить соединение `SELECT 1`, но доменные
+таблицы не существуют до одобренной migration.
+
+## ADR-015. Stage 0 structured logging
+
+**Статус:** Accepted.
+
+**Решение:** API и worker используют встроенный NestJS `ConsoleLogger` в JSON
+режиме и propagation безопасного correlation ID. Дополнительная logging library
+не устанавливается до появления измеримой потребности в transport/redaction,
+которую встроенный logger не покрывает.
+
+**Последствия:** логи пригодны для Railway ingestion без дополнительной
+зависимости; правила PII redaction должны быть расширены вместе с бизнес-полями.
+
+## ADR-016. Stage 0 BullMQ и outbox relay checkpoint
+
+**Статус:** Accepted.
+
+**Решение:** BullMQ на Этапе 0 содержит только disposable
+`system-health/demo-job` для проверки consumer lifecycle. Стратегия outbox relay
+не реализуется и выбирается перед Этапом 3 вместе с transactional inbox/outbox;
+PostgreSQL остаётся источником истины.
+
+**Последствия:** demo job не является durable domain command и не создаёт
+архитектурного обещания о polling, notifications или delivery ordering.
+
+## ADR-017. Railway topology и будущий cookie boundary
+
+**Статус:** Accepted.
+
+**Решение:** web, API и worker развёртываются как три Railway services из одного
+monorepo с отдельными build/start commands и healthchecks. На Этапе 0 CORS
+разрешает явный список web origins. Cookie domain, SameSite и CSRF topology
+фиксируются до Auth на Этапе 1.
+
+**Последствия:** Stage 0 не создаёт cookies и auth endpoints; production origins
+не выводятся автоматически и задаются environment variables.

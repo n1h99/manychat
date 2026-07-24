@@ -1,0 +1,30 @@
+{
+  "name": "@omnicus/database",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "prisma"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "db:format": "prisma format --schema prisma/schema.prisma",
+    "db:generate": "prisma generate --config prisma.config.ts",
+    "db:seed": "pnpm build && node dist/seed.js",
+    "db:validate": "prisma validate --config prisma.config.ts",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.9.0",
+    "@prisma/client": "7.9.0",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0",
+    "dotenv": "17.4.2",
+    "prisma": "7.9.0"
+  }
+}

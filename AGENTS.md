@@ -20,7 +20,9 @@
 
 ## Текущий статус
 
-Репозиторий находится в фазе подготовки к реализации. Первый pilot ограничен:
+Scaffold Этапа 0 реализован. До отдельного перехода к Этапу 1 разрешены только
+исправления инфраструктуры monorepo и application shells. Первый pilot
+ограничен:
 
 - Auth и RBAC;
 - проекты;
@@ -30,7 +32,7 @@
 - CRM interface и mock adapter;
 - минимальный automation runtime:
   `Incoming Message → Condition → Create/Update Lead → Forward to CRM
-  → Send Message → Add/Remove Tag`;
+→ Send Message → Add/Remove Tag`;
 - execution log;
 - Railway deployment.
 
@@ -69,8 +71,9 @@
 - Делайте небольшие логические изменения.
 - Перед бизнес-кодом сверяйте текущий этап в `docs/IMPLEMENTATION_PLAN.md`.
 - Перед изменением схемы данных сначала обновляйте `docs/DATABASE.md` и ADR.
-- После появления Prisma schema каждое изменение БД должно иметь миграцию.
-  Исключение — документальный proposal до Этапа 0.
+- После появления Prisma schema каждое изменение БД должно иметь migration
+  proposal и review. Initial migration Этапа 0 не создаётся до отдельного
+  отчёта и явного разрешения.
 - Не меняйте published scenario version; создавайте новую draft version.
 - Не добавляйте provider fields по памяти. Проверяйте официальную документацию и
   фиксируйте проверенную API version/date.

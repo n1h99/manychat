@@ -2,8 +2,10 @@
 
 ## Статус
 
-Это проект схемы для Этапа 0. Файл не является migration и не должен применяться
-к БД до создания monorepo, выбора версии Prisma и review generated SQL.
+Проект реализован в `packages/database/prisma/schema.prisma` на Prisma 7.9.0 и
+успешно проходит `prisma validate`. Файл не является migration и не должен
+применяться к БД до review generated SQL и отдельного разрешения initial
+migration.
 
 ## Главные правила
 

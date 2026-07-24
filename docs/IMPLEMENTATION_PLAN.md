@@ -2,8 +2,8 @@
 
 ## Статус
 
-План подготовлен для первого pilot. Создание приложений, Prisma migrations и
-бизнес-кода в рамках документальной фазы не выполняется.
+План подготовлен для первого pilot. Scaffold Этапа 0 реализован; Этап 1 не
+начат. Prisma migrations, deploy и бизнес-код не выполнялись.
 
 ## Цель pilot
 
@@ -60,12 +60,12 @@ Subflows, полноценный External HTTP Request editor и расшире�
 
 - pnpm workspace и Turborepo;
 - `apps/web`, `apps/api`, `apps/worker`;
-- packages для database, contracts, config, channel core, Telegram,
-  automation runtime, CRM client и test fixtures;
+- packages для database, shared, contracts, config, channel core и test fixtures;
 - React/Vite/Ant Design shell;
 - NestJS API и worker shell;
 - PostgreSQL/Redis local Docker Compose;
-- Prisma schema, первая migration и seed только для dev/test;
+- Prisma schema без migration до отдельного review generated SQL; guarded seed
+  только для dev/test;
 - environment validation;
 - health live/ready;
 - lint/format/typecheck/test/build pipelines;
@@ -97,6 +97,14 @@ Subflows, полноценный External HTTP Request editor и расшире�
 - PostgreSQL/Redis доступны через validated config.
 - CI повторяет локальные проверки.
 - Никаких Telegram/CRM business flows ещё нет.
+
+### Результат
+
+- pnpm/Turborepo workspace, три application shells и шесть infrastructure
+  packages созданы;
+- Prisma schema валидна, generated client создаётся, migration отсутствует;
+- Docker Compose, CI и Railway service configuration созданы;
+- переход к Этапу 1 требует отдельного явного решения.
 
 ## Этап 1. Auth, RBAC и Projects
 
@@ -290,18 +298,18 @@ paused project → deferred inbox → resume processing
 
 ## Pilot NFR
 
-| Requirement | Initial target |
-|---|---|
-| Webhook acknowledgement | После signature/size validation и durable inbox commit; без ожидания CRM/runtime/outbound |
-| Raw webhook body | Максимум 2 MB |
-| Future External API response | Максимум 5 MB |
-| Broadcast size | Неприменимо для pilot |
-| Technical logs retention | 30 дней |
-| Audit retention | 180 дней |
-| Valid raw payload retention | 30 дней |
-| RPO | 24 часа |
-| RTO | 4 часа |
-| Restore verification | Обязательная документированная проверка |
+| Requirement                  | Initial target                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| Webhook acknowledgement      | После signature/size validation и durable inbox commit; без ожидания CRM/runtime/outbound |
+| Raw webhook body             | Максимум 2 MB                                                                             |
+| Future External API response | Максимум 5 MB                                                                             |
+| Broadcast size               | Неприменимо для pilot                                                                     |
+| Technical logs retention     | 30 дней                                                                                   |
+| Audit retention              | 180 дней                                                                                  |
+| Valid raw payload retention  | 30 дней                                                                                   |
+| RPO                          | 24 часа                                                                                   |
+| RTO                          | 4 часа                                                                                    |
+| Restore verification         | Обязательная документированная проверка                                                   |
 
 До production необходимо дополнить нагрузочные цели наблюдениями pilot:
 ожидаемые connections/projects, webhook rate, queue latency и объём хранения.

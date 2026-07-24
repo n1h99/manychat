@@ -1,0 +1,24 @@
+{
+  "name": "@omnicus/worker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.28",
+    "@nestjs/config": "4.0.4",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-express": "11.1.28",
+    "@omnicus/config": "workspace:*",
+    "@omnicus/contracts": "workspace:*",
+    "bullmq": "5.81.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  }
+}

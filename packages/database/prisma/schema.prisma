@@ -1,0 +1,1125 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  engineType          = "client"
+  runtime             = "nodejs"
+  moduleFormat        = "cjs"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TokenStatus {
+  ACTIVE
+  ROTATED
+  REVOKED
+  REUSED
+  EXPIRED
+}
+
+enum RoleScope {
+  GLOBAL
+  PROJECT
+}
+
+enum MembershipStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AutomationMode {
+  AUTOMATION_ENABLED
+  AUTOMATION_PAUSED
+  MANUAL_MODE
+}
+
+enum ContactStatus {
+  ACTIVE
+  BLOCKED
+  UNSUBSCRIBED
+  ARCHIVED
+  MERGED
+}
+
+enum ChannelType {
+  TELEGRAM
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum ChannelConnectionStatus {
+  DRAFT
+  CONNECTING
+  CONNECTED
+  ERROR
+  DISABLED
+}
+
+enum ConsentStatus {
+  UNKNOWN
+  OPTED_IN
+  OPTED_OUT
+}
+
+enum MediaAssetStatus {
+  PROVIDER_REFERENCE
+  PENDING_DOWNLOAD
+  PENDING_UPLOAD
+  AVAILABLE
+  REJECTED
+  UNAVAILABLE
+  DELETED
+}
+
+enum InboxStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  RETRY_WAIT
+  DEFERRED
+  FAILED
+  DEAD_LETTER
+  IGNORED
+}
+
+enum SideEffectStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  UNKNOWN
+}
+
+enum ScenarioStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
+enum ScenarioVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+enum ScenarioExecutionStatus {
+  QUEUED
+  RUNNING
+  WAITING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  RECEIVED
+  PENDING
+  PROCESSING
+  SUBMITTED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  UNKNOWN
+  CANCELLED
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  PREPARING
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum BroadcastRecipientStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SKIPPED
+  CANCELLED
+  UNKNOWN
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  passwordHash        String
+  firstName           String
+  lastName            String
+  status              UserStatus           @default(ACTIVE)
+  lastLoginAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  globalRoles         GlobalUserRole[]
+  memberships         ProjectMembership[]
+
+  @@map("users")
+}
+
+model Session {
+  id                  String      @id @default(uuid())
+  userId              String
+  tokenFamilyId       String
+  refreshTokenHash    String      @unique
+  csrfTokenHash       String
+  status              TokenStatus @default(ACTIVE)
+  replacedBySessionId String?
+  issuedAt            DateTime    @default(now())
+  expiresAt           DateTime
+  rotatedAt           DateTime?
+  revokedAt           DateTime?
+  reuseDetectedAt     DateTime?
+  ip                  String?
+  userAgent           String?
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([tokenFamilyId, status])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  ip        String?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model UserInviteToken {
+  id          String    @id @default(uuid())
+  projectId   String?
+  email       String
+  roleId      String?
+  tokenHash   String    @unique
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role        Role?     @relation(fields: [projectId, roleId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@index([projectId, email])
+  @@index([expiresAt])
+  @@map("user_invite_tokens")
+}
+
+model Role {
+  id              String              @id @default(uuid())
+  projectId       String?
+  name            String
+  scope           RoleScope
+  system          Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  project         Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  permissions     RolePermission[]
+  globalUserRoles GlobalUserRole[]
+  memberships     ProjectMembership[]
+  inviteTokens    UserInviteToken[]
+
+  @@unique([projectId, id])
+  @@index([projectId, scope])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  code        String           @unique
+  description String
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  projectId    String?
+  roleId       String
+  permissionId String
+  role         Role?      @relation(fields: [projectId, roleId], references: [projectId, id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@unique([projectId, roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model GlobalUserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  createdBy String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("global_user_roles")
+}
+
+model ProjectMembership {
+  id        String           @id @default(uuid())
+  projectId String
+  userId    String
+  roleId    String
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role             @relation(fields: [projectId, roleId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@unique([projectId, userId])
+  @@index([userId, status])
+  @@map("project_memberships")
+}
+
+model Project {
+  id                      String                    @id @default(uuid())
+  name                    String
+  slug                    String                    @unique
+  description             String?
+  status                  ProjectStatus             @default(DRAFT)
+  timezone                String
+  locale                  String
+  settings                Json
+  version                 Int                       @default(1)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  crmConfig               CrmProjectConfig?
+  memberships             ProjectMembership[]
+  roles                   Role[]
+  inviteTokens            UserInviteToken[]
+  contacts                Contact[]
+  customFieldDefinitions  CustomFieldDefinition[]
+  customFieldValues       ContactCustomFieldValue[]
+  segments                Segment[]
+  tags                    Tag[]
+  contactTags             ContactTag[]
+  channelConnections      ChannelConnection[]
+  channelIdentities       ChannelIdentity[]
+  channelConsents         ChannelConsent[]
+  conversations           Conversation[]
+  mediaAssets             MediaAsset[]
+  rawWebhookEvents        RawWebhookEvent[]
+  rejectedWebhookAttempts RejectedWebhookAttempt[]
+  inboxRecords            InboxRecord[]
+  idempotencyRecords      IdempotencyRecord[]
+  outboxRecords           OutboxRecord[]
+  normalizedEvents        NormalizedEvent[]
+  messages                Message[]
+  messageStatusEvents     MessageStatusEvent[]
+  orphanMessageStatuses   OrphanMessageStatus[]
+  scenarios               Scenario[]
+  scenarioVersions        ScenarioVersion[]
+  scenarioExecutions      ScenarioExecution[]
+  nodeExecutions          NodeExecution[]
+  waitStates              WaitState[]
+  broadcasts              Broadcast[]
+  broadcastRecipients     BroadcastRecipient[]
+  auditLogs               AuditLog[]
+  messageTemplates        MessageTemplate[]
+
+  @@index([status, createdAt])
+  @@map("projects")
+}
+
+model CrmProjectConfig {
+  id                   String   @id @default(uuid())
+  projectId            String   @unique
+  crmProjectId         String
+  fieldMapping         Json
+  defaultPipeline      String?
+  defaultStage         String?
+  additionalParameters Json
+  status               String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, crmProjectId])
+  @@map("crm_project_configs")
+}
+
+model Contact {
+  id                  String                    @id @default(uuid())
+  projectId           String
+  firstName           String?
+  lastName            String?
+  displayName         String?
+  phone               String?
+  email               String?
+  status              ContactStatus             @default(ACTIVE)
+  automationMode      AutomationMode            @default(AUTOMATION_ENABLED)
+  crmLeadId           String?
+  crmContactId        String?
+  crmManagerId        String?
+  firstInteractionAt  DateTime?
+  lastInteractionAt   DateTime?
+  mergedIntoContactId String?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  project             Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mergedIntoContact   Contact?                  @relation("ContactMerge", fields: [projectId, mergedIntoContactId], references: [projectId, id])
+  mergedContacts      Contact[]                 @relation("ContactMerge")
+  customFieldValues   ContactCustomFieldValue[]
+  tags                ContactTag[]
+  identities          ChannelIdentity[]
+  conversations       Conversation[]
+  messages            Message[]
+  scenarioExecutions  ScenarioExecution[]
+  broadcastRecipients BroadcastRecipient[]
+
+  @@unique([projectId, id])
+  @@index([projectId, status, lastInteractionAt])
+  @@index([projectId, crmLeadId])
+  @@map("contacts")
+}
+
+model CustomFieldDefinition {
+  id         String                    @id @default(uuid())
+  projectId  String
+  key        String
+  name       String
+  type       String
+  config     Json
+  required   Boolean                   @default(false)
+  archivedAt DateTime?
+  createdBy  String
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+  project    Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values     ContactCustomFieldValue[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, key])
+  @@map("custom_field_definitions")
+}
+
+model ContactCustomFieldValue {
+  id            String                @id @default(uuid())
+  projectId     String
+  contactId     String
+  definitionId  String
+  valueJson     Json
+  valueText     String?
+  valueNumber   Decimal?
+  valueBoolean  Boolean?
+  valueDateTime DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contact       Contact               @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  definition    CustomFieldDefinition @relation(fields: [projectId, definitionId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@unique([projectId, contactId, definitionId])
+  @@index([projectId, definitionId, valueText])
+  @@index([projectId, definitionId, valueNumber])
+  @@index([projectId, definitionId, valueDateTime])
+  @@map("contact_custom_field_values")
+}
+
+model Segment {
+  id                  String   @id @default(uuid())
+  projectId           String
+  name                String
+  filterSchemaVersion Int
+  filter              Json
+  status              String
+  createdBy           String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, name])
+  @@map("segments")
+}
+
+model Tag {
+  id             String       @id @default(uuid())
+  projectId      String
+  name           String
+  normalizedName String
+  color          String?
+  description    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contacts       ContactTag[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, normalizedName])
+  @@map("tags")
+}
+
+model ContactTag {
+  projectId String
+  contactId String
+  tagId     String
+  source    String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contact   Contact  @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [projectId, tagId], references: [projectId, id], onDelete: Cascade)
+
+  @@id([projectId, contactId, tagId])
+  @@map("contact_tags")
+}
+
+model ChannelConnection {
+  id                      String                   @id @default(uuid())
+  projectId               String
+  channel                 ChannelType
+  name                    String
+  status                  ChannelConnectionStatus  @default(DRAFT)
+  externalAccountId       String?
+  credentialsEncrypted    Bytes
+  credentialVersion       Int                      @default(1)
+  settings                Json
+  capabilities            Json
+  lastWebhookAt           DateTime?
+  lastErrorAt             DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  project                 Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  identities              ChannelIdentity[]
+  conversations           Conversation[]
+  mediaAssets             MediaAsset[]
+  rawWebhookEvents        RawWebhookEvent[]
+  rejectedWebhookAttempts RejectedWebhookAttempt[]
+  inboxRecords            InboxRecord[]
+  normalizedEvents        NormalizedEvent[]
+  messages                Message[]
+  orphanMessageStatuses   OrphanMessageStatus[]
+  templates               MessageTemplate[]
+  broadcasts              Broadcast[]
+
+  @@unique([projectId, id])
+  @@index([projectId, channel, status])
+  @@map("channel_connections")
+}
+
+model ChannelIdentity {
+  id                     String               @id @default(uuid())
+  projectId              String
+  contactId              String
+  connectionId           String
+  channel                ChannelType
+  externalUserId         String
+  externalConversationId String?
+  externalThreadId       String?
+  username               String?
+  phone                  String?
+  displayName            String?
+  metadata               Json
+  blockedAt              DateTime?
+  lastInboundAt          DateTime?
+  lastOutboundAt         DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  project                Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contact                Contact              @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  connection             ChannelConnection    @relation(fields: [projectId, connectionId], references: [projectId, id])
+  consents               ChannelConsent[]
+  conversations          Conversation[]
+  broadcastRecipients    BroadcastRecipient[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, externalUserId])
+  @@map("channel_identities")
+}
+
+model ChannelConsent {
+  id                String          @id @default(uuid())
+  projectId         String
+  channelIdentityId String
+  purpose           String
+  status            ConsentStatus
+  source            String
+  evidence          Json?
+  effectiveAt       DateTime
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  project           Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  identity          ChannelIdentity @relation(fields: [projectId, channelIdentityId], references: [projectId, id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, channelIdentityId, purpose])
+  @@map("channel_consents")
+}
+
+model Conversation {
+  id                     String              @id @default(uuid())
+  projectId              String
+  contactId              String
+  channelIdentityId      String
+  connectionId           String
+  channel                ChannelType
+  externalConversationId String
+  externalThreadId       String?
+  status                 String
+  automationModeOverride AutomationMode?
+  crmLeadId              String?
+  nextSequence           BigInt              @default(1)
+  lastInboundAt          DateTime?
+  lastOutboundAt         DateTime?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  project                Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contact                Contact             @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  identity               ChannelIdentity     @relation(fields: [projectId, channelIdentityId], references: [projectId, id])
+  connection             ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id])
+  messages               Message[]
+  scenarioExecutions     ScenarioExecution[]
+  waitStates             WaitState[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, externalConversationId, externalThreadId])
+  @@index([projectId, contactId, updatedAt])
+  @@map("conversations")
+}
+
+model MediaAsset {
+  id               String             @id @default(uuid())
+  projectId        String
+  connectionId     String?
+  source           String
+  status           MediaAssetStatus
+  providerMediaId  String?
+  providerMetadata Json?
+  bucketKey        String?
+  originalFilename String?
+  detectedMimeType String?
+  declaredMimeType String?
+  extension        String?
+  sizeBytes        BigInt?
+  checksumSha256   String?
+  retentionUntil   DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  project          Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection       ChannelConnection? @relation(fields: [projectId, connectionId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@index([projectId, status, retentionUntil])
+  @@index([projectId, connectionId, providerMediaId])
+  @@map("media_assets")
+}
+
+model RawWebhookEvent {
+  id                  String               @id @default(uuid())
+  projectId           String
+  connectionId        String
+  channel             ChannelType
+  externalEventKey    String
+  safeHeaders         Json
+  contentType         String?
+  payloadRaw          Bytes
+  payloadJson         Json?
+  receivedAt          DateTime             @default(now())
+  purgeAfter          DateTime
+  project             Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection          ChannelConnection    @relation(fields: [projectId, connectionId], references: [projectId, id])
+  inboxRecord         InboxRecord?
+  normalizedEvents    NormalizedEvent[]
+  messageStatusEvents MessageStatusEvent[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, externalEventKey])
+  @@index([projectId, receivedAt])
+  @@index([purgeAfter])
+  @@map("raw_webhook_events")
+}
+
+model RejectedWebhookAttempt {
+  id              String            @id @default(uuid())
+  projectId       String
+  connectionId    String
+  channel         ChannelType
+  sourceIp        String?
+  safeHeaders     Json
+  rejectionReason String
+  correlationId   String
+  receivedAt      DateTime          @default(now())
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection      ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@index([projectId, receivedAt])
+  @@map("rejected_webhook_attempts")
+}
+
+model InboxRecord {
+  id                String            @id @default(uuid())
+  projectId         String
+  rawWebhookEventId String?           @unique
+  provider          ChannelType
+  connectionId      String
+  externalEventKey  String
+  status            InboxStatus
+  correlationId     String
+  attempts          Int               @default(0)
+  maxAttempts       Int
+  attemptGroup      Int               @default(1)
+  leaseOwner        String?
+  leaseExpiresAt    DateTime?
+  nextAttemptAt     DateTime?
+  lastErrorSafe     Json?
+  receivedAt        DateTime          @default(now())
+  processedAt       DateTime?
+  updatedAt         DateTime          @updatedAt
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection        ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id])
+  rawWebhookEvent   RawWebhookEvent?  @relation(fields: [projectId, rawWebhookEventId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@unique([projectId, rawWebhookEventId])
+  @@unique([projectId, connectionId, externalEventKey])
+  @@index([status, nextAttemptAt])
+  @@index([leaseExpiresAt])
+  @@index([projectId, receivedAt])
+  @@map("inbox_records")
+}
+
+model IdempotencyRecord {
+  id           String           @id @default(uuid())
+  projectId    String
+  scope        String
+  key          String
+  requestHash  String
+  status       SideEffectStatus
+  resourceType String?
+  resourceId   String?
+  responseSafe Json?
+  httpStatus   Int?
+  expiresAt    DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+model OutboxRecord {
+  id                String           @id @default(uuid())
+  projectId         String
+  operationType     String
+  aggregateType     String
+  aggregateId       String
+  idempotencyKey    String
+  payload           Json
+  status            SideEffectStatus @default(PENDING)
+  correlationId     String
+  attempts          Int              @default(0)
+  maxAttempts       Int
+  attemptGroup      Int              @default(1)
+  leaseOwner        String?
+  leaseExpiresAt    DateTime?
+  nextAttemptAt     DateTime?
+  externalReference String?
+  resultSafe        Json?
+  lastErrorSafe     Json?
+  failureClass      String?
+  retryable         Boolean?
+  unknownReason     String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  completedAt       DateTime?
+  project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, operationType, idempotencyKey])
+  @@index([status, nextAttemptAt])
+  @@index([leaseExpiresAt])
+  @@index([projectId, aggregateType, aggregateId])
+  @@map("outbox_records")
+}
+
+model NormalizedEvent {
+  id                 String              @id @default(uuid())
+  projectId          String
+  rawWebhookEventId  String
+  connectionId       String
+  channel            ChannelType
+  externalEventId    String
+  eventType          String
+  payload            Json
+  occurredAt         DateTime
+  createdAt          DateTime            @default(now())
+  project            Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rawWebhookEvent    RawWebhookEvent     @relation(fields: [projectId, rawWebhookEventId], references: [projectId, id])
+  connection         ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id])
+  scenarioExecutions ScenarioExecution[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, externalEventId])
+  @@index([projectId, occurredAt])
+  @@map("normalized_events")
+}
+
+model Message {
+  id                     String                @id @default(uuid())
+  projectId              String
+  conversationId         String
+  contactId              String
+  connectionId           String
+  channel                ChannelType
+  direction              MessageDirection
+  type                   String
+  text                   String?
+  content                Json?
+  externalMessageId      String?
+  status                 MessageStatus
+  source                 String
+  scenarioExecutionId    String?
+  broadcastId            String?
+  idempotencyKey         String?
+  errorSafe              Json?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  project                Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversation           Conversation          @relation(fields: [projectId, conversationId], references: [projectId, id])
+  contact                Contact               @relation(fields: [projectId, contactId], references: [projectId, id])
+  connection             ChannelConnection     @relation(fields: [projectId, connectionId], references: [projectId, id])
+  scenarioExecution      ScenarioExecution?    @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id])
+  broadcast              Broadcast?            @relation(fields: [projectId, broadcastId], references: [projectId, id])
+  statusEvents           MessageStatusEvent[]
+  resolvedOrphanStatuses OrphanMessageStatus[]
+  broadcastRecipient     BroadcastRecipient?
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, direction, externalMessageId])
+  @@index([projectId, conversationId, createdAt])
+  @@map("messages")
+}
+
+model MessageStatusEvent {
+  id                String           @id @default(uuid())
+  projectId         String
+  messageId         String
+  status            String
+  externalStatusKey String
+  externalTimestamp DateTime?
+  errorCode         String?
+  errorMessageSafe  String?
+  rawWebhookEventId String?
+  createdAt         DateTime         @default(now())
+  project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  message           Message          @relation(fields: [projectId, messageId], references: [projectId, id], onDelete: Cascade)
+  rawWebhookEvent   RawWebhookEvent? @relation(fields: [projectId, rawWebhookEventId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@unique([projectId, messageId, externalStatusKey])
+  @@map("message_status_events")
+}
+
+model OrphanMessageStatus {
+  id                String            @id @default(uuid())
+  projectId         String
+  connectionId      String
+  externalMessageId String
+  externalStatusKey String
+  status            String
+  normalizedPayload Json
+  occurredAt        DateTime?
+  resolutionStatus  String
+  resolvedMessageId String?
+  receivedAt        DateTime          @default(now())
+  resolvedAt        DateTime?
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection        ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id])
+  resolvedMessage   Message?          @relation(fields: [projectId, resolvedMessageId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, externalMessageId, externalStatusKey])
+  @@index([projectId, resolutionStatus, receivedAt])
+  @@map("orphan_message_statuses")
+}
+
+model Scenario {
+  id              String              @id @default(uuid())
+  projectId       String
+  name            String
+  description     String?
+  status          ScenarioStatus
+  activeVersionId String?
+  draftVersionId  String?
+  createdBy       String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions        ScenarioVersion[]   @relation("ScenarioVersions")
+  activeVersion   ScenarioVersion?    @relation("ScenarioActiveVersion", fields: [projectId, activeVersionId], references: [projectId, id])
+  draftVersion    ScenarioVersion?    @relation("ScenarioDraftVersion", fields: [projectId, draftVersionId], references: [projectId, id])
+  executions      ScenarioExecution[]
+
+  @@unique([projectId, id])
+  @@index([projectId, status])
+  @@map("scenarios")
+}
+
+model ScenarioVersion {
+  id                 String                @id @default(uuid())
+  projectId          String
+  scenarioId         String
+  version            Int
+  status             ScenarioVersionStatus
+  graph              Json
+  variablesSchema    Json
+  compiledDefinition Json?
+  validation         Json
+  contentHash        String
+  createdBy          String
+  createdAt          DateTime              @default(now())
+  publishedAt        DateTime?
+  project            Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenario           Scenario              @relation("ScenarioVersions", fields: [projectId, scenarioId], references: [projectId, id], onDelete: Cascade)
+  activeForScenarios Scenario[]            @relation("ScenarioActiveVersion")
+  draftForScenarios  Scenario[]            @relation("ScenarioDraftVersion")
+  executions         ScenarioExecution[]
+  waitStates         WaitState[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, scenarioId, version])
+  @@unique([projectId, scenarioId, contentHash])
+  @@map("scenario_versions")
+}
+
+model ScenarioExecution {
+  id                      String                  @id @default(uuid())
+  projectId               String
+  scenarioId              String
+  scenarioVersionId       String
+  contactId               String
+  conversationId          String
+  triggerEventId          String
+  triggerKey              String
+  conversationSequence    BigInt
+  status                  ScenarioExecutionStatus
+  currentNodeId           String?
+  variables               Json
+  correlationId           String
+  cancellationRequestedAt DateTime?
+  startedAt               DateTime?
+  waitingAt               DateTime?
+  completedAt             DateTime?
+  failedAt                DateTime?
+  errorSafe               Json?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  project                 Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenario                Scenario                @relation(fields: [projectId, scenarioId], references: [projectId, id])
+  scenarioVersion         ScenarioVersion         @relation(fields: [projectId, scenarioVersionId], references: [projectId, id])
+  contact                 Contact                 @relation(fields: [projectId, contactId], references: [projectId, id])
+  conversation            Conversation            @relation(fields: [projectId, conversationId], references: [projectId, id])
+  triggerEvent            NormalizedEvent         @relation(fields: [projectId, triggerEventId], references: [projectId, id])
+  nodeExecutions          NodeExecution[]
+  waitStates              WaitState[]
+  messages                Message[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, scenarioId, triggerKey])
+  @@index([projectId, conversationId, conversationSequence])
+  @@index([projectId, status, updatedAt])
+  @@map("scenario_executions")
+}
+
+model NodeExecution {
+  id                  String            @id @default(uuid())
+  projectId           String
+  scenarioExecutionId String
+  nodeId              String
+  nodeType            String
+  status              SideEffectStatus
+  inputSafe           Json
+  outputSafe          Json?
+  attempt             Int
+  attemptGroup        Int
+  idempotencyKey      String
+  startedAt           DateTime?
+  completedAt         DateTime?
+  errorSafe           Json?
+  project             Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenarioExecution   ScenarioExecution @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, scenarioExecutionId, nodeId, attemptGroup])
+  @@unique([projectId, idempotencyKey])
+  @@map("node_executions")
+}
+
+model WaitState {
+  id                  String            @id @default(uuid())
+  projectId           String
+  scenarioExecutionId String
+  scenarioId          String
+  scenarioVersionId   String
+  nodeId              String
+  conversationId      String
+  status              String
+  criteria            Json
+  expiresAt           DateTime
+  resolvedByEventId   String?
+  createdAt           DateTime          @default(now())
+  resolvedAt          DateTime?
+  project             Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenarioExecution   ScenarioExecution @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
+  scenarioVersion     ScenarioVersion   @relation(fields: [projectId, scenarioVersionId], references: [projectId, id])
+  conversation        Conversation      @relation(fields: [projectId, conversationId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@index([projectId, conversationId, scenarioId, status])
+  @@map("wait_states")
+}
+
+model MessageTemplate {
+  id                 String             @id @default(uuid())
+  projectId          String
+  connectionId       String?
+  channel            ChannelType
+  name               String
+  language           String?
+  category           String?
+  status             String
+  externalTemplateId String?
+  content            Json
+  variablesSchema    Json
+  lastSyncedAt       DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection         ChannelConnection? @relation(fields: [projectId, connectionId], references: [projectId, id])
+  broadcasts         Broadcast[]
+
+  @@unique([projectId, id])
+  @@index([projectId, channel, status])
+  @@map("message_templates")
+}
+
+model Broadcast {
+  id             String               @id @default(uuid())
+  projectId      String
+  connectionId   String
+  channel        ChannelType
+  name           String
+  status         BroadcastStatus
+  audienceFilter Json
+  templateId     String?
+  content        Json?
+  scheduledAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdBy      String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  project        Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection     ChannelConnection    @relation(fields: [projectId, connectionId], references: [projectId, id])
+  template       MessageTemplate?     @relation(fields: [projectId, templateId], references: [projectId, id])
+  recipients     BroadcastRecipient[]
+  messages       Message[]
+
+  @@unique([projectId, id])
+  @@index([projectId, status, scheduledAt])
+  @@map("broadcasts")
+}
+
+model BroadcastRecipient {
+  id                String                   @id @default(uuid())
+  projectId         String
+  broadcastId       String
+  contactId         String
+  channelIdentityId String
+  status            BroadcastRecipientStatus
+  messageId         String?                  @unique
+  attempts          Int                      @default(0)
+  lastErrorSafe     Json?
+  scheduledAt       DateTime?
+  sentAt            DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  project           Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  broadcast         Broadcast                @relation(fields: [projectId, broadcastId], references: [projectId, id], onDelete: Cascade)
+  contact           Contact                  @relation(fields: [projectId, contactId], references: [projectId, id])
+  channelIdentity   ChannelIdentity          @relation(fields: [projectId, channelIdentityId], references: [projectId, id])
+  message           Message?                 @relation(fields: [projectId, messageId], references: [projectId, id])
+
+  @@unique([projectId, id])
+  @@unique([projectId, messageId])
+  @@unique([projectId, broadcastId, channelIdentityId])
+  @@index([projectId, broadcastId, status])
+  @@map("broadcast_recipients")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  projectId      String?
+  actorUserId    String?
+  actorType      String
+  action         String
+  entityType     String
+  entityId       String?
+  beforeSafeJson Json?
+  afterSafeJson  Json?
+  ip             String?
+  userAgent      String?
+  correlationId  String
+  reason         String?
+  createdAt      DateTime @default(now())
+  purgeAfter     DateTime
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@index([projectId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([correlationId])
+  @@index([purgeAfter])
+  @@map("audit_logs")
+}

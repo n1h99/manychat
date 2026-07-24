@@ -1,0 +1,45 @@
+# Operations runbook — Stage 0 skeleton
+
+## Health probes
+
+- web `/health/live`: static server process is accepting requests;
+- API `/health/live`: API process is accepting requests;
+- API `/health/ready`: PostgreSQL and Redis answer probes;
+- worker `/health/live`: worker HTTP process is accepting requests;
+- worker `/health/ready`: a BullMQ queue operation completes through Redis.
+
+Readiness failure must remove a service from traffic; it must not trigger schema
+changes or migration commands.
+
+## Graceful shutdown
+
+API shutdown hooks close Prisma and Redis clients. Worker shutdown hooks stop the
+BullMQ consumer before closing its queue connection. Railway should send the
+normal termination signal and allow the process to exit before force termination.
+
+## Local dependency recovery
+
+```powershell
+docker compose ps
+docker compose logs postgres redis
+docker compose restart postgres redis
+```
+
+After recovery, verify API and worker `/health/ready`.
+
+## Database changes
+
+There is no Stage 0 migration. Never use `prisma db push` against shared or
+production databases. The initial migration requires:
+
+1. successful `pnpm db:validate`;
+2. reviewed generated SQL;
+3. tenant constraint review against `docs/DATABASE.md`;
+4. an explicit approval and migration report.
+
+## Backup restore
+
+The accepted pilot targets are RPO 24 hours and RTO 4 hours. A real restore test
+has not yet been performed because Stage 0 has no deployed database. Before pilot
+deployment, record backup identifier, restore destination, timestamps, integrity
+checks, measured RPO/RTO and cleanup confirmation in an operations report.

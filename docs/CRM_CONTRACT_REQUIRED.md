@@ -36,10 +36,7 @@ interface CrmClient {
     input: ForwardInboundMessageInput,
   ): Promise<CrmMessageResult>;
 
-  syncContact(
-    context: CrmCallContext,
-    input: SyncContactInput,
-  ): Promise<CrmSyncResult>;
+  syncContact(context: CrmCallContext, input: SyncContactInput): Promise<CrmSyncResult>;
 
   reconcileOperation?(
     context: CrmCallContext,
@@ -85,19 +82,19 @@ interface CrmClient {
 
 Перед production implementation нужно зафиксировать:
 
-| Область | Обязательное решение |
-|---|---|
-| Authentication | Заголовки, token lifetime, rotation, scopes |
-| Project routing | Как `CrmProjectConfig.crmProjectId` попадает в запрос |
-| Lead upsert | Natural/idempotency key и conflict semantics |
-| Message forwarding | Поддерживаемые типы и attachments |
-| Callback security | HMAC/secret, timestamp, replay window |
-| Idempotency | Provider key, lookup/reconciliation либо ограничения |
-| Errors | Retryable, permanent, validation, rate-limit |
-| Timeouts | Connect/read/overall timeout |
-| Limits | Payload, rate, concurrency |
-| Observability | Safe request/response fields и correlation |
-| Compatibility | API version и deprecation policy |
+| Область            | Обязательное решение                                  |
+| ------------------ | ----------------------------------------------------- |
+| Authentication     | Заголовки, token lifetime, rotation, scopes           |
+| Project routing    | Как `CrmProjectConfig.crmProjectId` попадает в запрос |
+| Lead upsert        | Natural/idempotency key и conflict semantics          |
+| Message forwarding | Поддерживаемые типы и attachments                     |
+| Callback security  | HMAC/secret, timestamp, replay window                 |
+| Idempotency        | Provider key, lookup/reconciliation либо ограничения  |
+| Errors             | Retryable, permanent, validation, rate-limit          |
+| Timeouts           | Connect/read/overall timeout                          |
+| Limits             | Payload, rate, concurrency                            |
+| Observability      | Safe request/response fields и correlation            |
+| Compatibility      | API version и deprecation policy                      |
 
 ## Configuration ownership
 
