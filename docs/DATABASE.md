@@ -2,29 +2,58 @@
 
 ## Статус
 
-Проект реализован в `packages/database/prisma/schema.prisma` на Prisma 7.9.0 и
-успешно проходит `prisma validate`. Файл не является migration и не должен
-применяться к БД до review generated SQL и отдельного разрешения initial
-migration.
+Executable baseline находится в
+`packages/database/prisma/schema.prisma` на Prisma 7.9.0. На Этапе 0 он должен
+проходить `prisma validate` и SQL diff review, но не является migration и не
+применяется к БД.
+
+Initial migration будет stage-sliced. Первый baseline, который разрешено
+предложить на Этапе 1, содержит только Auth/RBAC/Projects и необходимый audit.
+Contacts, channels, inbox/outbox, automation, CRM и остальные модели ниже
+остаются design proposal до соответствующего этапа и не входят в executable
+schema. Поэтому первая migration не создаёт около 40 преждевременных таблиц.
 
 ## Главные правила
 
 1. PostgreSQL является источником истины.
 2. Все tenant-owned models содержат обязательный `projectId`.
-3. Каждая tenant model объявляет `@@unique([projectId, id])`.
+3. Каждая строго tenant-owned model объявляет `@@unique([projectId, id])`.
+   Dual-scope `AuditLog` использует глобально уникальный primary key и не
+   создаёт misleading nullable composite unique.
 4. Tenant relation использует composite foreign key
    `fields: [projectId, entityId], references: [projectId, id]`.
 5. Cross-project references проверяются PostgreSQL constraints и application
    project guard.
 6. Provider identifiers хранятся как `String`, даже если текущий API возвращает
    число.
-7. Timestamps хранятся UTC.
+7. Event, audit, lifecycle и expiry timestamps используют PostgreSQL
+   `TIMESTAMPTZ(3)` и хранятся в UTC.
 8. Raw webhook body хранится как `Bytes`, чтобы сохранить точные валидные bytes
    и пережить JSON parse errors; parsed payload, safe request/response и mappings
    используют `Json`.
 9. Secret plaintext и refresh token plaintext не хранятся.
-10. Partial indexes/check constraints, недоступные в Prisma schema, добавляются
-    reviewed SQL в migration.
+10. Partial indexes/check constraints, которые нельзя надёжно выразить в
+    текущей Prisma schema, сначала фиксируются в reviewed SQL proposal, затем
+    добавляются в migration соответствующего этапа.
+11. Global и project RBAC не разделяют nullable scope columns: для каждого
+    boundary используются отдельные таблицы.
+12. Hard delete Project запрещён при наличии tenant-owned role, membership,
+    invite либо audit history: все прямые Stage 1 project foreign keys
+    используют `RESTRICT`. Audit хранит immutable project name/slug snapshots.
+
+## Stage-sliced migration map
+
+| Slice            | Executable models                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invites, `Permission`, global/project roles and assignments, `Project`, `AuditLog` |
+| Stage 2          | contacts, tags, custom field definitions and values                                                                                        |
+| Stage 3          | channel connections, webhook records, inbox/outbox, idempotency and messages                                                               |
+| Stage 4          | scenarios and execution journal                                                                                                            |
+| Stage 5          | project-specific CRM configuration after the CRM contract gate                                                                             |
+| Post-pilot       | broadcasts, Wait, Delay, Subflow and advanced media workflows                                                                              |
+
+Каждый slice получает отдельный generated SQL review. Ни одна будущая модель не
+добавляется в Stage 1 baseline «про запас».
 
 ## Enum proposal
 
@@ -141,10 +170,58 @@ enum MediaAssetStatus {
 }
 ```
 
-Broadcast enums остаются в schema как future-compatible, но не реализуются в
-pilot.
+Broadcast enums остаются только в future design proposal и не входят в
+executable schema или pilot.
 
-## Auth и RBAC
+## Auth и RBAC — executable Stage 1 proposal
+
+Executable proposal использует отдельные физические boundaries:
+
+| Global boundary         | Project boundary                    |
+| ----------------------- | ----------------------------------- |
+| `GlobalRole`            | `ProjectRole(projectId)`            |
+| `GlobalRolePermission`  | `ProjectRolePermission(projectId)`  |
+| `GlobalUserRole`        | `ProjectMembership(projectId)`      |
+| `GlobalUserInviteToken` | `ProjectUserInviteToken(projectId)` |
+
+Инварианты:
+
+- nullable `projectId` и nullable composite foreign keys в RBAC отсутствуют;
+- `GlobalRolePermission` всегда ссылается на существующий `GlobalRole`;
+- project permission, membership и invite ссылаются на role по
+  `(projectId, projectRoleId)`, поэтому cross-project assignment невозможен;
+- project invite имеет обязательный `projectId`; удаление role использует
+  `RESTRICT`, а не `SET NULL`, поэтому invite не превращается в orphan и не
+  теряет tenant boundary;
+- удаление Project не каскадирует role, membership, invite или audit history;
+  lifecycle использует archive/state transition, а hard delete требует
+  отдельной контролируемой процедуры;
+- role assignment unique для `(userId, globalRoleId)` либо
+  `(projectId, userId)`;
+- invitation token hash уникален глобально; email хранится как display snapshot
+  и отдельный `normalizedEmail`;
+- session rotation ссылается на replacement по
+  `(replacedBySessionId, userId, tokenFamilyId)`, поэтому replacement из другой
+  user/token family невозможен; nullable `replacedBySessionId` означает только
+  отсутствие следующей rotation, а не orphan reference;
+- hard delete User с существующей session family использует `RESTRICT`, чтобы
+  cascade не конфликтовал с self-relation и не уничтожал security evidence;
+- inviter может быть удалён через `SET NULL`, но immutable email snapshot
+  сохраняется для audit;
+- все FK, участвующие в delete/restrict/set-null checks, имеют supporting index;
+- все lifecycle timestamps используют `TIMESTAMPTZ(3)`;
+- active-invite partial uniqueness уже входит в generated Stage 1 SQL proposal:
+  одна active invitation на `(normalizedEmail, globalRoleId)` и одна на
+  `(projectId, normalizedEmail)`, где `acceptedAt IS NULL AND revokedAt IS NULL`;
+  фактическая migration всё ещё не создана и требует отдельного approval.
+
+Полная Prisma-форма этих моделей является единственным executable источником в
+`packages/database/prisma/schema.prisma`.
+
+### Отклонённая nullable-scope модель
+
+Следующий первоначальный фрагмент сохранён только как контекст review и не
+является executable proposal:
 
 ```prisma
 model User {
@@ -269,10 +346,9 @@ model ProjectMembership {
 }
 ```
 
-Migration-level CHECK должен запрещать `GlobalUserRole` для не-GLOBAL Role и
-ProjectMembership для Role другого project/scope. System project roles создаются
-для каждого project либо materialize-ятся явно; скрытая cross-tenant ссылка на
-общую mutable role запрещена.
+Этот вариант отклонён: migration-level CHECK не компенсирует nullable composite
+foreign key. System project roles создаются отдельно для каждого project;
+скрытая cross-tenant ссылка на общую mutable role запрещена.
 
 ## Project и CRM project configuration
 
@@ -876,6 +952,13 @@ model WaitState {
 }
 ```
 
+При добавлении Stage 4 relations `activeVersionId`, `draftVersionId` и
+`scenarioVersionId` обязаны ссылаться composite keys
+`(projectId, scenarioId, versionId)`. Простая ссылка только по `versionId`
+запрещена: она позволила бы Scenario или execution закрепить версию другого
+scenario того же tenant. До появления этих constraints модели не входят в
+executable schema.
+
 Для одного active Wait на `(projectId, conversationId, scenarioId)` требуется
 partial unique index `WHERE status = 'ACTIVE'`, добавляемый migration SQL.
 Wait/Subflow не реализуются в pilot, но schema reserved для совместимости можно
@@ -897,23 +980,27 @@ Audience фиксируется snapshot recipients при `PREPARING`, а не 
 
 ```prisma
 model AuditLog {
-  id             String   @id @default(uuid())
-  projectId      String?
-  actorUserId    String?
-  actorType      String
-  action         String
-  entityType     String
-  entityId       String?
-  beforeSafeJson Json?
-  afterSafeJson  Json?
-  ip             String?
-  userAgent      String?
-  correlationId  String
-  reason         String?
-  createdAt      DateTime @default(now())
-  purgeAfter     DateTime
+  id                  String   @id @default(uuid())
+  projectId           String?
+  projectNameSnapshot String?
+  projectSlugSnapshot String?
+  actorUserId         String?
+  actorEmailSnapshot  String?
+  actorType           String
+  action              String
+  entityType          String
+  entityId            String?
+  beforeSafeJson      Json?
+  afterSafeJson       Json?
+  ip                  String?
+  userAgent           String?
+  correlationId       String
+  reason              String?
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  purgeAfter          DateTime @db.Timestamptz(3)
+  project             Project? @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  actor               User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
-  @@unique([projectId, id])
   @@index([projectId, createdAt])
   @@index([actorUserId, createdAt])
   @@index([correlationId])
@@ -922,16 +1009,27 @@ model AuditLog {
 ```
 
 `projectId` nullable только для действительно global auth/security actions.
-Project action всегда обязан иметь projectId.
+Project action всегда обязана иметь `projectId`,
+`projectNameSnapshot` и `projectSlugSnapshot`. Relation использует
+`ON DELETE RESTRICT`, а не `CASCADE`: проект нельзя hard-delete до завершения
+audit retention/purge workflow. Actor может стать `NULL`, но
+`actorEmailSnapshot` остаётся immutable.
 
 ## Migration review checklist
 
 Перед первой migration:
 
+- подтвердить, что generated SQL создаёт только Stage 1 slice;
+- сверить committed SQL proposal с повторным `prisma migrate diff`;
+- проверить отсутствие nullable RBAC composite foreign keys;
+- проверить project role/invite/member FKs по `(projectId, projectRoleId)`;
+- проверить `AuditLog.project ON DELETE RESTRICT` и immutable snapshots;
+- проверить, что lifecycle timestamps сгенерированы как
+  `TIMESTAMP(3) WITH TIME ZONE`;
 - заменить string state/type fields на enums, если provider extensibility не
   требует string;
 - проверить все generated foreign keys и `ON DELETE`;
-- добавить partial unique index active Wait;
+- active Wait partial uniqueness добавить только в Stage 4 migration;
 - добавить CHECK для Role scope и typed custom values;
 - проверить nullable unique semantics;
 - добавить index для outbox/inbox relay без full-table scan;

@@ -1,7 +1,7 @@
-* text=auto
-*.md text eol=lf
-*.ts text eol=lf
-*.tsx text eol=lf
-*.json text eol=lf
-*.yaml text eol=lf
-*.yml text eol=lf
+* text=auto eol=lf
+
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.webp binary

@@ -298,3 +298,98 @@ monorepo с отдельными build/start commands и healthchecks. На Эт
 
 **Последствия:** Stage 0 не создаёт cookies и auth endpoints; production origins
 не выводятся автоматически и задаются environment variables.
+
+## ADR-018. Stage-sliced baseline и физические RBAC boundaries
+
+**Статус:** Accepted.
+
+**Контекст:** первоначальный full-domain Prisma proposal создавал около сорока
+таблиц в первой migration. Nullable `Role.projectId` и composite references
+позволяли `RolePermission` без фактического parent role, а project invite мог
+потерять role boundary.
+
+**Решение:** executable Prisma schema до Этапа 1 содержит только
+Auth/RBAC/Projects и audit infrastructure. Последующие домены добавляются
+отдельными migrations на своих этапах. Global и project roles, permissions,
+assignments и invites представлены разными таблицами. Project relations всегда
+включают обязательный `projectId`; project invite → role использует
+`ON DELETE RESTRICT`. `AuditLog.project` также использует `RESTRICT` и хранит
+immutable project snapshots.
+
+**Последствия:** nullable RBAC scope и orphan assignments невозможны по
+структуре. Первая migration остаётся небольшой и reviewable. Полный design
+proposal в `docs/DATABASE.md` не является executable schema. Любое изменение
+slice требует нового SQL diff review; migration Этапа 0 по-прежнему не
+создаётся.
+
+## ADR-019. Минимальный production web server
+
+**Статус:** Accepted.
+
+**Контекст:** исходный Stage 0 static server выполнял `decodeURIComponent`
+вне error boundary и не обрабатывал stream errors, поэтому malformed URL либо
+ошибка чтения могли завершить process.
+
+**Решение:** сохранить минимальный Node.js HTTP server без новой runtime
+зависимости. Весь request pipeline обёрнут единым error boundary; malformed
+percent encoding возвращает `400`, отсутствующий asset — `404`, extensionless
+route — SPA fallback. File-open/stream errors логируются и изолируются. Server
+добавляет baseline security headers и отдельные live/ready endpoints.
+
+**Последствия:** production behavior покрывается regression tests против
+собранного Vite artifact. Готовый static-server package не добавляется: текущий
+surface мал, а новая dependency не уменьшила бы review scope.
+
+## ADR-020. Stage 0 dependency advisory policy
+
+**Статус:** Accepted.
+
+**Контекст:** audit от 24 июля 2026 обнаружил high advisories
+`GHSA-c96f-x56v-gq3h` (`find-my-way <= 9.6.0`),
+`GHSA-pm4m-ph32-ghv5` (`js-yaml <= 5.2.1`) и
+`GHSA-qwww-vcr4-c8h2` (`react-router >= 7.12.0 < 8.3.0`). Повторная проверка
+также выявила moderate `GHSA-5qjj-4xww-7phc` (`valibot <= 1.4.1`).
+
+**Решение:** production audit блокирует high/critical. Для transitive packages
+используются узкие pnpm overrides на официально исправленные
+`find-my-way 9.7.0`, `js-yaml 5.2.2` и `valibot 1.4.2`; overrides проверяются
+полным набором tests/build. React Router обновляется напрямую до `8.3.0`,
+потому что patched 7.x не существует. `react-router-dom` удалён согласно
+официальному v8 upgrade guide; declarative imports перенесены в `react-router`.
+
+**Последствия:** major Router upgrade принят только как security remediation.
+Минимальные v8 requirements выполняются Node 24.13+, React 19.2.8 и Vite 8.1.
+Новые исключения допускаются только по процессу
+`docs/DEPENDENCY_EXCEPTIONS.md`; текущих исключений нет.
+
+## ADR-021. Runtime configuration и artifacts разделены по trust boundary
+
+**Статус:** Accepted.
+
+**Контекст:** общий config entry point позволял browser build разрешать
+server-only validation code. Загрузка `.env`, зависящая от CWD, и development
+fallbacks также делали поведение clean clone, Railway и Prisma CLI
+неоднозначным. Полная workspace installation не нужна в runtime artifacts API
+и worker.
+
+**Решение:**
+
+- экспортировать browser и server configuration только через
+  `@omnicus/config/web` и `@omnicus/config/server`;
+- находить корневой `.env` относительно module location, а не CWD; не искать
+  CWD fallback в standalone artifact и игнорировать `.env`, когда
+  staging/production `APP_ENV` уже задан process environment;
+- требовать явные staging/production values и проверять protocol/origin
+  allowlists до bootstrap;
+- собирать `.runtime` artifacts, в которых API/worker содержат только production
+  dependencies, удалять недостижимые entries из pnpm isolated virtual store и
+  stale generated/build output, а web source maps отключать;
+- позволить Railpack выполнить lockfile installation один раз; service build
+  commands выполняют preflight и filtered build без повторного install.
+
+**Последствия:** production build/process рано завершается при отсутствующей или
+опасной конфигурации. Web output сканируется на server variable/schema markers.
+Prisma validate может использовать явный non-connecting placeholder, но
+migration/seed не могут его унаследовать. Текущий размер Stage 0 web chunk принят
+без route splitting; lazy route boundaries пересматриваются при добавлении
+первых business modules.

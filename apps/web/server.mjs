@@ -1,81 +1,309 @@
-import { createReadStream, existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { createReadStream, readFileSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { extname, join, normalize } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const distDirectory = fileURLToPath(new URL('./dist/', import.meta.url));
-const port = Number.parseInt(process.env.PORT ?? '3000', 10);
-const host = process.env.HOST ?? '0.0.0.0';
+const defaultDistDirectory = fileURLToPath(new URL('./dist/', import.meta.url));
 
 const contentTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
+  ['.ico', 'image/x-icon'],
   ['.js', 'text/javascript; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
-  ['.map', 'application/json; charset=utf-8'],
   ['.svg', 'image/svg+xml'],
+  ['.webp', 'image/webp'],
 ]);
 
-function sendJson(response, statusCode, body) {
-  response.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+function loadApiOrigin(distDirectory, logger) {
+  try {
+    const runtimeConfig = JSON.parse(
+      readFileSync(resolve(distDirectory, 'runtime-config.json'), 'utf8'),
+    );
+    const apiUrl = new URL(runtimeConfig.apiUrl);
+    if (apiUrl.protocol !== 'http:' && apiUrl.protocol !== 'https:') {
+      throw new Error('runtime API URL must use HTTP or HTTPS');
+    }
+    return apiUrl.origin;
+  } catch (error) {
+    logger({
+      level: 'warn',
+      message:
+        error instanceof Error
+          ? `Runtime API origin unavailable: ${error.message}`
+          : 'Runtime API origin unavailable',
+      service: 'web',
+    });
+    return undefined;
+  }
+}
+
+function createSecurityHeaders(apiOrigin) {
+  return {
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      "base-uri 'self'",
+      `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''}`,
+      "font-src 'self' data:",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "img-src 'self' data:",
+      "object-src 'none'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+    ].join('; '),
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Permissions-Policy': 'camera=(), geolocation=(), microphone=()',
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+  };
+}
+
+class HttpRequestError extends Error {
+  constructor(statusCode, code, message) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
+function writeHeaders(response, securityHeaders, headers = {}) {
+  for (const [name, value] of Object.entries({ ...securityHeaders, ...headers })) {
+    response.setHeader(name, value);
+  }
+}
+
+function sendJson(response, securityHeaders, statusCode, body) {
+  writeHeaders(response, securityHeaders, {
+    'Cache-Control': 'no-store',
+    'Content-Type': 'application/json; charset=utf-8',
+  });
+  response.statusCode = statusCode;
   response.end(JSON.stringify(body));
 }
 
-const server = createServer(async (request, response) => {
-  if (request.url === '/health/live' || request.url === '/health/ready') {
-    sendJson(response, 200, { data: { service: 'web', status: 'live' }, meta: {} });
-    return;
-  }
+function decodeRequestPath(requestUrl) {
+  const rawUrl = requestUrl ?? '/';
 
-  const requestPath = decodeURIComponent((request.url ?? '/').split('?')[0] ?? '/');
-  const normalizedPath = normalize(requestPath).replace(/^([/\\])+/, '');
-  const candidate = join(distDirectory, normalizedPath);
-  const safeCandidate = candidate.startsWith(distDirectory)
-    ? candidate
-    : join(distDirectory, 'index.html');
-
-  let filePath = safeCandidate;
   try {
-    const fileStat = await stat(filePath);
-    if (fileStat.isDirectory()) {
-      filePath = join(filePath, 'index.html');
-    }
+    decodeURIComponent(rawUrl);
   } catch {
-    filePath = join(distDirectory, 'index.html');
+    throw new HttpRequestError(400, 'MALFORMED_URL', 'Malformed URL encoding');
   }
 
-  if (!existsSync(filePath)) {
-    sendJson(response, 503, {
-      error: {
-        code: 'WEB_BUILD_MISSING',
-        message: 'Web build is not available',
-      },
+  const rawPath = rawUrl.split('?', 1)[0] || '/';
+  return decodeURIComponent(rawPath);
+}
+
+function resolveCandidate(distDirectory, requestPath) {
+  const candidate = resolve(distDirectory, requestPath.replace(/^[/\\]+/, ''));
+  const relativeCandidate = relative(distDirectory, candidate);
+
+  if (
+    relativeCandidate === '..' ||
+    relativeCandidate.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+    isAbsolute(relativeCandidate)
+  ) {
+    throw new HttpRequestError(400, 'INVALID_PATH', 'Invalid request path');
+  }
+
+  return candidate;
+}
+
+async function resolveFilePath(distDirectory, requestPath) {
+  const candidate = resolveCandidate(distDirectory, requestPath);
+
+  try {
+    const candidateHandle = await open(candidate, 'r');
+    const candidateStat = await candidateHandle.stat();
+    await candidateHandle.close();
+
+    if (candidateStat.isFile()) {
+      return candidate;
+    }
+
+    if (candidateStat.isDirectory()) {
+      return resolve(candidate, 'index.html');
+    }
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  if (extname(requestPath).length > 0) {
+    throw new HttpRequestError(404, 'ASSET_NOT_FOUND', 'Static asset was not found');
+  }
+
+  return resolve(distDirectory, 'index.html');
+}
+
+async function serveFile(response, requestMethod, filePath, fileOpener, securityHeaders) {
+  const fileHandle = await fileOpener(filePath, 'r');
+
+  try {
+    const fileStat = await fileHandle.stat();
+    if (!fileStat.isFile()) {
+      throw new HttpRequestError(404, 'ASSET_NOT_FOUND', 'Static asset was not found');
+    }
+
+    writeHeaders(response, securityHeaders, {
+      'Cache-Control': filePath.endsWith('index.html')
+        ? 'no-cache'
+        : 'public, max-age=31536000, immutable',
+      'Content-Length': String(fileStat.size),
+      'Content-Type': contentTypes.get(extname(filePath)) ?? 'application/octet-stream',
     });
-    return;
+    response.statusCode = 200;
+
+    if (requestMethod === 'HEAD') {
+      response.end();
+      return;
+    }
+
+    await pipeline(createReadStream('', { fd: fileHandle.fd, autoClose: false }), response);
+  } finally {
+    await fileHandle.close().catch(() => undefined);
   }
+}
 
-  response.writeHead(200, {
-    'Cache-Control': filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000',
-    'Content-Type': contentTypes.get(extname(filePath)) ?? 'application/octet-stream',
-  });
-  createReadStream(filePath).pipe(response);
-});
+function defaultLogger(entry) {
+  const stream = entry.level === 'error' ? process.stderr : process.stdout;
+  stream.write(`${JSON.stringify(entry)}\n`);
+}
 
-server.listen(port, host, () => {
-  process.stdout.write(
-    `${JSON.stringify({ level: 'log', message: 'Web server started', host, port, service: 'web' })}\n`,
-  );
-});
+export function createWebServer({
+  distDirectory = defaultDistDirectory,
+  fileOpener = open,
+  logger = defaultLogger,
+} = {}) {
+  const resolvedDistDirectory = resolve(distDirectory);
+  const securityHeaders = createSecurityHeaders(loadApiOrigin(resolvedDistDirectory, logger));
 
-function shutdown(signal) {
-  process.stdout.write(
-    `${JSON.stringify({ level: 'log', message: 'Web server shutting down', service: 'web', signal })}\n`,
-  );
-  server.close((error) => {
-    process.exitCode = error ? 1 : 0;
+  return createServer((request, response) => {
+    void (async () => {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        throw new HttpRequestError(405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
+      }
+
+      const requestPath = decodeRequestPath(request.url);
+
+      if (requestPath === '/health/live') {
+        sendJson(response, securityHeaders, 200, {
+          data: { service: 'web', status: 'live' },
+          meta: {},
+        });
+        return;
+      }
+
+      if (requestPath === '/health/ready') {
+        const indexPath = resolve(resolvedDistDirectory, 'index.html');
+        const indexHandle = await fileOpener(indexPath, 'r');
+        try {
+          const indexStat = await indexHandle.stat();
+          if (!indexStat.isFile()) {
+            throw new HttpRequestError(503, 'WEB_BUILD_MISSING', 'Web build is not available');
+          }
+        } finally {
+          await indexHandle.close().catch(() => undefined);
+        }
+        sendJson(response, securityHeaders, 200, {
+          data: { service: 'web', status: 'ready' },
+          meta: {},
+        });
+        return;
+      }
+
+      const filePath = await resolveFilePath(resolvedDistDirectory, requestPath);
+      await serveFile(response, request.method, filePath, fileOpener, securityHeaders);
+    })().catch((error) => {
+      const requestError = error instanceof HttpRequestError ? error : undefined;
+
+      logger({
+        code: requestError?.code ?? 'WEB_REQUEST_FAILED',
+        level: requestError && requestError.statusCode < 500 ? 'warn' : 'error',
+        message: error instanceof Error ? error.message : 'Unknown web server error',
+        method: request.method,
+        path: request.url?.split('?', 1)[0],
+        service: 'web',
+      });
+
+      if (response.headersSent) {
+        response.destroy();
+        return;
+      }
+
+      sendJson(response, securityHeaders, requestError?.statusCode ?? 500, {
+        error: {
+          code: requestError?.code ?? 'WEB_INTERNAL_ERROR',
+          message: requestError?.message ?? 'An internal server error occurred',
+        },
+      });
+    });
   });
 }
 
-process.once('SIGINT', () => shutdown('SIGINT'));
-process.once('SIGTERM', () => shutdown('SIGTERM'));
+export async function startWebServer() {
+  const portValue = process.env.PORT ?? '3000';
+  const port = Number(portValue);
+  const host = process.env.HOST ?? '0.0.0.0';
+
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`PORT must be an integer between 1 and 65535; received ${portValue}`);
+  }
+
+  const server = createWebServer();
+  await new Promise((resolveListen, rejectListen) => {
+    server.once('error', rejectListen);
+    server.listen(port, host, () => {
+      server.off('error', rejectListen);
+      resolveListen();
+    });
+  });
+
+  defaultLogger({
+    host,
+    level: 'log',
+    message: 'Web server started',
+    port,
+    service: 'web',
+  });
+
+  let closing = false;
+  const shutdown = (signal) => {
+    if (closing) {
+      return;
+    }
+    closing = true;
+    defaultLogger({
+      level: 'log',
+      message: 'Web server shutting down',
+      service: 'web',
+      signal,
+    });
+    server.close((error) => {
+      process.exitCode = error ? 1 : 0;
+    });
+  };
+
+  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+const isEntrypoint =
+  process.argv[1] !== undefined &&
+  resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+
+if (isEntrypoint) {
+  void startWebServer().catch((error) => {
+    defaultLogger({
+      level: 'error',
+      message: error instanceof Error ? error.message : 'Unknown web bootstrap error',
+      service: 'web',
+    });
+    process.exitCode = 1;
+  });
+}
