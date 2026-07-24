@@ -1,0 +1,56 @@
+# OMNICUS — edge case decision table
+
+Обозначения статусов соответствуют `docs/STATE_MACHINES.md`.
+
+| Условие | Ожидаемое действие | Итоговый статус | Retry | Audit |
+|---|---|---|---|---|
+| Повтор Telegram webhook с тем же `update_id` | Вернуть успешное подтверждение, найти существующий inbox, не повторять domain effects | Исходный InboxRecord без изменения | Нет нового retry | Technical duplicate event; audit не нужен |
+| Невалидная webhook подпись | Не сохранять raw body; сохранить safe rejection metadata; отклонить запрос | InboxRecord не создаётся | Нет | Security log; audit только при manual investigation action |
+| Webhook body больше 2 MB | Прекратить чтение/parsing, raw body не сохранять | InboxRecord не создаётся | Нет | Security/technical metric |
+| Подпись валидна, но webhook body не является допустимым JSON | Сохранить точные raw bytes и InboxRecord, parser фиксирует permanent malformed payload | Inbox `failed` | Manual только если adapter/parser исправлен | Manual retry audited |
+| PostgreSQL недоступен при webhook | Не подтверждать durable acceptance; вернуть retryable HTTP response | Запись отсутствует | Provider retry | Alert, без user audit |
+| Inbox commit успешен, BullMQ job потерян | Relay находит `received` record и повторно сигнализирует job | `received → processing` | Автоматический | Technical recovery |
+| Worker упал после inbox claim | Lease истекает, recovery повторно claim-ит record | `processing → received/processing` логически через recovery | Автоматический | Technical recovery |
+| Worker упал после domain commit | Idempotency/unique constraints обнаруживают уже применённый результат | `processed` | Safe replay | Technical duplicate |
+| Внешний side effect завершился подтверждённой ошибкой до применения | Сохранить classified error | Outbox `failed` | Автоматический для retryable, manual для permanent | Manual retry audited |
+| Worker потерял соединение после возможного side effect | Не повторять вслепую; запустить reconciliation | Outbox `unknown` | Только reconciliation; затем manual | Alert; manual action audited |
+| Reconciliation подтверждает, что effect применён | Сохранить external result/reference | `unknown → succeeded` | Нет | Technical reconciliation |
+| Reconciliation подтверждает отсутствие effect | Вернуть intent в очередь | `unknown → pending` | Автоматический/manual | Manual decision audited |
+| Reconciliation не даёт ответа | Оставить оператору с контекстом риска | `unknown` | Manual only | Обязательный audit |
+| Provider status пришёл раньше Message | Сохранить нормализованный orphan status | `OrphanMessageStatus.pending` | Attachment scan | Technical |
+| Message появился после orphan status | Транзакционно присоединить статусы и вычислить monotonic projection | Orphan `resolved`, Message соответствующий highest status | Автоматический | Нет |
+| Старый status пришёл после более нового | Сохранить факт, не понижать Message status | Message без regression | Нет | Нет |
+| Пользователь заблокировал Telegram bot | Обновить identity/consent, прекратить outbound | Identity blocked; pending outbound `failed/cancelled` | Не retry до unblock | Technical; manual override audited |
+| Telegram вернул `429 retry_after` | Установить `nextAttemptAt`, не занимать worker sleep | Outbox `failed` retryable | В указанное provider время + jitter | Нет |
+| Telegram permanent error | Остановить blind retry, записать safe code | Outbox/Message `failed` | Manual после исправления | Manual retry audited |
+| Project paused получает валидный webhook | Подтвердить после durable commit, не запускать automation | Inbox `deferred` | Resume requeues | Project pause/resume уже audited |
+| Project archived получает stale webhook | Проверить подпись, подтвердить без business processing | Inbox `ignored` либо safe technical record | Нет | Technical warning |
+| Channel disabled при наличии queued messages | Не начинать новые calls; pending intents завершить по disable policy | Message `cancelled`, Outbox `failed` с permanent `CHANNEL_DISABLED` | Нет blind retry | Disable action audited |
+| Secret rotated во время delivery | Attempt использует pinned secret version; ограниченное overlap window для webhook | Текущий attempt terminal; новые используют новую version | Обычная policy | Rotation audited |
+| Два inbound message одной conversation одновременно | Назначить sequence и обработать последовательно | Два inbox processed по порядку | Lease recovery | Нет |
+| Одно событие совпало с двумя scenarios | Создать execution каждого scenario; не предполагать порядок | Оба `queued` | Каждый независимо | Technical correlation |
+| Повтор trigger пытается создать тот же execution | Unique trigger/execution idempotency отклоняет duplicate | Существующий execution | Нет нового | Technical duplicate |
+| Condition получает `null` для numeric comparison | Не coercе-ить; выбрать configured false/error edge | Execution продолжает либо `failed` по config | Нет, если config error permanent | Publish validation; runtime error technical |
+| Два active edge на обычном output port | Отклонить publish | Scenario остаётся draft/published old version active | Нет | Publish attempt audited |
+| Graph содержит unguarded cycle | Отклонить publish с cycle path | Scenario active version без изменения | Нет | Publish attempt audited |
+| Draft изменён при active published version | Сохранять отдельный draft, active version не менять | Scenario `published` | Autosave optimistic retry | Нет |
+| Два редактора сохраняют один draft revision | Отклонить stale write, предложить reload/merge | Draft без потери новой revision | Клиентский retry после merge | Technical conflict |
+| Wait reply и timeout приходят одновременно | Conditional claim/row lock разрешает только одного победителя | Wait resolved одним event | Проигравший no-op | Technical race record |
+| Два active Wait для одного conversation/scenario | Второй Wait не создаётся | Execution остаётся running/failed edge | Нет | Technical validation |
+| Contact merge с active executions | Запретить merge либо выполнить controlled rebind только отдельной policy; pilot запрещает | Contacts без изменения | Нет | Failed merge attempt audited |
+| CRM недоступна до request | Outbox retryable failure, webhook уже подтверждён | Outbox `failed`, execution queued/failed according node retry | Automatic bounded | Alert after threshold |
+| CRM timeout после возможного применения | Не делать blind retry | Outbox `unknown` | Reconciliation/manual | Обязательный при manual |
+| Повтор CRM callback event | Inbox/idempotency на event ID возвращает prior result | Existing processed record | Нет | Technical duplicate |
+| CRM callback указывает чужой projectId | Не маршрутизировать по caller field; отклонить mapping mismatch | Inbox failed/security rejection | Нет | Security alert/audit |
+| Raw valid webhook достиг 30 дней | Retention job удаляет payload, оставляет минимальную technical projection при необходимости | Payload purged | Job automatic retry | Retention job technical |
+| Technical log достиг 30 дней | Удалить/архивировать согласно storage policy | Purged | Job automatic retry | Нет |
+| Audit достиг 180 дней | Удалить/архивировать по утверждённой policy | Purged/archived | Job automatic retry | Retention run itself technical |
+| Provider media URL/ID истёк до lazy download | Пометить asset unavailable; не retry permanent expiry без нового ID | MediaAsset `unavailable` | Manual/provider refresh if possible | Technical |
+| Media MIME/extension/size не совпадают | Не сохранять object; quarantine metadata/error | MediaAsset `rejected` | Нет | Security metric |
+| Railway Bucket временно недоступен | Не терять metadata; asset upload остаётся pending | MediaAsset `pending_upload` | Automatic bounded | Alert after threshold |
+| Scheduled backup отсутствует/failed | Alert и исправить до pilot exit | Deployment not pilot-ready | Operational retry | Operational audit |
+| Restore test превышает RTO 4 часа | Pilot exit блокируется, runbook/architecture пересматриваются | Release blocked | Повтор после исправления | Обязательная запись результата |
+| Future External API response больше 5 MB | Abort reading, не сохранять body целиком | Node failed permanent/size limit | Нет | Technical |
+| Future HTTP redirect ведёт в private/link-local/metadata IP | Отклонить до соединения и на каждом redirect | Node failed security | Нет | Security alert |
+| Broadcast template отклонён после draft | Запретить launch; уже scheduled вернуть в paused/failed review | Broadcast не запускается | После template correction | Template/broadcast action audited |
+| Broadcast отменён при processing recipients | Новые jobs не claim-ить; in-flight завершить и сохранить факт | Broadcast cancelled; recipients terminal individually | Recovery scan, не resend | Cancel audited |
