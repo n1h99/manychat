@@ -11,6 +11,8 @@ import {
   DemoQueueService,
 } from './demo-queue.service';
 
+const TEST_CHANNEL_SECRETS_KEY = Buffer.alloc(32, 1).toString('base64');
+
 class FakeProducer implements DemoQueueProducer {
   failChecks = false;
   disconnectCalls = 0;
@@ -109,6 +111,7 @@ function createService(): {
   const environment = validateWorkerEnvironment({
     APP_ENV: 'test',
     BULLMQ_READY_TIMEOUT_MS: '250',
+    CHANNEL_SECRETS_KEY: TEST_CHANNEL_SECRETS_KEY,
     DATABASE_URL: 'postgresql://omnicus:omnicus@localhost:5432/omnicus',
     DEMO_JOB_ENABLED: 'false',
     NODE_ENV: 'test',
