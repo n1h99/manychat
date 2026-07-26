@@ -19,14 +19,14 @@ describe('TelegramInboundQueueService', () => {
 
     await service.enqueue('inbox-123');
 
-    expect(telegramInboundJobIdFor('inbox-123')).toBe('telegram-inbound:inbox-123');
+    expect(telegramInboundJobIdFor('inbox-123')).toBe('telegram-inbound-inbox-123');
     expect(producer.add).toHaveBeenCalledWith(
       TELEGRAM_INBOUND_JOB_NAME,
       { inboxRecordId: 'inbox-123' },
       expect.objectContaining({
         attempts: 8,
         backoff: { delay: 1_000, type: 'exponential' },
-        jobId: 'telegram-inbound:inbox-123',
+        jobId: 'telegram-inbound-inbox-123',
         removeOnComplete: true,
         removeOnFail: true,
       }),

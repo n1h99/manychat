@@ -64,7 +64,7 @@ describe('TelegramInboundRecoveryService', () => {
       'process-inbox-record',
       { inboxRecordId: 'pending-a' },
       expect.objectContaining({
-        jobId: 'telegram-inbound:pending-a',
+        jobId: 'telegram-inbound-pending-a',
         removeOnComplete: true,
         removeOnFail: true,
       }),
@@ -73,7 +73,7 @@ describe('TelegramInboundRecoveryService', () => {
       2,
       'process-inbox-record',
       { inboxRecordId: 'retry-a' },
-      expect.objectContaining({ jobId: 'telegram-inbound:retry-a' }),
+      expect.objectContaining({ jobId: 'telegram-inbound-retry-a' }),
     );
   });
 
@@ -134,8 +134,8 @@ describe('TelegramInboundRecoveryService', () => {
     await service.scanOnce(new Date(now.getTime() + 1_000));
 
     expect(add.mock.calls.map((call) => call[2].jobId)).toEqual([
-      'telegram-inbound:pending-a',
-      'telegram-inbound:pending-a',
+      'telegram-inbound-pending-a',
+      'telegram-inbound-pending-a',
     ]);
   });
 
@@ -163,7 +163,7 @@ describe('TelegramInboundRecoveryService', () => {
     expect(add).toHaveBeenCalledWith(
       'process-inbox-record',
       { inboxRecordId: 'dead-a' },
-      expect.objectContaining({ jobId: 'telegram-inbound:dead-a' }),
+      expect.objectContaining({ jobId: 'telegram-inbound-dead-a' }),
     );
   });
 });

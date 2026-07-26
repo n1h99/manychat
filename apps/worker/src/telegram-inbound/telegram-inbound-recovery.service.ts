@@ -13,6 +13,7 @@ import type { WorkerEnvironment } from '@omnicus/config/server';
 import {
   TELEGRAM_INBOUND_JOB_NAME,
   TELEGRAM_INBOUND_QUEUE_NAME,
+  telegramInboundJobIdFor,
   type TelegramInboundJob,
 } from '@omnicus/channel-telegram';
 import { Queue } from 'bullmq';
@@ -57,10 +58,6 @@ const queueOptions = (inboxRecordId: string) => ({
   removeOnComplete: true,
   removeOnFail: true,
 });
-
-export function telegramInboundJobIdFor(inboxRecordId: string): string {
-  return `telegram-inbound:${inboxRecordId}`;
-}
 
 @Injectable()
 export class TelegramInboundRecoveryService

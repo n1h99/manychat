@@ -4,6 +4,7 @@ import type { ApiEnvironment } from '@omnicus/config/server';
 import {
   TELEGRAM_INBOUND_JOB_NAME,
   TELEGRAM_INBOUND_QUEUE_NAME,
+  telegramInboundJobIdFor,
   type TelegramInboundJob,
 } from '@omnicus/channel-telegram';
 import { Queue } from 'bullmq';
@@ -12,7 +13,12 @@ import { redisConnectionFromUrl } from './telegram-redis-connection';
 
 export const TELEGRAM_INBOUND_QUEUE = Symbol('TELEGRAM_INBOUND_QUEUE');
 
-export { TELEGRAM_INBOUND_JOB_NAME, TELEGRAM_INBOUND_QUEUE_NAME, type TelegramInboundJob };
+export {
+  TELEGRAM_INBOUND_JOB_NAME,
+  TELEGRAM_INBOUND_QUEUE_NAME,
+  telegramInboundJobIdFor,
+  type TelegramInboundJob,
+};
 
 export interface TelegramInboundQueueProducer {
   add(
@@ -27,10 +33,6 @@ export interface TelegramInboundQueueProducer {
     },
   ): Promise<unknown>;
   close(): Promise<void>;
-}
-
-function jobIdFor(inboxRecordId: string): string {
-  return `telegram-inbound:${inboxRecordId}`;
 }
 
 @Injectable()
@@ -54,7 +56,7 @@ export class TelegramInboundQueueService implements OnApplicationShutdown {
       {
         attempts: 8,
         backoff: { delay: 1_000, type: 'exponential' },
-        jobId: jobIdFor(inboxRecordId),
+        jobId: telegramInboundJobIdFor(inboxRecordId),
         // Terminal jobs are removed so a recovery/manual retry can reuse the
         // stable inbox job ID without leaving an orphaned BullMQ job behind.
         removeOnComplete: true,
@@ -82,5 +84,3 @@ export class TelegramInboundQueueService implements OnApplicationShutdown {
     return this.producer;
   }
 }
-
-export { jobIdFor as telegramInboundJobIdFor };

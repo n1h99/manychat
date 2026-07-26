@@ -66,6 +66,10 @@ export interface TelegramInboundJob {
   inboxRecordId: string;
 }
 
+export function telegramInboundJobIdFor(inboxRecordId: string): string {
+  return `telegram-inbound-${inboxRecordId}`;
+}
+
 export type TelegramInboundEventType =
   'CALLBACK_QUERY' | 'CHAT_MEMBER' | 'COMMAND' | 'DOCUMENT' | 'MESSAGE' | 'PHOTO' | 'UNSUPPORTED';
 

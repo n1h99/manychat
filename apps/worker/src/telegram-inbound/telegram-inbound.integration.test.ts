@@ -5,16 +5,17 @@ import { telegramInboundFixtures } from '@omnicus/test-fixtures';
 import { createDatabaseHandle } from '@omnicus/database';
 import type { DatabaseHandle, Prisma } from '@omnicus/database';
 import { validateWorkerEnvironment, type WorkerEnvironment } from '@omnicus/config/server';
-import { TELEGRAM_INBOUND_QUEUE_NAME, type TelegramInboundJob } from '@omnicus/channel-telegram';
+import {
+  TELEGRAM_INBOUND_QUEUE_NAME,
+  telegramInboundJobIdFor,
+  type TelegramInboundJob,
+} from '@omnicus/channel-telegram';
 import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { redisConnectionFromUrl } from '../queue/redis-connection';
 import { TelegramInboundProcessorService } from './telegram-inbound-processor.service';
-import {
-  telegramInboundJobIdFor,
-  TelegramInboundRecoveryService,
-} from './telegram-inbound-recovery.service';
+import { TelegramInboundRecoveryService } from './telegram-inbound-recovery.service';
 
 const TEST_CHANNEL_SECRETS_KEY = Buffer.alloc(32, 1).toString('base64');
 const integrationDescribe =
