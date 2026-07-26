@@ -1056,6 +1056,35 @@ partial unique index `WHERE status = 'ACTIVE'`, добавляемый migration
 Wait/Subflow не реализуются в pilot, но schema reserved для совместимости можно
 добавить только на этапе их реализации.
 
+### Automation v2 durable continuation (post-pilot)
+
+`WaitState` and `DelayedAction` are tenant-owned continuation records. Both use
+`projectId` plus composite foreign keys to `ScenarioExecution`, `Scenario`,
+`ScenarioVersion` and `Conversation`; a record from another project or scenario
+cannot resume an execution. All lifecycle fields use `TIMESTAMPTZ(3)`.
+
+`WaitState` has an application-visible status (`ACTIVE`, `RESOLVED`,
+`TIMED_OUT`, `CANCELLED`), reply criteria, success/timeout continuation node IDs
+and the winning event ID. Migration SQL adds a partial unique index:
+
+```sql
+CREATE UNIQUE INDEX "wait_states_one_active_per_conversation_scenario"
+ON "wait_states" ("projectId", "conversationId", "scenarioId")
+WHERE "status" = 'ACTIVE';
+```
+
+`DelayedAction` stores `resumeNodeId`, due time, bounded claim lease, attempts
+and a safe error code. Its unique `(projectId, scenarioExecutionId, nodeId)`
+prevents duplicate delay scheduling. Due and expired-lease polling uses an index
+on `(status, nextAttemptAt)`; PostgreSQL remains the recovery source of truth.
+
+`ScenarioExecution.parentExecutionId` and `resumeNodeId` create a composite
+self-reference for awaited subflows. A child is pinned by its already immutable
+`scenarioVersionId`; no later draft or publish can alter it.
+
+The worker scans due `DelayedAction` and expired `WaitState` records in bounded
+batches. Conditional database updates make concurrent worker replicas safe.
+
 ## Broadcast future models
 
 `Broadcast` и `BroadcastRecipient` сохраняются в design backlog. При реализации

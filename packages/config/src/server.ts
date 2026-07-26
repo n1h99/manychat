@@ -190,6 +190,8 @@ export const workerEnvironmentSchema = serviceEnvironmentSchema
   .extend({
     BULLMQ_READY_TIMEOUT_MS: durationSchema.default(5_000),
     CHANNEL_SECRETS_KEY: channelSecretsKeySchema,
+    AUTOMATION_CONTINUATION_BATCH_SIZE: positiveIntegerSchema.max(1_000).default(100),
+    AUTOMATION_CONTINUATION_INTERVAL_MS: durationSchema.default(10_000),
     DEMO_JOB_ENABLED: booleanEnvironmentSchema.default(false),
     TELEGRAM_INBOUND_LEASE_MS: durationSchema.default(60_000),
     TELEGRAM_INBOUND_RECOVERY_BATCH_SIZE: positiveIntegerSchema.max(1_000).default(100),

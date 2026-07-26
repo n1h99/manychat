@@ -353,6 +353,24 @@ outside this pilot.
 
 Каждый пункт требует отдельного scope, threat review, NFR и acceptance criteria.
 
+## Automation v2 — approved post-pilot slice
+
+This slice is limited to the existing Telegram channel and adds a React Flow
+canvas, draft autosave/history, durable Delay, Wait for Reply, and Subflow
+continuations. The worker recovers due delays and wait timeouts from PostgreSQL;
+it never relies on a process-local timer. The slice does not add External HTTP,
+WhatsApp/Instagram, broadcasts, templates or media workflows.
+
+Acceptance requires deterministic graph validation, a published-version pin for
+subflows, one active wait per conversation/scenario, transactional reply versus
+timeout resolution, worker-crash recovery, execution journal visibility, and
+protected project-scoped UI/API operations.
+
+Implementation includes deterministic graph validation, a React Flow draft editor,
+published-version execution, durable Delay/Wait continuations and pinned
+Subflows. External HTTP, broadcasts, templates, extra channels and advanced
+media remain outside this slice.
+
 ## Pilot NFR
 
 | Requirement                  | Initial target                                                                            |

@@ -18,9 +18,10 @@
   },
   "dependencies": {
     "@ant-design/icons": "6.1.0",
+    "@omnicus/config": "workspace:*",
     "@reduxjs/toolkit": "2.12.0",
     "@tanstack/react-query": "5.101.4",
-    "@omnicus/config": "workspace:*",
+    "@xyflow/react": "12.10.0",
     "antd": "6.5.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",

@@ -82,6 +82,8 @@ const expectedTables = new Set([
   'node_executions',
   'crm_operations',
   'crm_project_configs',
+  'wait_states',
+  'delayed_actions',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -311,6 +313,54 @@ if (!existsSync(stage5MigrationPath)) {
     if (!stage5MigrationSql.includes(fragment)) {
       failures.push(`Stage 5 migration is missing invariant: ${fragment}`);
     }
+  }
+}
+
+const automationContinuationMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726230957_automation_v2_continuations/migration.sql',
+);
+if (!existsSync(automationContinuationMigrationPath)) {
+  failures.push('Automation v2 continuation migration is missing');
+} else {
+  const automationContinuationSql = readFileSync(
+    automationContinuationMigrationPath,
+    'utf8',
+  ).replaceAll('\r\n', '\n');
+  for (const fragment of [
+    'CREATE TABLE "wait_states"',
+    'CREATE TABLE "delayed_actions"',
+    "ADD VALUE 'WAITING'",
+    'FOREIGN KEY ("projectId", "scenarioExecutionId") REFERENCES "scenario_executions"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "conversationId") REFERENCES "conversations"("projectId", "id")',
+    'CREATE UNIQUE INDEX "wait_states_projectId_scenarioExecutionId_nodeId_key"',
+    'CREATE UNIQUE INDEX "delayed_actions_projectId_scenarioExecutionId_nodeId_key"',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!automationContinuationSql.includes(fragment)) {
+      failures.push(`Automation v2 continuation migration is missing invariant: ${fragment}`);
+    }
+  }
+}
+
+const automationWaitConstraintMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726231000_automation_v2_wait_constraint/migration.sql',
+);
+if (!existsSync(automationWaitConstraintMigrationPath)) {
+  failures.push('Automation v2 wait-state constraint migration is missing');
+} else {
+  const automationWaitConstraintSql = readFileSync(
+    automationWaitConstraintMigrationPath,
+    'utf8',
+  ).replaceAll('\r\n', '\n');
+  if (
+    !automationWaitConstraintSql.includes(
+      'CREATE UNIQUE INDEX "wait_states_one_active_per_conversation_scenario"',
+    ) ||
+    !automationWaitConstraintSql.includes('WHERE "status" = \'ACTIVE\'')
+  ) {
+    failures.push('Automation v2 active wait partial uniqueness is missing');
   }
 }
 

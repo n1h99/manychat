@@ -1,5 +1,14 @@
 # Operations runbook — Stage 3B.3b
 
+## Automation continuations
+
+Inspect `wait_states` with `status = 'ACTIVE'` and `delayed_actions` with
+`status = 'PENDING'` when diagnosing paused executions. The worker scans due
+records using `AUTOMATION_CONTINUATION_INTERVAL_MS`; restarting a worker does
+not lose them because PostgreSQL is authoritative. Do not mutate continuation
+rows manually: use the execution journal and a controlled operational retry
+after diagnosing a dependency failure.
+
 ## Health probes
 
 - web `/health/live`: static server process is accepting requests;

@@ -494,3 +494,21 @@ have accepted the request before the observed failure. Retrying creates a new
 attempt group, preserves the original idempotency key and records an audit event.
 The mock adapter is intentionally not evidence of production provider delivery;
 the real reconciliation contract remains blocked by `CRM_CONTRACT_REQUIRED.md`.
+
+## ADR-028: Automation v2 uses durable resumable execution state
+
+Delay, Wait for Reply and awaited Subflow cannot depend on an in-memory timer or
+a BullMQ job as their only state. `DelayedAction` and `WaitState` are therefore
+PostgreSQL-owned records bound to a tenant-safe `ScenarioExecution`; a worker
+polls due records and may use BullMQ only as an execution signal. Lost jobs and
+worker restarts are recovered from PostgreSQL.
+
+Only one active wait is permitted for `(projectId, conversationId, scenarioId)`.
+Reply and timeout perform a conditional state transition, so at most one wins.
+A Subflow always creates a child execution pinned to the target scenario's
+current published version. Awaited child completion resumes its parent through
+an explicit persisted continuation; fire-and-forget does not block the parent.
+
+Guarded cycles are allowed only when their cycle contains Delay or Wait; every
+execution also has a bounded step budget. A cycle without a durable boundary is
+rejected on publish.

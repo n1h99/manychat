@@ -17,7 +17,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node scripts/pnpm.mjs start:web',
+    // The production server is a standalone Node process; using it directly
+    // avoids depending on pnpm lifecycle metadata in Playwright's child process.
+    command: 'node apps/web/server.mjs',
     env: {
       HOST: '127.0.0.1',
       PORT: '4173',

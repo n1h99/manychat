@@ -279,6 +279,13 @@ export class TelegramInboundProcessorService
       }
 
       if (contact && conversationId) {
+        await this.automation?.resolveWaitsInTransaction(transaction, {
+          connectionId: claimed.connectionId,
+          contactId: contact.id,
+          conversationId,
+          normalizedEventId: normalized.id,
+          projectId: claimed.projectId,
+        });
         await this.automation?.triggerInTransaction(transaction, {
           connectionId: claimed.connectionId,
           contactId: contact.id,

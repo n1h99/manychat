@@ -7,7 +7,7 @@ import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types'
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AutomationService } from './automation.service';
-import { CreateScenarioDto, UpdateScenarioDto } from './dto';
+import { CreateScenarioDto, DuplicateScenarioDto, UpdateScenarioDto } from './dto';
 
 @ApiTags('automation')
 @ApiBearerAuth()
@@ -80,6 +80,47 @@ export class AutomationController {
       data: await this.automation.publish(
         projectId,
         scenarioId,
+        request.auth!,
+        this.context(request),
+      ),
+      meta: {},
+    };
+  }
+
+  @Post(':scenarioId/duplicate')
+  @RequireProjectPermission('automation:manage')
+  @ApiBody({ type: DuplicateScenarioDto })
+  async duplicate(
+    @Param('projectId') projectId: string,
+    @Param('scenarioId') scenarioId: string,
+    @Body() body: DuplicateScenarioDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.automation.duplicate(
+        projectId,
+        scenarioId,
+        body,
+        request.auth!,
+        this.context(request),
+      ),
+      meta: {},
+    };
+  }
+
+  @Post(':scenarioId/versions/:versionId/restore')
+  @RequireProjectPermission('automation:manage')
+  async restoreVersion(
+    @Param('projectId') projectId: string,
+    @Param('scenarioId') scenarioId: string,
+    @Param('versionId') versionId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.automation.restoreVersion(
+        projectId,
+        scenarioId,
+        versionId,
         request.auth!,
         this.context(request),
       ),

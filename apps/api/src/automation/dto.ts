@@ -29,3 +29,9 @@ export class UpdateScenarioDto {
   @IsObject()
   graph?: Record<string, unknown>;
 }
+
+export class DuplicateScenarioDto {
+  @IsString()
+  @Length(1, 160)
+  name!: string;
+}

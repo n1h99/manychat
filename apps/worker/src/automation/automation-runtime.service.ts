@@ -23,6 +23,18 @@ export interface AutomationTriggerInput {
 
 type RuntimeTransaction = Prisma.TransactionClient;
 
+interface RuntimeContext extends AutomationTriggerInput {
+  customFields: Prisma.JsonValue;
+  eventPayload: Prisma.JsonValue;
+}
+
+interface NodeResult {
+  next?: ScenarioGraphEdge | undefined;
+  suspended?: boolean;
+}
+
+const stepBudget = 100;
+
 @Injectable()
 export class AutomationRuntimeService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
@@ -31,6 +43,42 @@ export class AutomationRuntimeService {
     await this.database.client.$transaction((transaction) =>
       this.triggerInTransaction(transaction, input),
     );
+  }
+
+  /** Resolves durable waits before normal scenario triggering for the same inbound event. */
+  async resolveWaitsInTransaction(
+    transaction: RuntimeTransaction,
+    input: AutomationTriggerInput,
+  ): Promise<void> {
+    const activeWaits = await transaction.waitState.findMany({
+      select: { id: true, projectId: true, scenarioExecutionId: true, successNodeId: true },
+      where: {
+        conversationId: input.conversationId,
+        projectId: input.projectId,
+        status: 'ACTIVE',
+      },
+    });
+    for (const wait of activeWaits) {
+      const won = await transaction.waitState.updateMany({
+        data: {
+          resolvedAt: new Date(),
+          resolvedByEventId: input.normalizedEventId,
+          status: 'RESOLVED',
+        },
+        where: { id: wait.id, projectId: wait.projectId, status: 'ACTIVE' },
+      });
+      if (won.count === 1) {
+        await this.resumeExecutionInTransaction(
+          transaction,
+          wait.scenarioExecutionId,
+          input.projectId,
+          wait.successNodeId,
+          {
+            ...input,
+          },
+        );
+      }
+    }
   }
 
   async triggerInTransaction(
@@ -47,7 +95,7 @@ export class AutomationRuntimeService {
         where: { projectId_id: { id: input.conversationId, projectId: input.projectId } },
       }),
       transaction.normalizedEvent.findUnique({
-        select: { payload: true, type: true },
+        select: { payload: true },
         where: { projectId_id: { id: input.normalizedEventId, projectId: input.projectId } },
       }),
       transaction.scenario.findMany({
@@ -56,26 +104,29 @@ export class AutomationRuntimeService {
       }),
     ]);
     if (!contact || !conversation || !event) return;
-    const mode = conversation.automationModeOverride ?? contact.automationMode ?? 'ENABLED';
-    if (mode !== 'ENABLED') return;
+    if ((conversation.automationModeOverride ?? contact.automationMode ?? 'ENABLED') !== 'ENABLED')
+      return;
 
-    const eligible = scenarios.filter((scenario) => scenario.activeVersion?.compiledDefinition);
-    if (!eligible.length) return;
     const advanced = await transaction.conversation.update({
       data: { nextAutomationSequence: { increment: 1 } },
       select: { nextAutomationSequence: true },
       where: { projectId_id: { id: input.conversationId, projectId: input.projectId } },
     });
-    const sequence = advanced.nextAutomationSequence - BigInt(1);
-    for (const scenario of eligible) {
-      const version = scenario.activeVersion!;
-      const parsed = scenarioGraphSchema.safeParse(version.compiledDefinition);
-      if (!parsed.success) continue;
+    const context: RuntimeContext = {
+      ...input,
+      customFields: contact.customFields,
+      eventPayload: event.payload,
+    };
+    for (const scenario of scenarios) {
+      const version = scenario.activeVersion;
+      if (!version?.compiledDefinition) continue;
+      const graph = scenarioGraphSchema.safeParse(version.compiledDefinition);
+      if (!graph.success) continue;
       const execution = await transaction.scenarioExecution.upsert({
         create: {
           contactId: input.contactId,
           conversationId: input.conversationId,
-          conversationSequence: sequence,
+          conversationSequence: advanced.nextAutomationSequence - BigInt(1),
           correlationId: `normalized-event:${input.normalizedEventId}`,
           projectId: input.projectId,
           scenarioId: scenario.id,
@@ -94,134 +145,410 @@ export class AutomationRuntimeService {
           },
         },
       });
-      if (execution.status === 'COMPLETED') continue;
-      await this.executeGraph(
-        transaction,
-        parsed.data,
-        execution.id,
-        input,
-        event.payload,
-        contact.customFields,
-      );
+      if (!['COMPLETED', 'CANCELLED', 'FAILED'].includes(execution.status)) {
+        await this.executeGraph(transaction, graph.data, execution.id, context);
+      }
     }
+  }
+
+  async resumeDelayedAction(actionId: string): Promise<void> {
+    await this.database.client.$transaction(async (transaction) => {
+      const action = await transaction.delayedAction.findUnique({ where: { id: actionId } });
+      if (!action || action.status !== 'PENDING') return;
+      const claimed = await transaction.delayedAction.updateMany({
+        data: {
+          attempts: { increment: 1 },
+          lockedAt: new Date(),
+          lockedBy: `automation:${process.pid}`,
+          status: 'PROCESSING',
+        },
+        where: { id: action.id, status: 'PENDING' },
+      });
+      if (claimed.count !== 1) return;
+      try {
+        await this.resumeExecutionInTransaction(
+          transaction,
+          action.scenarioExecutionId,
+          action.projectId,
+          action.resumeNodeId,
+        );
+        await transaction.delayedAction.updateMany({
+          data: { completedAt: new Date(), lockedAt: null, lockedBy: null, status: 'COMPLETED' },
+          where: { id: action.id, lockedBy: `automation:${process.pid}`, status: 'PROCESSING' },
+        });
+      } catch {
+        await transaction.delayedAction.updateMany({
+          data: { lockedAt: null, lockedBy: null, status: 'PENDING' },
+          where: { id: action.id, lockedBy: `automation:${process.pid}`, status: 'PROCESSING' },
+        });
+        throw new Error('automation_delay_resume_failed');
+      }
+    });
+  }
+
+  async timeoutWait(waitId: string): Promise<void> {
+    await this.database.client.$transaction(async (transaction) => {
+      const wait = await transaction.waitState.findUnique({ where: { id: waitId } });
+      if (!wait || wait.status !== 'ACTIVE' || wait.expiresAt > new Date()) return;
+      const won = await transaction.waitState.updateMany({
+        data: { resolvedAt: new Date(), status: 'TIMED_OUT' },
+        where: { id: wait.id, status: 'ACTIVE' },
+      });
+      if (won.count === 1) {
+        await this.resumeExecutionInTransaction(
+          transaction,
+          wait.scenarioExecutionId,
+          wait.projectId,
+          wait.timeoutNodeId,
+        );
+      }
+    });
+  }
+
+  private async resumeExecutionInTransaction(
+    transaction: RuntimeTransaction,
+    executionId: string,
+    projectId: string,
+    startNodeId?: string | null,
+    eventOverride?: AutomationTriggerInput,
+  ): Promise<void> {
+    const execution = await transaction.scenarioExecution.findUnique({
+      include: { scenarioVersion: { select: { compiledDefinition: true } } },
+      where: { projectId_id: { id: executionId, projectId } },
+    });
+    if (
+      !execution ||
+      !execution.scenarioVersion.compiledDefinition ||
+      ['COMPLETED', 'FAILED', 'CANCELLED'].includes(execution.status)
+    )
+      return;
+    const graph = scenarioGraphSchema.safeParse(execution.scenarioVersion.compiledDefinition);
+    if (!graph.success) throw new Error('automation_graph_invalid');
+    const [contact, event] = await Promise.all([
+      transaction.contact.findUnique({
+        where: { projectId_id: { id: execution.contactId, projectId } },
+      }),
+      transaction.normalizedEvent.findUnique({
+        where: {
+          projectId_id: {
+            id: eventOverride?.normalizedEventId ?? execution.triggerEventId,
+            projectId,
+          },
+        },
+      }),
+    ]);
+    if (!contact || !event) throw new Error('automation_execution_context_missing');
+    await transaction.scenarioExecution.update({
+      data: { currentNodeId: startNodeId ?? null, status: 'RUNNING' },
+      where: { projectId_id: { id: executionId, projectId } },
+    });
+    await this.executeGraph(
+      transaction,
+      graph.data,
+      executionId,
+      {
+        connectionId:
+          eventOverride?.connectionId ??
+          (
+            await transaction.conversation.findUniqueOrThrow({
+              where: { projectId_id: { id: execution.conversationId, projectId } },
+            })
+          ).connectionId,
+        contactId: execution.contactId,
+        conversationId: execution.conversationId,
+        customFields: contact.customFields,
+        eventPayload: event.payload,
+        normalizedEventId: eventOverride?.normalizedEventId ?? execution.triggerEventId,
+        projectId,
+      },
+      startNodeId ?? undefined,
+    );
   }
 
   private async executeGraph(
     transaction: RuntimeTransaction,
     graph: ScenarioGraph,
     executionId: string,
-    input: AutomationTriggerInput,
-    eventPayload: Prisma.JsonValue,
-    customFields: Prisma.JsonValue,
+    context: RuntimeContext,
+    startNodeId?: string,
   ): Promise<void> {
     const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
     const outgoing = new Map<string, ScenarioGraphEdge[]>();
     for (const edge of graph.edges)
       outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge]);
-    let node = graph.nodes.find((candidate) => candidate.type === 'INCOMING_MESSAGE');
+    let node = startNodeId
+      ? nodes.get(startNodeId)
+      : graph.nodes.find((item) => item.type === 'INCOMING_MESSAGE');
     let steps = 0;
-    while (node && steps++ <= graph.nodes.length) {
-      await this.nodeExecution(transaction, executionId, input.projectId, node, 'PROCESSING');
-      const next = await this.applyNode(
+    while (node && steps++ < stepBudget) {
+      await transaction.scenarioExecution.update({
+        data: { currentNodeId: node.id, status: 'RUNNING' },
+        where: { projectId_id: { id: executionId, projectId: context.projectId } },
+      });
+      await this.nodeExecution(transaction, executionId, context.projectId, node, 'PROCESSING');
+      const result = await this.applyNode(
         transaction,
         node,
         outgoing.get(node.id) ?? [],
-        input,
-        eventPayload,
-        customFields,
+        context,
         executionId,
       );
-      await this.nodeExecution(transaction, executionId, input.projectId, node, 'SUCCEEDED');
-      node = next ? nodes.get(next.to) : undefined;
+      await this.nodeExecution(transaction, executionId, context.projectId, node, 'SUCCEEDED');
+      if (result.suspended) return;
+      node = result.next ? nodes.get(result.next.to) : undefined;
     }
+    if (steps >= stepBudget) throw new Error('automation_step_budget_exhausted');
     await transaction.scenarioExecution.update({
       data: { completedAt: new Date(), currentNodeId: null, status: 'COMPLETED' },
-      where: { projectId_id: { id: executionId, projectId: input.projectId } },
+      where: { projectId_id: { id: executionId, projectId: context.projectId } },
     });
+    await this.resumeParentIfNeeded(transaction, executionId, context.projectId);
   }
 
   private async applyNode(
     transaction: RuntimeTransaction,
     node: ScenarioGraphNode,
     edges: ScenarioGraphEdge[],
-    input: AutomationTriggerInput,
-    eventPayload: Prisma.JsonValue,
-    customFields: Prisma.JsonValue,
+    context: RuntimeContext,
     executionId: string,
-  ): Promise<ScenarioGraphEdge | undefined> {
-    if (node.type === 'STOP') return undefined;
+  ): Promise<NodeResult> {
+    const defaultEdge = edges.find((edge) => edge.output === 'default') ?? edges[0];
+    if (node.type === 'STOP') return {};
     if (node.type === 'CONDITION') {
       const config = node.config as {
         field?: string;
         operator?: ConditionOperator;
         value?: unknown;
       };
-      const selected = edges
-        .slice()
-        .sort(
-          (left, right) =>
-            (left.priority ?? Number.MAX_SAFE_INTEGER) -
-            (right.priority ?? Number.MAX_SAFE_INTEGER),
-        )
-        .find((edge) => {
-          const rule = edge.condition ?? config;
-          return evaluateCondition(
-            rule.operator ?? 'exists',
-            this.valueFor(rule.field, eventPayload, customFields),
-            rule.value,
-          );
+      return {
+        next: edges
+          .slice()
+          .sort(
+            (a, b) =>
+              (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER),
+          )
+          .find((edge) => {
+            const rule = edge.condition ?? config;
+            return evaluateCondition(
+              rule.operator ?? 'exists',
+              this.valueFor(rule.field, context.eventPayload, context.customFields),
+              rule.value,
+            );
+          }),
+      };
+    }
+    if (node.type === 'DELAY') {
+      const seconds = node.config.delaySeconds;
+      if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds <= 0)
+        throw new Error('automation_delay_invalid');
+      const execution = await transaction.scenarioExecution.findUniqueOrThrow({
+        where: { projectId_id: { id: executionId, projectId: context.projectId } },
+      });
+      await transaction.delayedAction.upsert({
+        create: {
+          nextAttemptAt: new Date(Date.now() + seconds * 1_000),
+          nodeId: node.id,
+          projectId: context.projectId,
+          resumeNodeId: defaultEdge?.to ?? null,
+          scenarioExecutionId: executionId,
+          scenarioId: execution.scenarioId,
+          scenarioVersionId: execution.scenarioVersionId,
+        },
+        update: {},
+        where: {
+          projectId_scenarioExecutionId_nodeId: {
+            nodeId: node.id,
+            projectId: context.projectId,
+            scenarioExecutionId: executionId,
+          },
+        },
+      });
+      await transaction.scenarioExecution.update({
+        data: { currentNodeId: node.id, status: 'WAITING' },
+        where: { projectId_id: { id: executionId, projectId: context.projectId } },
+      });
+      return { suspended: true };
+    }
+    if (node.type === 'WAIT_FOR_REPLY') {
+      const seconds = node.config.timeoutSeconds;
+      if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds <= 0)
+        throw new Error('automation_wait_invalid');
+      const execution = await transaction.scenarioExecution.findUniqueOrThrow({
+        where: { projectId_id: { id: executionId, projectId: context.projectId } },
+      });
+      const replyEdge = edges.find((edge) => edge.output === 'reply') ?? defaultEdge;
+      const timeoutEdge = edges.find((edge) => edge.output === 'timeout');
+      await transaction.waitState.upsert({
+        create: {
+          conversationId: context.conversationId,
+          criteria: {},
+          expiresAt: new Date(Date.now() + seconds * 1_000),
+          nodeId: node.id,
+          projectId: context.projectId,
+          scenarioExecutionId: executionId,
+          scenarioId: execution.scenarioId,
+          scenarioVersionId: execution.scenarioVersionId,
+          successNodeId: replyEdge?.to ?? null,
+          timeoutNodeId: timeoutEdge?.to ?? null,
+        },
+        update: {},
+        where: {
+          projectId_scenarioExecutionId_nodeId: {
+            nodeId: node.id,
+            projectId: context.projectId,
+            scenarioExecutionId: executionId,
+          },
+        },
+      });
+      await transaction.scenarioExecution.update({
+        data: { currentNodeId: node.id, status: 'WAITING' },
+        where: { projectId_id: { id: executionId, projectId: context.projectId } },
+      });
+      return { suspended: true };
+    }
+    if (node.type === 'START_SUBFLOW') {
+      const scenarioId =
+        typeof node.config.scenarioId === 'string' ? node.config.scenarioId : undefined;
+      if (!scenarioId) throw new Error('automation_subflow_invalid');
+      const target = await transaction.scenario.findUnique({
+        include: { activeVersion: true },
+        where: { projectId_id: { id: scenarioId, projectId: context.projectId } },
+      });
+      if (!target?.activeVersion?.compiledDefinition || target.status !== 'PUBLISHED')
+        throw new Error('automation_subflow_unpublished');
+      const child = await transaction.scenarioExecution.upsert({
+        create: {
+          contactId: context.contactId,
+          conversationId: context.conversationId,
+          conversationSequence: BigInt(0),
+          correlationId: `subflow:${executionId}:${node.id}`,
+          parentExecutionId: executionId,
+          projectId: context.projectId,
+          resumeNodeId: defaultEdge?.to ?? null,
+          scenarioId: target.id,
+          scenarioVersionId: target.activeVersion.id,
+          startedAt: new Date(),
+          status: 'RUNNING',
+          triggerEventId: context.normalizedEventId,
+          triggerKey: `subflow:${executionId}:${node.id}`,
+        },
+        update: {},
+        where: {
+          projectId_scenarioId_triggerKey: {
+            projectId: context.projectId,
+            scenarioId: target.id,
+            triggerKey: `subflow:${executionId}:${node.id}`,
+          },
+        },
+      });
+      const awaitChild = node.config.await !== false;
+      if (awaitChild)
+        await transaction.scenarioExecution.update({
+          data: { currentNodeId: node.id, status: 'WAITING' },
+          where: { projectId_id: { id: executionId, projectId: context.projectId } },
         });
-      return selected;
+      const graph = scenarioGraphSchema.safeParse(target.activeVersion.compiledDefinition);
+      if (!graph.success) throw new Error('automation_subflow_graph_invalid');
+      if (!['COMPLETED', 'FAILED', 'CANCELLED'].includes(child.status))
+        await this.executeGraph(transaction, graph.data, child.id, context);
+      return awaitChild ? { suspended: true } : { next: defaultEdge };
     }
-    if (node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG') {
-      const tagId = typeof node.config.tagId === 'string' ? node.config.tagId : undefined;
-      if (tagId) {
-        if (node.type === 'ADD_TAG')
-          await transaction.contactTag.createMany({
-            data: [
-              {
-                contactId: input.contactId,
-                projectId: input.projectId,
-                source: 'automation',
-                tagId,
-              },
-            ],
-            skipDuplicates: true,
-          });
-        else
-          await transaction.contactTag.deleteMany({
-            where: { contactId: input.contactId, projectId: input.projectId, tagId },
-          });
-      }
+    if (node.type === 'SET_CUSTOM_FIELD') {
+      const key = typeof node.config.key === 'string' ? node.config.key : undefined;
+      if (!key) throw new Error('automation_custom_field_invalid');
+      await transaction.contact.update({
+        data: {
+          customFields: {
+            ...this.object(context.customFields),
+            [key]: node.config.value as Prisma.JsonValue,
+          },
+        },
+        where: { projectId_id: { id: context.contactId, projectId: context.projectId } },
+      });
+      context.customFields = {
+        ...this.object(context.customFields),
+        [key]: node.config.value as Prisma.JsonValue,
+      };
     }
+    if (node.type === 'PAUSE_AUTOMATION' || node.type === 'RESUME_AUTOMATION') {
+      await transaction.contact.update({
+        data: { automationMode: node.type === 'PAUSE_AUTOMATION' ? 'DISABLED' : 'ENABLED' },
+        where: { projectId_id: { id: context.contactId, projectId: context.projectId } },
+      });
+    }
+    if (node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG')
+      await this.applyTag(transaction, node, context);
     if (node.type === 'SEND_MESSAGE')
-      await this.queueMessage(transaction, node, input, executionId);
+      await this.queueMessage(transaction, node, context, executionId);
     if (node.type === 'CREATE_OR_UPDATE_LEAD' || node.type === 'FORWARD_TO_CRM')
-      await this.queueCrmOperation(transaction, node, input, executionId);
-    return edges.find((edge) => edge.output === 'default') ?? edges[0];
+      await this.queueCrmOperation(transaction, node, context, executionId);
+    return { next: defaultEdge };
+  }
+
+  private async resumeParentIfNeeded(
+    transaction: RuntimeTransaction,
+    executionId: string,
+    projectId: string,
+  ): Promise<void> {
+    const child = await transaction.scenarioExecution.findUnique({
+      where: { projectId_id: { id: executionId, projectId } },
+    });
+    if (!child?.parentExecutionId) return;
+    const parent = await transaction.scenarioExecution.findUnique({
+      where: { projectId_id: { id: child.parentExecutionId, projectId } },
+    });
+    if (!parent || parent.status !== 'WAITING') return;
+    await this.resumeExecutionInTransaction(transaction, parent.id, projectId, child.resumeNodeId);
+  }
+
+  private async applyTag(
+    transaction: RuntimeTransaction,
+    node: ScenarioGraphNode,
+    context: RuntimeContext,
+  ): Promise<void> {
+    const tagId = typeof node.config.tagId === 'string' ? node.config.tagId : undefined;
+    if (!tagId) return;
+    if (node.type === 'ADD_TAG')
+      await transaction.contactTag.createMany({
+        data: [
+          {
+            contactId: context.contactId,
+            projectId: context.projectId,
+            source: 'automation',
+            tagId,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    else
+      await transaction.contactTag.deleteMany({
+        where: { contactId: context.contactId, projectId: context.projectId, tagId },
+      });
   }
 
   private async queueCrmOperation(
     transaction: RuntimeTransaction,
     node: ScenarioGraphNode,
-    input: AutomationTriggerInput,
+    context: RuntimeContext,
     executionId: string,
   ): Promise<void> {
     const idempotencyKey = `crm-${executionId}-${node.id}`;
-    const existing = await transaction.outboxRecord.findUnique({
-      where: { projectId_idempotencyKey: { idempotencyKey, projectId: input.projectId } },
-    });
-    if (existing) return;
+    if (
+      await transaction.outboxRecord.findUnique({
+        where: { projectId_idempotencyKey: { idempotencyKey, projectId: context.projectId } },
+      })
+    )
+      return;
     const outbox = await transaction.outboxRecord.create({
-      data: { idempotencyKey, kind: 'CRM', payload: {}, projectId: input.projectId },
+      data: { idempotencyKey, kind: 'CRM', payload: {}, projectId: context.projectId },
     });
     const operation = await transaction.crmOperation.create({
       data: {
-        contactId: input.contactId,
+        contactId: context.contactId,
         inputSafe: { nodeId: node.id, scenarioExecutionId: executionId },
-        normalizedEventId: input.normalizedEventId,
+        normalizedEventId: context.normalizedEventId,
         outboxRecordId: outbox.id,
-        projectId: input.projectId,
+        projectId: context.projectId,
         type:
           node.type === 'CREATE_OR_UPDATE_LEAD'
             ? 'CREATE_OR_UPDATE_LEAD'
@@ -230,51 +557,53 @@ export class AutomationRuntimeService {
     });
     await transaction.outboxRecord.update({
       data: { payload: { crmOperationId: operation.id } },
-      where: { projectId_id: { id: outbox.id, projectId: input.projectId } },
+      where: { projectId_id: { id: outbox.id, projectId: context.projectId } },
     });
   }
 
   private async queueMessage(
     transaction: RuntimeTransaction,
     node: ScenarioGraphNode,
-    input: AutomationTriggerInput,
+    context: RuntimeContext,
     executionId: string,
   ): Promise<void> {
     const text = typeof node.config.text === 'string' ? node.config.text : undefined;
     if (!text) return;
     const identity = await transaction.channelIdentity.findFirst({
       where: {
-        connectionId: input.connectionId,
-        contactId: input.contactId,
-        projectId: input.projectId,
+        connectionId: context.connectionId,
+        contactId: context.contactId,
+        projectId: context.projectId,
         status: 'ACTIVE',
       },
     });
     if (!identity) return;
     const idempotencyKey = `automation-${executionId}-${node.id}`;
-    const existing = await transaction.outboxRecord.findUnique({
-      where: { projectId_idempotencyKey: { idempotencyKey, projectId: input.projectId } },
-    });
-    if (existing) return;
+    if (
+      await transaction.outboxRecord.findUnique({
+        where: { projectId_idempotencyKey: { idempotencyKey, projectId: context.projectId } },
+      })
+    )
+      return;
     const message = await transaction.message.create({
       data: {
-        connectionId: input.connectionId,
-        contactId: input.contactId,
+        connectionId: context.connectionId,
+        contactId: context.contactId,
         content: { text },
-        conversationId: input.conversationId,
+        conversationId: context.conversationId,
         direction: 'OUTBOUND',
         metadata: { source: 'automation' },
-        projectId: input.projectId,
+        projectId: context.projectId,
         status: 'QUEUED',
         type: 'TEXT',
       },
     });
     await transaction.outboxRecord.create({
       data: {
-        connectionId: input.connectionId,
+        connectionId: context.connectionId,
         idempotencyKey,
         payload: { channelIdentityId: identity.id, messageId: message.id },
-        projectId: input.projectId,
+        projectId: context.projectId,
       },
     });
   }

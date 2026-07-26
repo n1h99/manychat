@@ -24,15 +24,20 @@ export interface ScenarioExecution {
   status: string;
 }
 export interface ScenarioGraph {
-  edges: Array<{ from: string; output?: string; priority?: number; to: string }>;
-  nodes: Array<{ config?: Record<string, unknown>; id: string; type: string }>;
+  edges: Array<{ from: string; id?: string; output?: string; priority?: number; to: string }>;
+  nodes: Array<{
+    config?: Record<string, unknown>;
+    id: string;
+    position?: { x: number; y: number };
+    type: string;
+  }>;
 }
 
 export const emptyScenarioGraph: ScenarioGraph = {
   edges: [{ from: 'incoming', output: 'default', to: 'stop' }],
   nodes: [
-    { config: {}, id: 'incoming', type: 'INCOMING_MESSAGE' },
-    { config: {}, id: 'stop', type: 'STOP' },
+    { config: {}, id: 'incoming', position: { x: 0, y: 100 }, type: 'INCOMING_MESSAGE' },
+    { config: {}, id: 'stop', position: { x: 280, y: 100 }, type: 'STOP' },
   ],
 };
 
@@ -92,6 +97,11 @@ export function useScenarioMutations(projectId?: string) {
     }),
     publish: useMutation({
       mutationFn: (scenarioId: string) => request<Scenario>(`/${scenarioId}/publish`, 'POST'),
+      onSuccess: invalidate,
+    }),
+    restoreVersion: useMutation({
+      mutationFn: ({ scenarioId, versionId }: { scenarioId: string; versionId: string }) =>
+        request<Scenario>(`/${scenarioId}/versions/${versionId}/restore`, 'POST'),
       onSuccess: invalidate,
     }),
     update: useMutation({

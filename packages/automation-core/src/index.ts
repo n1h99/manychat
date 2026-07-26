@@ -8,6 +8,12 @@ export const automationNodeTypes = [
   'SEND_MESSAGE',
   'CREATE_OR_UPDATE_LEAD',
   'FORWARD_TO_CRM',
+  'SET_CUSTOM_FIELD',
+  'DELAY',
+  'WAIT_FOR_REPLY',
+  'START_SUBFLOW',
+  'PAUSE_AUTOMATION',
+  'RESUME_AUTOMATION',
   'STOP',
 ] as const;
 
@@ -16,6 +22,7 @@ export type AutomationNodeType = (typeof automationNodeTypes)[number];
 export const graphNodeSchema = z.object({
   config: z.record(z.string(), z.unknown()).default({}),
   id: z.string().min(1),
+  position: z.object({ x: z.number(), y: z.number() }).default({ x: 0, y: 0 }),
   type: z.enum(automationNodeTypes),
 });
 
@@ -60,6 +67,7 @@ export interface GraphValidationResult {
 }
 
 const branchingNodes = new Set<AutomationNodeType>(['CONDITION']);
+const continuationNodes = new Set<AutomationNodeType>(['DELAY', 'WAIT_FOR_REPLY']);
 
 export function validateScenarioGraph(input: unknown): GraphValidationResult {
   const parsed = scenarioGraphSchema.safeParse(input);
@@ -112,6 +120,29 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
         errors.push(`Condition node ${node.id} has duplicate branch priorities`);
       }
     }
+    if (node.type === 'DELAY') {
+      const delaySeconds = node.config.delaySeconds;
+      if (
+        !Number.isInteger(delaySeconds) ||
+        typeof delaySeconds !== 'number' ||
+        delaySeconds <= 0
+      ) {
+        errors.push(`Delay node ${node.id} requires a positive integer delaySeconds`);
+      }
+    }
+    if (node.type === 'WAIT_FOR_REPLY') {
+      const timeoutSeconds = node.config.timeoutSeconds;
+      if (
+        !Number.isInteger(timeoutSeconds) ||
+        typeof timeoutSeconds !== 'number' ||
+        timeoutSeconds <= 0
+      ) {
+        errors.push(`Wait for Reply node ${node.id} requires a positive integer timeoutSeconds`);
+      }
+    }
+    if (node.type === 'START_SUBFLOW' && typeof node.config.scenarioId !== 'string') {
+      errors.push(`Subflow node ${node.id} requires a scenarioId`);
+    }
   }
 
   const reachable = new Set<string>();
@@ -124,26 +155,32 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
   for (const node of graph.nodes) {
     if (!reachable.has(node.id)) warnings.push(`Node ${node.id} is unreachable`);
   }
-  if (hasCycle(graph, outgoing)) {
+  if (hasUnguardedCycle(graph, outgoing, nodesById)) {
     errors.push('Graph contains an unguarded cycle');
   }
   return { errors, warnings };
 }
 
-function hasCycle(
+function hasUnguardedCycle(
   graph: ScenarioGraph,
   outgoing: ReadonlyMap<string, ScenarioGraphEdge[]>,
+  nodesById: ReadonlyMap<string, ScenarioGraphNode>,
 ): boolean {
-  const visiting = new Set<string>();
+  const visiting: string[] = [];
   const visited = new Set<string>();
   const visit = (nodeId: string): boolean => {
-    if (visiting.has(nodeId)) return true;
+    const cycleStart = visiting.indexOf(nodeId);
+    if (cycleStart >= 0) {
+      return !visiting
+        .slice(cycleStart)
+        .some((cycleNodeId) => continuationNodes.has(nodesById.get(cycleNodeId)!.type));
+    }
     if (visited.has(nodeId)) return false;
-    visiting.add(nodeId);
+    visiting.push(nodeId);
     for (const edge of outgoing.get(nodeId) ?? []) {
       if (visit(edge.to)) return true;
     }
-    visiting.delete(nodeId);
+    visiting.pop();
     visited.add(nodeId);
     return false;
   };

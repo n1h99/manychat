@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { AuditService } from '../audit/audit.service';
 import { DatabaseService } from '../database/database.service';
-import type { CreateScenarioDto, UpdateScenarioDto } from './dto';
+import type { CreateScenarioDto, DuplicateScenarioDto, UpdateScenarioDto } from './dto';
 
 @Injectable()
 export class AutomationService {
@@ -263,6 +263,77 @@ export class AutomationService {
       afterSafeJson: { status },
     });
     return updated;
+  }
+
+  async duplicate(
+    projectId: string,
+    scenarioId: string,
+    dto: DuplicateScenarioDto,
+    actor: AuthenticatedUser,
+    context: RequestSecurityContext,
+  ) {
+    const source = await this.get(projectId, scenarioId);
+    const sourceVersion = source.draftVersion ?? source.activeVersion;
+    if (!sourceVersion)
+      throw new BadRequestException({
+        code: 'SCENARIO_VERSION_REQUIRED',
+        message: 'Scenario has no version',
+      });
+    return this.database.client.$transaction(async (transaction) => {
+      const scenario = await transaction.scenario.create({
+        data: { description: source.description, name: dto.name, projectId },
+      });
+      const graph = sourceVersion.graph as Prisma.InputJsonValue;
+      const draft = await transaction.scenarioVersion.create({
+        data: {
+          contentHash: this.hash(graph),
+          graph,
+          projectId,
+          scenarioId: scenario.id,
+          validation: sourceVersion.validation as Prisma.InputJsonValue,
+          version: 1,
+        },
+      });
+      const duplicated = await transaction.scenario.update({
+        data: { draftVersionId: draft.id },
+        where: { projectId_id: { id: scenario.id, projectId } },
+      });
+      await this.audit.record({
+        action: 'scenario.duplicated',
+        actorUserId: actor.userId,
+        correlationId: context.correlationId,
+        entityId: duplicated.id,
+        entityType: 'Scenario',
+        projectId,
+        afterSafeJson: { sourceScenarioId: scenarioId },
+      });
+      return duplicated;
+    });
+  }
+
+  async restoreVersion(
+    projectId: string,
+    scenarioId: string,
+    versionId: string,
+    actor: AuthenticatedUser,
+    context: RequestSecurityContext,
+  ) {
+    await this.get(projectId, scenarioId);
+    const source = await this.database.client.scenarioVersion.findFirst({
+      where: { id: versionId, projectId, scenarioId },
+    });
+    if (!source)
+      throw new NotFoundException({
+        code: 'SCENARIO_VERSION_NOT_FOUND',
+        message: 'Scenario version was not found',
+      });
+    return this.update(
+      projectId,
+      scenarioId,
+      { graph: source.graph as Record<string, unknown> },
+      actor,
+      context,
+    );
   }
 
   private assertValidGraph(graph: unknown) {

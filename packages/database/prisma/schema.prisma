@@ -163,6 +163,7 @@ enum ScenarioVersionStatus {
 enum ScenarioExecutionStatus {
   QUEUED
   RUNNING
+  WAITING
   PAUSED
   COMPLETED
   FAILED
@@ -175,6 +176,21 @@ enum NodeExecutionStatus {
   SUCCEEDED
   FAILED
   SKIPPED
+}
+
+enum WaitStateStatus {
+  ACTIVE
+  RESOLVED
+  TIMED_OUT
+  CANCELLED
+}
+
+enum DelayedActionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
 }
 
 model User {
@@ -444,6 +460,8 @@ model Project {
   channelConnections       ChannelConnection[]
   scenarios                Scenario[]
   scenarioExecutions       ScenarioExecution[]
+  waitStates               WaitState[]
+  delayedActions           DelayedAction[]
   crmConfig                CrmProjectConfig?
   crmOperations            CrmOperation[]
 
@@ -622,6 +640,8 @@ model Scenario {
   activeVersion   ScenarioVersion? @relation("ScenarioActiveVersion", fields: [projectId, id, activeVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
   draftVersion    ScenarioVersion? @relation("ScenarioDraftVersion", fields: [projectId, id, draftVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
   executions      ScenarioExecution[]
+  waitStates      WaitState[]
+  delayedActions  DelayedAction[]
 
   @@unique([projectId, id])
   @@unique([projectId, id, activeVersionId])
@@ -649,6 +669,8 @@ model ScenarioVersion {
   activeFor          Scenario?             @relation("ScenarioActiveVersion")
   draftFor           Scenario?             @relation("ScenarioDraftVersion")
   executions         ScenarioExecution[]
+  waitStates         WaitState[]
+  delayedActions     DelayedAction[]
 
   @@unique([projectId, id])
   @@unique([projectId, scenarioId, id])
@@ -668,6 +690,8 @@ model ScenarioExecution {
   triggerEventId          String
   triggerKey              String
   conversationSequence    BigInt
+  parentExecutionId       String?
+  resumeNodeId            String?
   status                  ScenarioExecutionStatus @default(QUEUED)
   currentNodeId           String?
   variables               Json                    @default("{}")
@@ -686,12 +710,17 @@ model ScenarioExecution {
   conversation            Conversation            @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
   triggerEvent            NormalizedEvent         @relation(fields: [projectId, triggerEventId], references: [projectId, id], onDelete: Restrict)
   nodeExecutions          NodeExecution[]
+  waitStates              WaitState[]
+  delayedActions          DelayedAction[]
+  parentExecution         ScenarioExecution?      @relation("ScenarioExecutionSubflow", fields: [projectId, parentExecutionId], references: [projectId, id], onDelete: Restrict)
+  childExecutions         ScenarioExecution[]      @relation("ScenarioExecutionSubflow")
 
   @@unique([projectId, id])
   @@unique([projectId, scenarioId, triggerKey])
   @@index([projectId, conversationId, conversationSequence])
   @@index([projectId, status, updatedAt])
   @@index([projectId, triggerEventId])
+  @@index([projectId, parentExecutionId, status])
   @@map("scenario_executions")
 }
 
@@ -719,6 +748,66 @@ model NodeExecution {
   @@map("node_executions")
 }
 
+model WaitState {
+  id                String          @id @default(uuid())
+  projectId         String
+  scenarioExecutionId String
+  scenarioId        String
+  scenarioVersionId String
+  conversationId    String
+  nodeId            String
+  status            WaitStateStatus @default(ACTIVE)
+  criteria          Json            @default("{}")
+  successNodeId     String?
+  timeoutNodeId     String?
+  resolvedByEventId String?
+  expiresAt         DateTime        @db.Timestamptz(3)
+  resolvedAt        DateTime?       @db.Timestamptz(3)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+  project           Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  execution         ScenarioExecution @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
+  scenario          Scenario        @relation(fields: [projectId, scenarioId], references: [projectId, id], onDelete: Restrict)
+  scenarioVersion   ScenarioVersion @relation(fields: [projectId, scenarioId, scenarioVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
+  conversation      Conversation    @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, scenarioExecutionId, nodeId])
+  @@index([projectId, conversationId, scenarioId, status])
+  @@index([status, expiresAt])
+  @@map("wait_states")
+}
+
+model DelayedAction {
+  id                String              @id @default(uuid())
+  projectId         String
+  scenarioExecutionId String
+  scenarioId        String
+  scenarioVersionId String
+  nodeId            String
+  resumeNodeId      String?
+  status            DelayedActionStatus @default(PENDING)
+  attempts          Int                 @default(0)
+  maxAttempts       Int                 @default(8)
+  nextAttemptAt     DateTime            @db.Timestamptz(3)
+  lockedAt          DateTime?           @db.Timestamptz(3)
+  lockedBy          String?
+  lastError         String?
+  completedAt       DateTime?           @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
+  project           Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  execution         ScenarioExecution   @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
+  scenario          Scenario            @relation(fields: [projectId, scenarioId], references: [projectId, id], onDelete: Restrict)
+  scenarioVersion   ScenarioVersion     @relation(fields: [projectId, scenarioId, scenarioVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, scenarioExecutionId, nodeId])
+  @@index([status, nextAttemptAt])
+  @@index([projectId, scenarioExecutionId, status])
+  @@map("delayed_actions")
+}
+
 model Conversation {
   id             String             @id @default(uuid())
   projectId      String
@@ -735,6 +824,7 @@ model Conversation {
   connection     ChannelConnection  @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
   messages       Message[]
   scenarioExecutions ScenarioExecution[]
+  waitStates         WaitState[]
 
   @@unique([projectId, id])
   @@unique([projectId, connectionId, externalChatId])
