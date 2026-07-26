@@ -45,6 +45,9 @@ export function ProjectDetailPage() {
           {project.status === 'ACTIVE' ? 'Pause' : 'Activate'}
         </Button>
         <Link to={`/projects/${project.id}/members`}>Manage members</Link>
+        <Link to={`/projects/${project.id}/contacts`}>Contacts</Link>
+        <Link to={`/projects/${project.id}/tags`}>Tags</Link>
+        <Link to={`/projects/${project.id}/custom-fields`}>Custom fields</Link>
       </Space>
       <Typography.Title level={4}>Edit project</Typography.Title>
       <Form

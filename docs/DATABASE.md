@@ -53,14 +53,24 @@ exact fresh `prisma migrate diff --from-empty` output verified by
 `pnpm db:diff:check`; it has not been applied by this repository or deployed to
 production. Future domain models remain outside this migration.
 
-| Slice            | Executable models                                                                                                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invite history and active-invite reservations, `Permission`, global/project roles and assignments, `Project`, `AuditLog` |
-| Stage 2          | contacts, tags, custom field definitions and values                                                                                                                              |
-| Stage 3          | channel connections, webhook records, inbox/outbox, idempotency and messages                                                                                                     |
-| Stage 4          | scenarios and execution journal                                                                                                                                                  |
-| Stage 5          | project-specific CRM configuration after the CRM contract gate                                                                                                                   |
-| Post-pilot       | broadcasts, Wait, Delay, Subflow and advanced media workflows                                                                                                                    |
+### Stage 2 migration status
+
+`packages/database/prisma/migrations/20260726000200_stage2_contacts_tags_fields/migration.sql`
+adds exactly five Stage 2 tables: contacts, channel identities, tags, contact
+tags and custom-field definitions. The migration was reviewed against a fresh
+Prisma diff: every tenant relation uses `(projectId, id)` where both entities
+are tenant-owned, all lifecycle timestamps use `TIMESTAMPTZ(3)`, and tag/
+custom-field deletion is archival rather than destructive. It is not applied
+or deployed by this repository.
+
+| Slice            | Executable models                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invite history and active-invite reservations, `Permission`, global/project roles and assignments, `Project`, `AuditLog`     |
+| Stage 2          | `Contact`, `ChannelIdentity`, `Tag`, `ContactTag` and `CustomFieldDefinition`; contact custom-field values are stored in the contact JSON document and validated against definitions |
+| Stage 3          | channel connections, webhook records, inbox/outbox, idempotency and messages                                                                                                         |
+| Stage 4          | scenarios and execution journal                                                                                                                                                      |
+| Stage 5          | project-specific CRM configuration after the CRM contract gate                                                                                                                       |
+| Post-pilot       | broadcasts, Wait, Delay, Subflow and advanced media workflows                                                                                                                        |
 
 Каждый slice получает отдельный generated SQL review. Ни одна будущая модель не
 добавляется в Stage 1 baseline «про запас».

@@ -139,10 +139,10 @@ Subflows, полноценный External HTTP Request editor и расшире�
 
 ### Scope
 
-- Contact и ChannelIdentity foundation;
+- Contact и ChannelIdentity foundation without a provider connection or webhook runtime;
 - automation mode inheritance;
 - Tag/ContactTag;
-- CustomFieldDefinition и typed value validation;
+- CustomFieldDefinition и typed value validation. Contact values remain in the contact JSON document in this slice; deleting a definition archives it and never deletes historical contact JSON values;
 - Segment schema и validator; UI saved segments можно отложить до последующей
   функции, но модель не должна блокировать развитие;
 - contact list/card/filter;

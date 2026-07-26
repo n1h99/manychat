@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { ProjectsModule } from './projects/projects.module';
 import { UsersModule } from './users/users.module';
+import { ContactsModule } from './contacts/contacts.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -31,6 +32,7 @@ const rootEnvFile =
     AuthModule,
     ProjectsModule,
     UsersModule,
+    ContactsModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -440,3 +440,19 @@ assignment.
 **Последствия:** первый administrator и новые users могут входить сразу с
 временным паролем; принудительная смена пароля, reset flow и email invitation не
 реализуются в Этапе 1.
+
+## ADR-024. Stage 2 custom-field values and archival
+
+**Статус:** Accepted.
+
+**Решение:** Stage 2 stores a contact's custom-field values in `Contact.customFields`
+as JSON. Every write is checked against the project-local
+`CustomFieldDefinition`; values not matching the declared type, or select values
+outside its options, are rejected. This avoids a premature sixth value/indexing
+model while channels and segmentation are absent. A deleted definition is
+archived (`archivedAt`), never hard-deleted; existing contact JSON is retained
+as history and is no longer editable through the API.
+
+**Последствия:** No automatic contact merge or value deletion exists in this
+slice. A later indexed-value/segment migration must explicitly backfill and
+retain the same validation semantics before it can replace this representation.

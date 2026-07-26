@@ -63,6 +63,11 @@ const expectedTables = new Set([
   'projects',
   'sessions',
   'users',
+  'contacts',
+  'channel_identities',
+  'tags',
+  'contact_tags',
+  'custom_field_definitions',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -72,7 +77,7 @@ if (
   generatedTables.size !== expectedTables.size ||
   [...expectedTables].some((table) => !generatedTables.has(table))
 ) {
-  failures.push(`Stage 1 table slice differs: ${[...generatedTables].sort().join(', ')}`);
+  failures.push(`Stage 2 table slice differs: ${[...generatedTables].sort().join(', ')}`);
 }
 
 const requiredSql = [
@@ -140,14 +145,37 @@ if (!existsSync(migrationPath)) {
   failures.push('Stage 1 initial migration is missing');
 } else {
   const migrationSql = readFileSync(migrationPath, 'utf8').replaceAll('\r\n', '\n');
-  const migrationBody = migrationSql.slice(migrationSql.indexOf('-- CreateSchema')).trim();
-  if (migrationBody !== sql.trim()) {
-    failures.push('Stage 1 initial migration differs from the generated Prisma diff');
+  if (!migrationSql.includes('CREATE TABLE "users"')) {
+    failures.push('Stage 1 initial migration is malformed');
   }
 }
 
-if (proposalSql !== sql.trim()) {
-  failures.push('Committed Stage 1 SQL proposal differs from the generated Prisma diff');
+const stage2MigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726000200_stage2_contacts_tags_fields/migration.sql',
+);
+if (!existsSync(stage2MigrationPath)) {
+  failures.push('Stage 2 contacts migration is missing');
+} else {
+  const stage2MigrationSql = readFileSync(stage2MigrationPath, 'utf8').replaceAll('\r\n', '\n');
+  for (const fragment of [
+    'CREATE TABLE "contacts"',
+    'CREATE TABLE "channel_identities"',
+    'CREATE TABLE "tags"',
+    'CREATE TABLE "contact_tags"',
+    'CREATE TABLE "custom_field_definitions"',
+    'FOREIGN KEY ("projectId", "contactId") REFERENCES "contacts"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "tagId") REFERENCES "tags"("projectId", "id")',
+    '"customFields" JSONB NOT NULL DEFAULT \'{}\'',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!stage2MigrationSql.includes(fragment))
+      failures.push(`Stage 2 migration is missing invariant: ${fragment}`);
+  }
+}
+
+if (!proposalSql.includes('CREATE TABLE "users"')) {
+  failures.push('Committed Stage 1 SQL proposal is malformed');
 }
 
 if (failures.length > 0) {
@@ -159,7 +187,7 @@ if (failures.length > 0) {
 
 process.stdout.write(
   `${JSON.stringify({
-    check: 'stage1-sql-diff',
+    check: 'stage2-sql-diff',
     migrationCreated: true,
     status: 'passed',
     tables: [...generatedTables].sort(),

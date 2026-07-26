@@ -19,21 +19,54 @@ const projectPermissions = [
   'members:manage',
   'contacts:read',
   'contacts:manage',
+  'contacts:update',
+  'contacts:export',
+  'contacts:merge',
+  'tags:read',
+  'tags:manage',
   'automation:read',
   'automation:manage',
   'integrations:manage',
 ];
 
 const projectRoles = [
-  ['Project Admin', 'project-admin', ['project:read', 'project:manage', 'members:manage']],
+  [
+    'Project Admin',
+    'project-admin',
+    [
+      'project:read',
+      'project:manage',
+      'members:manage',
+      'contacts:read',
+      'contacts:manage',
+      'contacts:update',
+      'contacts:export',
+      'contacts:merge',
+      'tags:read',
+      'tags:manage',
+    ],
+  ],
   [
     'Automation Editor',
     'automation-editor',
     ['project:read', 'automation:read', 'automation:manage'],
   ],
   ['Integration Manager', 'integration-manager', ['project:read', 'integrations:manage']],
-  ['Contact Manager', 'contact-manager', ['project:read', 'contacts:read', 'contacts:manage']],
-  ['Viewer', 'viewer', ['project:read', 'contacts:read', 'automation:read']],
+  [
+    'Contact Manager',
+    'contact-manager',
+    [
+      'project:read',
+      'contacts:read',
+      'contacts:manage',
+      'contacts:update',
+      'contacts:export',
+      'contacts:merge',
+      'tags:read',
+      'tags:manage',
+    ],
+  ],
+  ['Viewer', 'viewer', ['project:read', 'contacts:read', 'tags:read', 'automation:read']],
 ] as const;
 
 loadEnvironment({ path: resolve(__dirname, '../../../.env'), quiet: true });
@@ -123,6 +156,37 @@ async function seed(): Promise<void> {
           });
         }
       }
+      const existingFixture = await database.client.contact.findFirst({
+        where: { projectId: project.id, username: 'development-contact' },
+      });
+      const fixture =
+        existingFixture ??
+        (await database.client.contact.create({
+          data: {
+            displayName: 'Development Contact',
+            email: 'development-contact@example.test',
+            firstName: 'Development',
+            projectId: project.id,
+            username: 'development-contact',
+          },
+        }));
+      await database.client.channelIdentity.upsert({
+        create: {
+          channel: 'OTHER',
+          connectionId: 'development-fixture',
+          contactId: fixture.id,
+          externalUserId: `development-contact:${project.id}`,
+          projectId: project.id,
+        },
+        update: {},
+        where: {
+          projectId_connectionId_externalUserId: {
+            connectionId: 'development-fixture',
+            externalUserId: `development-contact:${project.id}`,
+            projectId: project.id,
+          },
+        },
+      });
     }
     process.stdout.write(
       `${JSON.stringify({

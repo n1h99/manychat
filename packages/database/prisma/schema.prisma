@@ -36,6 +36,34 @@ enum ProjectStatus {
   ARCHIVED
 }
 
+enum ContactStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AutomationMode {
+  ENABLED
+  DISABLED
+}
+
+enum ChannelType {
+  TELEGRAM
+  WHATSAPP
+  INSTAGRAM
+  OTHER
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  DATE
+  DATETIME
+  SELECT
+  MULTI_SELECT
+  JSON
+}
+
 model User {
   id                  String                   @id @default(uuid())
   email               String
@@ -297,9 +325,116 @@ model Project {
   inviteTokens             ProjectUserInviteToken[]
   activeInviteReservations ProjectActiveInviteReservation[]
   auditLogs                AuditLog[]
+  contacts                 Contact[]
+  tags                     Tag[]
+  customFieldDefinitions   CustomFieldDefinition[]
 
   @@index([status, createdAt])
   @@map("projects")
+}
+
+model Contact {
+  id                 String         @id @default(uuid())
+  projectId          String
+  displayName        String
+  firstName          String?
+  lastName           String?
+  username           String?
+  phone              String?
+  email              String?
+  status             ContactStatus  @default(ACTIVE)
+  automationMode     AutomationMode @default(ENABLED)
+  crmLeadId          String?
+  crmContactId       String?
+  crmManagerId       String?
+  customFields       Json           @default("{}")
+  firstInteractionAt DateTime?      @db.Timestamptz(3)
+  lastInteractionAt  DateTime?      @db.Timestamptz(3)
+  archivedAt         DateTime?      @db.Timestamptz(3)
+  createdAt          DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @db.Timestamptz(3)
+  project            Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  channelIdentities  ChannelIdentity[]
+  tags               ContactTag[]
+
+  @@unique([projectId, id])
+  @@index([projectId, status, createdAt])
+  @@index([projectId, lastInteractionAt])
+  @@index([projectId, displayName])
+  @@index([projectId, crmLeadId])
+  @@map("contacts")
+}
+
+model ChannelIdentity {
+  id             String      @id @default(uuid())
+  projectId      String
+  contactId      String
+  connectionId   String
+  channel        ChannelType
+  externalUserId String
+  username       String?
+  displayName    String?
+  metadata       Json?
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
+  contact        Contact     @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, externalUserId])
+  @@index([projectId, contactId])
+  @@map("channel_identities")
+}
+
+model Tag {
+  id             String       @id @default(uuid())
+  projectId      String
+  name           String
+  normalizedName String
+  color          String?
+  description    String?
+  archivedAt     DateTime?    @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  contacts       ContactTag[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, normalizedName])
+  @@index([projectId, archivedAt])
+  @@map("tags")
+}
+
+model ContactTag {
+  projectId String
+  contactId String
+  tagId     String
+  source    String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  contact   Contact  @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [projectId, tagId], references: [projectId, id], onDelete: Restrict)
+
+  @@id([projectId, contactId, tagId])
+  @@index([projectId, tagId, contactId])
+  @@map("contact_tags")
+}
+
+model CustomFieldDefinition {
+  id          String          @id @default(uuid())
+  projectId   String
+  key         String
+  name        String
+  description String?
+  type        CustomFieldType
+  options     Json?
+  archivedAt  DateTime?       @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, key])
+  @@index([projectId, archivedAt])
+  @@map("custom_field_definitions")
 }
 
 model AuditLog {
