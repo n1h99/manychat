@@ -202,6 +202,14 @@ importers:
 
   packages/channel-core: {}
 
+  packages/channel-secrets: {}
+
+  packages/channel-telegram:
+    dependencies:
+      '@omnicus/channel-core':
+        specifier: workspace:*
+        version: link:../channel-core
+
   packages/config:
     dependencies:
       zod:

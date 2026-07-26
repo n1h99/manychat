@@ -9,6 +9,18 @@ const nodeEnvironmentSchema = z.enum(['development', 'production', 'test']);
 const portSchema = z.coerce.number().int().min(1).max(65_535);
 const durationSchema = z.coerce.number().int().min(250).max(60_000);
 const positiveIntegerSchema = z.coerce.number().int().positive();
+const channelSecretsKeySchema = z.string().superRefine((value, context) => {
+  try {
+    if (Buffer.from(value, 'base64').length !== 32) {
+      context.addIssue({
+        code: 'custom',
+        message: 'CHANNEL_SECRETS_KEY must decode to exactly 32 bytes',
+      });
+    }
+  } catch {
+    context.addIssue({ code: 'custom', message: 'CHANNEL_SECRETS_KEY must be Base64' });
+  }
+});
 
 const booleanEnvironmentSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
 
@@ -123,6 +135,7 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
     API_PORT: portSchema.default(3000),
     CORS_ALLOWED_ORIGINS: corsOriginsSchema,
     JWT_ACCESS_SECRET: z.string().min(32),
+    CHANNEL_SECRETS_KEY: channelSecretsKeySchema,
     JWT_ACCESS_TTL_SECONDS: positiveIntegerSchema.max(3_600).default(900),
     LOGIN_RATE_LIMIT_MAX_ATTEMPTS: positiveIntegerSchema.max(100).default(10),
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerSchema.max(3_600).default(900),
@@ -176,6 +189,7 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
 export const workerEnvironmentSchema = serviceEnvironmentSchema
   .extend({
     BULLMQ_READY_TIMEOUT_MS: durationSchema.default(5_000),
+    CHANNEL_SECRETS_KEY: channelSecretsKeySchema,
     DEMO_JOB_ENABLED: booleanEnvironmentSchema.default(false),
     WORKER_HOST: z.string().min(1).default('0.0.0.0'),
     WORKER_PORT: portSchema.default(3001),

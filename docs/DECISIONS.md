@@ -456,3 +456,18 @@ as history and is no longer editable through the API.
 **Последствия:** No automatic contact merge or value deletion exists in this
 slice. A later indexed-value/segment migration must explicitly backfill and
 retain the same validation semantics before it can replace this representation.
+
+## ADR-025. Channel secret encryption envelope
+
+**Статус:** Accepted.
+
+**Решение:** Channel credentials use `CHANNEL_SECRETS_KEY`, an explicit 32-byte
+Base64 key, with Node.js AES-256-GCM. `ChannelSecretsService` stores only a
+versioned JSON envelope and binds encryption with AAD
+`projectId:connectionId:channelType:field`. Tokens and webhook secrets never
+appear in reads, logs, validation payloads or audit JSON. Pilot key version is
+one; later key rotation may add a previous decrypt key and a re-encryption job.
+
+**Последствия:** API and worker require the same key in every environment,
+including an explicit distinct test key. A crypto failure changes the connection
+to error and records only a safe audit/security event.

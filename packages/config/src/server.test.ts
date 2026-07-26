@@ -14,6 +14,7 @@ import {
 const baseEnvironment = {
   APP_ENV: 'test',
   CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
+  CHANNEL_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
   DATABASE_URL: 'postgresql://omnicus:omnicus@localhost:5432/omnicus',
   JWT_ACCESS_SECRET: 'test-only-jwt-secret-that-is-long-enough-for-validation',
   NODE_ENV: 'test',
@@ -32,6 +33,12 @@ describe('server environment validation', () => {
         ...baseEnvironment,
         APP_ENV: undefined,
       }),
+    ).toThrow();
+  });
+
+  it('rejects a channel secret key that is not 32 bytes', () => {
+    expect(() =>
+      validateApiEnvironment({ ...baseEnvironment, CHANNEL_SECRETS_KEY: 'short' }),
     ).toThrow();
   });
 
