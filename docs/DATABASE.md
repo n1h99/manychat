@@ -63,11 +63,39 @@ are tenant-owned, all lifecycle timestamps use `TIMESTAMPTZ(3)`, and tag/
 custom-field deletion is archival rather than destructive. It is not applied
 or deployed by this repository.
 
+### Stage 3B.1 migration status
+
+`packages/database/prisma/migrations/20260726000300_stage3_telegram_persistence/migration.sql`
+adds only the Telegram persistence foundation: `ChannelConnection`, valid raw
+webhook events, inbox/outbox records, idempotency records, normalized events,
+conversations and messages. It does not add an HTTP webhook handler, BullMQ
+worker, outbound delivery, channel-management API or frontend.
+
+Every Stage 3 tenant-owned record has `projectId`. Relations to a connection,
+contact or conversation use `(projectId, id)` composite foreign keys, so a
+record cannot reference an entity from another project. `RawWebhookEvent` is
+deduplicated by `(connectionId, externalUpdateId)`; `NormalizedEvent` has one
+row per inbox record; incoming provider messages are deduplicated by
+`(connectionId, direction, externalMessageId)`; and a Telegram conversation is
+stable at `(projectId, connectionId, externalChatId)`. PostgreSQL remains the
+source of truth for pending records: the polling indexes are `(status,
+nextAttemptAt)` and `(projectId, connectionId, status)` for both inbox and
+outbox.
+
+`credentialsEncrypted` and `webhookSecretEncrypted` are JSONB AES-256-GCM
+envelopes defined by ADR-025. No plaintext bot token or webhook-secret column
+exists. Valid provider payloads are stored as JSONB with `purgeAfter` retention
+metadata; invalid webhook attempts are deliberately outside this schema because
+their body must not be persisted.
+
+The migration is a reviewed schema artifact and has not been applied or
+deployed by this repository.
+
 | Slice            | Executable models                                                                                                                                                                    |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invite history and active-invite reservations, `Permission`, global/project roles and assignments, `Project`, `AuditLog`     |
 | Stage 2          | `Contact`, `ChannelIdentity`, `Tag`, `ContactTag` and `CustomFieldDefinition`; contact custom-field values are stored in the contact JSON document and validated against definitions |
-| Stage 3          | channel connections, webhook records, inbox/outbox, idempotency and messages                                                                                                         |
+| Stage 3B.1       | `ChannelConnection`, valid webhook persistence, `InboxRecord`, `OutboxRecord`, `IdempotencyRecord`, `NormalizedEvent`, `Conversation` and `Message`; no runtime yet                  |
 | Stage 4          | scenarios and execution journal                                                                                                                                                      |
 | Stage 5          | project-specific CRM configuration after the CRM contract gate                                                                                                                       |
 | Post-pilot       | broadcasts, Wait, Delay, Subflow and advanced media workflows                                                                                                                        |

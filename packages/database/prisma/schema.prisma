@@ -63,6 +63,78 @@ enum CustomFieldType {
   MULTI_SELECT
   JSON
 }
+enum ChannelConnectionStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+  ERROR
+}
+
+enum RawWebhookEventStatus {
+  RECEIVED
+  EXPIRED
+}
+
+enum InboxRecordStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  RETRY
+  FAILED
+  DEAD_LETTER
+}
+
+enum OutboxRecordStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  UNKNOWN
+}
+
+enum NormalizedEventType {
+  MESSAGE
+  COMMAND
+  PHOTO
+  DOCUMENT
+  CALLBACK_QUERY
+  CHAT_MEMBER
+  UNSUPPORTED
+}
+
+enum ConversationStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum ChannelIdentityStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  COMMAND
+  PHOTO
+  DOCUMENT
+  CALLBACK_QUERY
+  SYSTEM
+  UNSUPPORTED
+}
+
+enum MessageStatus {
+  QUEUED
+  RECEIVED
+  PROCESSING
+  SENT
+  FAILED
+  UNKNOWN
+}
 
 model User {
   id                  String                   @id @default(uuid())
@@ -328,6 +400,7 @@ model Project {
   contacts                 Contact[]
   tags                     Tag[]
   customFieldDefinitions   CustomFieldDefinition[]
+  channelConnections       ChannelConnection[]
 
   @@index([status, createdAt])
   @@map("projects")
@@ -356,6 +429,8 @@ model Contact {
   project            Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
   channelIdentities  ChannelIdentity[]
   tags               ContactTag[]
+  conversations      Conversation[]
+  messages           Message[]
 
   @@unique([projectId, id])
   @@index([projectId, status, createdAt])
@@ -366,7 +441,7 @@ model Contact {
 }
 
 model ChannelIdentity {
-  id             String      @id @default(uuid())
+  id             String                @id @default(uuid())
   projectId      String
   contactId      String
   connectionId   String
@@ -374,15 +449,198 @@ model ChannelIdentity {
   externalUserId String
   username       String?
   displayName    String?
+  languageCode   String?
+  status         ChannelIdentityStatus @default(ACTIVE)
   metadata       Json?
-  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
-  contact        Contact     @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+  contact        Contact               @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  connection     ChannelConnection     @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
 
   @@unique([projectId, id])
   @@unique([projectId, connectionId, externalUserId])
   @@index([projectId, contactId])
   @@map("channel_identities")
+}
+
+model ChannelConnection {
+  id                     String                  @id @default(uuid())
+  projectId              String
+  type                   ChannelType             @default(TELEGRAM)
+  status                 ChannelConnectionStatus @default(DRAFT)
+  credentialsEncrypted   Json
+  webhookSecretEncrypted Json
+  botUsername            String?
+  externalBotId          String?
+  webhookMetadata        Json?
+  lastWebhookAt          DateTime?               @db.Timestamptz(3)
+  lastErrorAt            DateTime?               @db.Timestamptz(3)
+  createdAt              DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                @updatedAt @db.Timestamptz(3)
+  project                Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  identities             ChannelIdentity[]
+  rawWebhookEvents       RawWebhookEvent[]
+  inboxRecords           InboxRecord[]
+  normalizedEvents       NormalizedEvent[]
+  conversations          Conversation[]
+  messages               Message[]
+  outboxRecords          OutboxRecord[]
+
+  @@unique([projectId, id])
+  @@index([projectId, status])
+  @@index([projectId, type])
+  @@map("channel_connections")
+}
+
+model RawWebhookEvent {
+  id               String                @id @default(uuid())
+  projectId        String
+  connectionId     String
+  externalUpdateId String
+  status           RawWebhookEventStatus @default(RECEIVED)
+  payload          Json
+  receivedAt       DateTime              @default(now()) @db.Timestamptz(3)
+  purgeAfter       DateTime              @db.Timestamptz(3)
+  connection       ChannelConnection     @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  inboxRecord      InboxRecord?
+
+  @@unique([projectId, id])
+  @@unique([connectionId, externalUpdateId])
+  @@index([projectId, connectionId, receivedAt])
+  @@index([projectId, purgeAfter])
+  @@map("raw_webhook_events")
+}
+
+model InboxRecord {
+  id                String            @id @default(uuid())
+  projectId         String
+  connectionId      String
+  rawWebhookEventId String            @unique
+  status            InboxRecordStatus @default(PENDING)
+  attempts          Int               @default(0)
+  maxAttempts       Int               @default(8)
+  nextAttemptAt     DateTime?         @db.Timestamptz(3)
+  lockedAt          DateTime?         @db.Timestamptz(3)
+  lockedBy          String?
+  lastError         String?
+  completedAt       DateTime?         @db.Timestamptz(3)
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @db.Timestamptz(3)
+  connection        ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  rawWebhookEvent   RawWebhookEvent   @relation(fields: [projectId, rawWebhookEventId], references: [projectId, id], onDelete: Restrict)
+  normalizedEvent   NormalizedEvent?
+
+  @@unique([projectId, id])
+  @@unique([projectId, rawWebhookEventId])
+  @@index([status, nextAttemptAt])
+  @@index([projectId, connectionId, status])
+  @@map("inbox_records")
+}
+
+model NormalizedEvent {
+  id            String              @id @default(uuid())
+  projectId     String
+  connectionId  String
+  inboxRecordId String              @unique
+  type          NormalizedEventType
+  payload       Json
+  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
+  connection    ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  inboxRecord   InboxRecord         @relation(fields: [projectId, inboxRecordId], references: [projectId, id], onDelete: Restrict)
+  message       Message?
+
+  @@unique([projectId, id])
+  @@unique([projectId, inboxRecordId])
+  @@index([projectId, connectionId, createdAt])
+  @@map("normalized_events")
+}
+
+model Conversation {
+  id             String             @id @default(uuid())
+  projectId      String
+  connectionId   String
+  contactId      String
+  externalChatId String
+  status         ConversationStatus @default(ACTIVE)
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
+  contact        Contact            @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  connection     ChannelConnection  @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  messages       Message[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, externalChatId])
+  @@index([projectId, connectionId, status])
+  @@index([projectId, contactId, updatedAt])
+  @@map("conversations")
+}
+
+model Message {
+  id                String           @id @default(uuid())
+  projectId         String
+  connectionId      String
+  conversationId    String
+  contactId         String
+  normalizedEventId String?
+  direction         MessageDirection
+  type              MessageType
+  status            MessageStatus
+  externalMessageId String?
+  content           Json
+  metadata          Json?
+  sentAt            DateTime?        @db.Timestamptz(3)
+  failedAt          DateTime?        @db.Timestamptz(3)
+  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @db.Timestamptz(3)
+  contact           Contact          @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  connection        ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  conversation      Conversation     @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
+  normalizedEvent  NormalizedEvent?  @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, normalizedEventId])
+  @@unique([connectionId, direction, externalMessageId])
+  @@index([projectId, conversationId, createdAt])
+  @@index([projectId, connectionId, externalMessageId])
+  @@map("messages")
+}
+
+model OutboxRecord {
+  id             String             @id @default(uuid())
+  projectId      String
+  connectionId   String
+  idempotencyKey String
+  status         OutboxRecordStatus @default(PENDING)
+  payload        Json
+  attempts       Int                @default(0)
+  maxAttempts    Int                @default(8)
+  nextAttemptAt  DateTime?          @db.Timestamptz(3)
+  lockedAt       DateTime?          @db.Timestamptz(3)
+  lockedBy       String?
+  lastError      String?
+  completedAt    DateTime?          @db.Timestamptz(3)
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
+  connection     ChannelConnection  @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, idempotencyKey])
+  @@index([status, nextAttemptAt])
+  @@index([projectId, connectionId, status])
+  @@map("outbox_records")
+}
+
+model IdempotencyRecord {
+  id        String   @id @default(uuid())
+  projectId String
+  scope     String
+  key       String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime? @db.Timestamptz(3)
+
+  @@unique([projectId, scope, key])
+  @@index([projectId, expiresAt])
+  @@map("idempotency_records")
 }
 
 model Tag {

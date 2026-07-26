@@ -68,6 +68,14 @@ const expectedTables = new Set([
   'tags',
   'contact_tags',
   'custom_field_definitions',
+  'channel_connections',
+  'raw_webhook_events',
+  'inbox_records',
+  'normalized_events',
+  'conversations',
+  'messages',
+  'outbox_records',
+  'idempotency_records',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -77,7 +85,7 @@ if (
   generatedTables.size !== expectedTables.size ||
   [...expectedTables].some((table) => !generatedTables.has(table))
 ) {
-  failures.push(`Stage 2 table slice differs: ${[...generatedTables].sort().join(', ')}`);
+  failures.push(`Stage 3 table slice differs: ${[...generatedTables].sort().join(', ')}`);
 }
 
 const requiredSql = [
@@ -137,6 +145,10 @@ if (sql.includes('TIMESTAMP(3) ') || sql.includes('TIMESTAMP(3),')) {
   failures.push('A lifecycle timestamp was generated without time zone');
 }
 
+if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(sql)) {
+  failures.push('Fresh schema diff contains a destructive operation');
+}
+
 const migrationPath = resolve(
   repositoryRoot,
   'packages/database/prisma/migrations/20260726000100_stage1_auth_rbac_projects/migration.sql',
@@ -174,6 +186,54 @@ if (!existsSync(stage2MigrationPath)) {
   }
 }
 
+const stage3MigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726000300_stage3_telegram_persistence/migration.sql',
+);
+if (!existsSync(stage3MigrationPath)) {
+  failures.push('Stage 3 Telegram persistence migration is missing');
+} else {
+  const stage3MigrationSql = readFileSync(stage3MigrationPath, 'utf8').replaceAll('\r\n', '\n');
+  for (const fragment of [
+    'CREATE TABLE "channel_connections"',
+    'CREATE TABLE "raw_webhook_events"',
+    'CREATE TABLE "inbox_records"',
+    'CREATE TABLE "normalized_events"',
+    'CREATE TABLE "conversations"',
+    'CREATE TABLE "messages"',
+    'CREATE TABLE "outbox_records"',
+    'CREATE TABLE "idempotency_records"',
+    'CREATE UNIQUE INDEX "raw_webhook_events_connectionId_externalUpdateId_key"',
+    'CREATE UNIQUE INDEX "normalized_events_inboxRecordId_key"',
+    'CREATE UNIQUE INDEX "conversations_projectId_connectionId_externalChatId_key"',
+    'CREATE UNIQUE INDEX "messages_connectionId_direction_externalMessageId_key"',
+    'CREATE UNIQUE INDEX "messages_projectId_normalizedEventId_key"',
+    'FOREIGN KEY ("projectId", "connectionId") REFERENCES "channel_connections"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "rawWebhookEventId") REFERENCES "raw_webhook_events"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "inboxRecordId") REFERENCES "inbox_records"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "contactId") REFERENCES "contacts"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "conversationId") REFERENCES "conversations"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "normalizedEventId") REFERENCES "normalized_events"("projectId", "id")',
+    '"credentialsEncrypted" JSONB NOT NULL',
+    '"webhookSecretEncrypted" JSONB NOT NULL',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!stage3MigrationSql.includes(fragment)) {
+      failures.push(`Stage 3 migration is missing invariant: ${fragment}`);
+    }
+  }
+
+  for (const forbidden of ['botToken', 'webhookSecret" TEXT', 'plaintext']) {
+    if (stage3MigrationSql.includes(forbidden)) {
+      failures.push(`Stage 3 migration contains forbidden secret storage: ${forbidden}`);
+    }
+  }
+
+  if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(stage3MigrationSql)) {
+    failures.push('Stage 3 migration contains a destructive operation');
+  }
+}
+
 if (!proposalSql.includes('CREATE TABLE "users"')) {
   failures.push('Committed Stage 1 SQL proposal is malformed');
 }
@@ -187,7 +247,7 @@ if (failures.length > 0) {
 
 process.stdout.write(
   `${JSON.stringify({
-    check: 'stage2-sql-diff',
+    check: 'stage3-sql-diff',
     migrationCreated: true,
     status: 'passed',
     tables: [...generatedTables].sort(),

@@ -165,6 +165,14 @@ Subflows, полноценный External HTTP Request editor и расшире�
 
 ## Этап 3. Transactional Inbox/Outbox и Telegram Adapter
 
+### Stage 3B.1 — persistence schema
+
+Implemented persistence-only slice: `ChannelConnection`, valid raw webhook
+events, `InboxRecord`, `OutboxRecord`, `IdempotencyRecord`, `NormalizedEvent`,
+`Conversation` and `Message`, with a separate reviewed migration. This slice
+does not include a webhook endpoint, BullMQ processing, outbound delivery, a
+channel-management API or frontend. Those remain subsequent Stage 3 work.
+
 ### Scope
 
 - InboxRecord, OutboxRecord, IdempotencyRecord, RawWebhookEvent,
