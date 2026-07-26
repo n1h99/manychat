@@ -9,20 +9,24 @@ const TEST_CHANNEL_SECRETS_KEY = Buffer.alloc(32, 1).toString('base64');
 const receivedAt = new Date('2026-07-26T10:00:00.000Z');
 
 interface HarnessOptions {
+  attempts?: number;
   connectionId?: string;
   existingContactId?: string;
   lockedAt?: Date | null;
   payload?: unknown;
   projectId?: string;
+  maxAttempts?: number;
   status?: 'COMPLETED' | 'DEAD_LETTER' | 'FAILED' | 'PENDING' | 'PROCESSING' | 'RETRY';
 }
 
 function createHarness(options: HarnessOptions = {}) {
   const record = {
-    attempts: 0,
+    attempts: options.attempts ?? 0,
     connectionId: options.connectionId ?? 'connection-a',
     id: 'inbox-a',
     lockedAt: options.lockedAt ?? null,
+    lockedBy: null as string | null,
+    maxAttempts: options.maxAttempts ?? 8,
     projectId: options.projectId ?? 'project-a',
     rawWebhookEvent: {
       payload: options.payload ?? telegramInboundFixtures.text.payload,
@@ -46,6 +50,23 @@ function createHarness(options: HarnessOptions = {}) {
     .mockImplementation(async ({ data }: { data: { status: typeof record.status } }) => {
       record.status = data.status;
     });
+  const transactionInboxUpdateMany = vi
+    .fn()
+    .mockImplementation(
+      async ({
+        data,
+        where,
+      }: {
+        data: Record<string, unknown>;
+        where: Record<string, unknown>;
+      }) => {
+        if (where.lockedBy !== record.lockedBy || record.status !== 'PROCESSING')
+          return { count: 0 };
+        record.status = data.status as typeof record.status;
+        record.lockedAt = null;
+        return { count: 1 };
+      },
+    );
   const transaction = {
     channelIdentity: {
       create: identityCreate,
@@ -54,30 +75,38 @@ function createHarness(options: HarnessOptions = {}) {
     },
     contact: { create: contactCreate, update: contactUpdate, updateMany: contactUpdateMany },
     conversation: { upsert: conversationUpsert },
-    inboxRecord: { update: inboxUpdate },
+    inboxRecord: { update: inboxUpdate, updateMany: transactionInboxUpdateMany },
     message: { upsert: messageUpsert },
     normalizedEvent: { upsert: normalizedUpsert },
   };
   const inboxUpdateMany = vi
     .fn()
-    .mockImplementation(async (input: { data: Record<string, unknown> }) => {
-      if (input.data.status === 'PROCESSING') {
-        if (
-          record.status === 'PENDING' ||
-          record.status === 'RETRY' ||
-          (record.status === 'PROCESSING' &&
-            (record.lockedAt === null || record.lockedAt.getTime() < Date.now() - 60_000))
-        ) {
-          record.status = 'PROCESSING';
-          record.attempts += 1;
-          record.lockedAt = new Date();
-          return { count: 1 };
+    .mockImplementation(
+      async (input: { data: Record<string, unknown>; where: Record<string, unknown> }) => {
+        if (input.data.status === 'PROCESSING') {
+          if (
+            record.status === 'PENDING' ||
+            record.status === 'RETRY' ||
+            (record.status === 'PROCESSING' &&
+              (record.lockedAt === null || record.lockedAt.getTime() < Date.now() - 60_000))
+          ) {
+            record.status = 'PROCESSING';
+            record.attempts += 1;
+            record.lockedAt = new Date();
+            record.lockedBy = input.data.lockedBy as string;
+            return { count: 1 };
+          }
+          return { count: 0 };
         }
-        return { count: 0 };
-      }
-      if (input.data.status === 'RETRY') record.status = 'RETRY';
-      return { count: 1 };
-    });
+        if (input.data.status === 'RETRY' || input.data.status === 'DEAD_LETTER') {
+          if (input.where.lockedBy !== record.lockedBy) return { count: 0 };
+          record.status = input.data.status;
+          record.lockedAt = null;
+          record.lockedBy = null;
+        }
+        return { count: 1 };
+      },
+    );
   const database = {
     client: {
       $transaction: vi.fn(async (callback: (client: typeof transaction) => unknown) =>
@@ -110,6 +139,7 @@ function createHarness(options: HarnessOptions = {}) {
     normalizedUpsert,
     record,
     service,
+    transactionInboxUpdateMany,
   };
 }
 
@@ -249,7 +279,7 @@ describe('TelegramInboundProcessorService', () => {
     expect(messageUpsert).not.toHaveBeenCalled();
   });
 
-  it('marks malformed events retryable without logging raw payload', async () => {
+  it('dead-letters malformed events without logging raw payload', async () => {
     const { inboxUpdateMany, service } = createHarness({
       payload: telegramInboundFixtures.malformed.payload,
     });
@@ -263,7 +293,7 @@ describe('TelegramInboundProcessorService', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             lastError: 'telegram_inbound_malformed_update',
-            status: 'RETRY',
+            status: 'DEAD_LETTER',
           }),
         }),
       );
@@ -273,5 +303,49 @@ describe('TelegramInboundProcessorService', () => {
     } finally {
       warning.mockRestore();
     }
+  });
+
+  it('schedules retryable failures with a safe code and clears the lease', async () => {
+    const { inboxUpdateMany, normalizedUpsert, record, service } = createHarness();
+    normalizedUpsert.mockRejectedValueOnce(new Error('sensitive dependency response'));
+
+    await expect(service.process({ inboxRecordId: 'inbox-a' })).rejects.toThrow(
+      'sensitive dependency response',
+    );
+
+    expect(record.status).toBe('RETRY');
+    expect(record.lockedAt).toBeNull();
+    expect(inboxUpdateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastError: 'telegram_inbound_processing_failed',
+          status: 'RETRY',
+        }),
+      }),
+    );
+  });
+
+  it('dead-letters retryable failures after the claimed maximum attempt', async () => {
+    const { normalizedUpsert, record, service } = createHarness({ attempts: 7, maxAttempts: 8 });
+    normalizedUpsert.mockRejectedValueOnce(new Error('temporary failure'));
+
+    await expect(service.process({ inboxRecordId: 'inbox-a' })).rejects.toThrow(
+      'temporary failure',
+    );
+    expect(record.status).toBe('DEAD_LETTER');
+  });
+
+  it('does not let a stale worker complete or release a newer lease', async () => {
+    const { record, service, transactionInboxUpdateMany } = createHarness();
+    transactionInboxUpdateMany.mockImplementationOnce(async () => {
+      record.lockedBy = 'newer-lease';
+      return { count: 0 };
+    });
+
+    await expect(service.process({ inboxRecordId: 'inbox-a' })).rejects.toThrow(
+      'Telegram inbound lease was replaced before completion',
+    );
+    expect(record.status).toBe('PROCESSING');
+    expect(record.lockedBy).toBe('newer-lease');
   });
 });

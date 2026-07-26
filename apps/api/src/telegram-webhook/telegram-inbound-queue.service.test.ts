@@ -27,6 +27,8 @@ describe('TelegramInboundQueueService', () => {
         attempts: 8,
         backoff: { delay: 1_000, type: 'exponential' },
         jobId: 'telegram-inbound:inbox-123',
+        removeOnComplete: true,
+        removeOnFail: true,
       }),
     );
   });

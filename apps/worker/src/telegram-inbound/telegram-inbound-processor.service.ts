@@ -25,9 +25,11 @@ import { Worker, type Job } from 'bullmq';
 
 import { DatabaseService } from '../database/database.service';
 import { redisConnectionFromUrl } from '../queue/redis-connection';
-
-const inboundLeaseMilliseconds = 60_000;
-const retryDelayMilliseconds = 1_000;
+import {
+  classifyTelegramInboundFailure,
+  TelegramInboundLeaseConflictError,
+  telegramInboundRetryDelayMilliseconds,
+} from './telegram-inbound-failure';
 
 export const TELEGRAM_INBOUND_PROCESSOR_CLIENT = Symbol('TELEGRAM_INBOUND_PROCESSOR_CLIENT');
 
@@ -38,20 +40,16 @@ export interface TelegramInboundProcessorClient {
 }
 
 interface ClaimedInboxRecord {
+  attempts: number;
   connectionId: string;
   id: string;
+  leaseToken: string;
+  maxAttempts: number;
   projectId: string;
   rawWebhookEvent: {
     payload: unknown;
     receivedAt: Date;
   };
-}
-
-function safeErrorCode(error: unknown): string {
-  if (error instanceof Error && error.message === 'Telegram update is malformed') {
-    return 'telegram_inbound_malformed_update';
-  }
-  return 'telegram_inbound_processing_failed';
 }
 
 function contactProfile(event: TelegramInboundEvent): {
@@ -143,10 +141,15 @@ export class TelegramInboundProcessorService
       const event = normalizeTelegramUpdate(claimed.rawWebhookEvent.payload as TelegramUpdate);
       await this.persist(claimed, event);
     } catch (error) {
-      await this.markRetry(claimed, safeErrorCode(error));
+      const failure = classifyTelegramInboundFailure(error);
+      await this.markFailure(claimed, failure);
       this.logger.warn({
+        errorCode: failure.code,
         inboxRecordId: claimed.id,
-        message: 'Telegram inbound processing failed; record is eligible for retry',
+        message:
+          failure.kind === 'PERMANENT' || claimed.attempts >= claimed.maxAttempts
+            ? 'Telegram inbound processing dead-lettered an inbox record'
+            : 'Telegram inbound processing scheduled an inbox retry',
         projectId: claimed.projectId,
       });
       throw error;
@@ -163,20 +166,23 @@ export class TelegramInboundProcessorService
     }
 
     const now = new Date();
-    const leaseExpiry = new Date(now.getTime() - inboundLeaseMilliseconds);
+    const leaseExpiry = new Date(
+      now.getTime() - this.config.get('TELEGRAM_INBOUND_LEASE_MS', { infer: true }),
+    );
+    const leaseToken = `${this.workerId}:${randomUUID()}`;
     const claimed = await this.database.client.inboxRecord.updateMany({
       data: {
         attempts: { increment: 1 },
         lastError: null,
         lockedAt: now,
-        lockedBy: this.workerId,
+        lockedBy: leaseToken,
         status: 'PROCESSING',
       },
       where: {
         id: existing.id,
         projectId: existing.projectId,
         OR: [
-          { status: { in: ['PENDING', 'RETRY'] } },
+          { nextAttemptAt: { lte: now }, status: { in: ['PENDING', 'RETRY'] } },
           { lockedAt: null, status: 'PROCESSING' },
           { lockedAt: { lt: leaseExpiry }, status: 'PROCESSING' },
         ],
@@ -185,8 +191,11 @@ export class TelegramInboundProcessorService
     if (claimed.count !== 1) return undefined;
 
     return {
+      attempts: existing.attempts + 1,
       connectionId: existing.connectionId,
       id: existing.id,
+      leaseToken,
+      maxAttempts: existing.maxAttempts,
       projectId: existing.projectId,
       rawWebhookEvent: existing.rawWebhookEvent,
     };
@@ -261,7 +270,7 @@ export class TelegramInboundProcessorService
         });
       }
 
-      await transaction.inboxRecord.update({
+      const completed = await transaction.inboxRecord.updateMany({
         data: {
           completedAt: new Date(),
           lastError: null,
@@ -269,8 +278,14 @@ export class TelegramInboundProcessorService
           lockedBy: null,
           status: 'COMPLETED',
         },
-        where: { projectId_id: { id: claimed.id, projectId: claimed.projectId } },
+        where: {
+          id: claimed.id,
+          lockedBy: claimed.leaseToken,
+          projectId: claimed.projectId,
+          status: 'PROCESSING',
+        },
       });
+      if (completed.count !== 1) throw new TelegramInboundLeaseConflictError();
     });
   }
 
@@ -359,18 +374,29 @@ export class TelegramInboundProcessorService
     return { id: identity.contactId };
   }
 
-  private async markRetry(claimed: ClaimedInboxRecord, errorCode: string): Promise<void> {
+  private async markFailure(
+    claimed: ClaimedInboxRecord,
+    failure: ReturnType<typeof classifyTelegramInboundFailure>,
+  ): Promise<void> {
+    const shouldDeadLetter =
+      failure.kind === 'PERMANENT' || claimed.attempts >= claimed.maxAttempts;
     await this.database.client.inboxRecord.updateMany({
       data: {
-        lastError: errorCode,
+        lastError: failure.code,
         lockedAt: null,
         lockedBy: null,
-        nextAttemptAt: new Date(Date.now() + retryDelayMilliseconds),
-        status: 'RETRY',
+        ...(shouldDeadLetter
+          ? { nextAttemptAt: null, status: 'DEAD_LETTER' as const }
+          : {
+              nextAttemptAt: new Date(
+                Date.now() + telegramInboundRetryDelayMilliseconds(claimed.attempts),
+              ),
+              status: 'RETRY' as const,
+            }),
       },
       where: {
         id: claimed.id,
-        lockedBy: this.workerId,
+        lockedBy: claimed.leaseToken,
         projectId: claimed.projectId,
         status: 'PROCESSING',
       },

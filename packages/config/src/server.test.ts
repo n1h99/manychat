@@ -137,6 +137,17 @@ describe('server environment validation', () => {
     expect(environment.DEMO_JOB_ENABLED).toBe(false);
   });
 
+  it('provides bounded worker recovery defaults', () => {
+    const environment = validateWorkerEnvironment({
+      ...baseEnvironment,
+      DEMO_JOB_ENABLED: 'false',
+    });
+
+    expect(environment.TELEGRAM_INBOUND_LEASE_MS).toBe(60_000);
+    expect(environment.TELEGRAM_INBOUND_RECOVERY_INTERVAL_MS).toBe(10_000);
+    expect(environment.TELEGRAM_INBOUND_RECOVERY_BATCH_SIZE).toBe(100);
+  });
+
   it.each(['production', 'staging'] as const)('rejects demo jobs in %s', (appEnvironment) => {
     expect(() =>
       validateWorkerEnvironment({

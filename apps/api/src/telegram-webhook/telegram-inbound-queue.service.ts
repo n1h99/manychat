@@ -22,8 +22,8 @@ export interface TelegramInboundQueueProducer {
       attempts: number;
       backoff: { delay: number; type: 'exponential' };
       jobId: string;
-      removeOnComplete: number;
-      removeOnFail: number;
+      removeOnComplete: boolean | number;
+      removeOnFail: boolean | number;
     },
   ): Promise<unknown>;
   close(): Promise<void>;
@@ -55,8 +55,10 @@ export class TelegramInboundQueueService implements OnApplicationShutdown {
         attempts: 8,
         backoff: { delay: 1_000, type: 'exponential' },
         jobId: jobIdFor(inboxRecordId),
-        removeOnComplete: 100,
-        removeOnFail: 500,
+        // Terminal jobs are removed so a recovery/manual retry can reuse the
+        // stable inbox job ID without leaving an orphaned BullMQ job behind.
+        removeOnComplete: true,
+        removeOnFail: true,
       },
     );
   }

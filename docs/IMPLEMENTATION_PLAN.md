@@ -184,9 +184,17 @@ Stage 3B.3a adds the Telegram inbound consumer only. It claims one inbox record
 with a bounded lease, parses its PostgreSQL-backed payload, and transactionally
 persists the normalized event, connection-scoped contact identity, stable
 conversation, and inbound message. Redelivery is safe through the unique inbox
-event and message constraints. Worker failures release the record for retry
-with a safe error code. Recovery scanning, dead-letter finalization, outbound
-delivery, channel CRUD, and frontend work remain outside this slice.
+event and message constraints.
+
+Stage 3B.3b completes inbound reliability. The worker classifies failures into
+safe retryable or permanent codes, applies capped exponential retry delay with
+bounded jitter, and terminally dead-letters permanent or exhausted records
+without deleting the raw event. Its recovery loop re-enqueues due `PENDING` /
+`RETRY` work and expired leases from PostgreSQL using a stable BullMQ job ID.
+Lease-token conditional completion prevents a stale worker from completing a
+newer claim. An internal, audited manual retry method is reserved for future
+operations UI/API. Outbound delivery, channel CRUD, and frontend remain outside
+this slice.
 
 ### Scope
 

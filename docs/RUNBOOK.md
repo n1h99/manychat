@@ -1,4 +1,4 @@
-# Operations runbook — Stage 0 skeleton
+# Operations runbook — Stage 3B.3b
 
 ## Health probes
 
@@ -44,23 +44,35 @@ has not yet been performed because Stage 0 has no deployed database. Before pilo
 deployment, record backup identifier, restore destination, timestamps, integrity
 checks, measured RPO/RTO and cleanup confirmation in an operations report.
 
-## Telegram inbound enqueue failure
+## Telegram inbound recovery and dead letters
 
 A valid Telegram webhook first commits `RawWebhookEvent` and a pending
 `InboxRecord` to PostgreSQL. The subsequent BullMQ enqueue is best-effort. If
 Redis is unavailable, Telegram still receives HTTP 200 and the pending inbox
 record remains the source-of-truth recovery candidate. Do not replay the
-provider request body or manually alter the raw event. Stage 3B.3b will add the
-recovery scheduler that re-enqueues pending records using their stable inbox ID.
+provider request body or manually alter the raw event.
 
-## Telegram inbound processor lease
+Worker recovery periodically queries a bounded batch of due `PENDING` and
+`RETRY` records, plus `PROCESSING` records whose lease has expired. It adds a
+job containing only `inboxRecordId`; BullMQ's stable
+`telegram-inbound:<inboxRecordId>` job ID makes concurrent workers safe. An
+enqueue failure only creates a safe `recovery_enqueue_failed` log event: the
+PostgreSQL record remains due for the next scan.
 
-Stage 3B.3a workers consume only the stable `inboxRecordId` from BullMQ and
-load the raw event from PostgreSQL. A worker atomically claims `PENDING` or
-`RETRY` work, records its lock owner/time and increments attempts. A current
-`PROCESSING` lease must not be manually cleared; an expired lease may be
-reclaimed by a later job. Successful processing completes the record in the
-same transaction as normalized-event, contact/identity, conversation, and
-message persistence. Safe processing errors release the record as `RETRY`.
-The periodic re-enqueue/recovery scheduler and dead-letter procedure remain
-Stage 3B.3b work.
+Retryable processing errors clear the lease, store a safe error code and set a
+capped exponential `nextAttemptAt` with bounded deterministic jitter. A
+malformed payload, broken required relation, or exhausted `maxAttempts` becomes
+`DEAD_LETTER`; the retained raw webhook event is never deleted by this flow.
+Unsupported updates complete normally.
+
+To inspect work, query `inbox_records` by `status`, `nextAttemptAt`, `lockedAt`,
+and `lastError` through a controlled operations session. Never log or copy raw
+payloads, bot tokens, webhook secrets, ciphertext, or contact PII into an
+incident ticket. A future operations endpoint will call the internal audited
+manual-retry service for `DEAD_LETTER` / `FAILED` records. It moves only a
+terminal record to `RETRY`; it resets attempts only when explicitly requested,
+and falls back to the recovery scan if its immediate enqueue fails.
+
+On worker crash, an active lease is left untouched until its configured expiry;
+then recovery atomically releases it for retry. Lease-token conditional updates
+prevent a late pre-crash worker from completing or releasing a newer claim.

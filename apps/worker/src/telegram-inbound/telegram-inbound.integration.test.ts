@@ -5,9 +5,16 @@ import { telegramInboundFixtures } from '@omnicus/test-fixtures';
 import { createDatabaseHandle } from '@omnicus/database';
 import type { DatabaseHandle, Prisma } from '@omnicus/database';
 import { validateWorkerEnvironment, type WorkerEnvironment } from '@omnicus/config/server';
+import { TELEGRAM_INBOUND_QUEUE_NAME, type TelegramInboundJob } from '@omnicus/channel-telegram';
+import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { redisConnectionFromUrl } from '../queue/redis-connection';
 import { TelegramInboundProcessorService } from './telegram-inbound-processor.service';
+import {
+  telegramInboundJobIdFor,
+  TelegramInboundRecoveryService,
+} from './telegram-inbound-recovery.service';
 
 const TEST_CHANNEL_SECRETS_KEY = Buffer.alloc(32, 1).toString('base64');
 const integrationDescribe =
@@ -22,6 +29,8 @@ integrationDescribe('Telegram inbound persistence integration', () => {
   let projectId = '';
   let connectionId = '';
   let service: TelegramInboundProcessorService | undefined;
+  let recovery: TelegramInboundRecoveryService | undefined;
+  let queue: Queue<TelegramInboundJob> | undefined;
 
   beforeAll(async () => {
     const environment = validateWorkerEnvironment({
@@ -53,13 +62,18 @@ integrationDescribe('Telegram inbound persistence integration', () => {
         webhookSecretEncrypted: {},
       },
     });
-    service = new TelegramInboundProcessorService(
-      new ConfigService<WorkerEnvironment, true>(environment),
-      { client: handle.client } as never,
-    );
+    const config = new ConfigService<WorkerEnvironment, true>(environment);
+    service = new TelegramInboundProcessorService(config, { client: handle.client } as never);
+    recovery = new TelegramInboundRecoveryService(config, { client: handle.client } as never);
+    await recovery.onApplicationBootstrap();
+    queue = new Queue<TelegramInboundJob>(TELEGRAM_INBOUND_QUEUE_NAME, {
+      connection: redisConnectionFromUrl(environment.REDIS_URL),
+    });
   });
 
   afterAll(async () => {
+    if (queue) await queue.close();
+    if (recovery) await recovery.onApplicationShutdown();
     if (handle && projectId) {
       await handle.client.message.deleteMany({ where: { projectId } });
       await handle.client.normalizedEvent.deleteMany({ where: { projectId } });
@@ -113,5 +127,38 @@ integrationDescribe('Telegram inbound persistence integration', () => {
     await expect(handle.client.conversation.count({ where: { projectId } })).resolves.toBe(1);
     await expect(handle.client.message.count({ where: { projectId } })).resolves.toBe(1);
     await expect(handle.client.normalizedEvent.count({ where: { projectId } })).resolves.toBe(1);
+  });
+
+  it('re-enqueues a PostgreSQL pending record after a lost webhook enqueue', async () => {
+    if (!handle || !recovery || !queue)
+      throw new Error('Telegram recovery integration setup did not complete');
+    const rawId = randomUUID();
+    const inboxId = randomUUID();
+    await handle.client.rawWebhookEvent.create({
+      data: {
+        connectionId,
+        correlationId: `test-${rawId}`,
+        externalUpdateId: `lost-${rawId}`,
+        id: rawId,
+        payload: telegramInboundFixtures.text.payload as Prisma.InputJsonValue,
+        projectId,
+        purgeAfter: new Date(Date.now() + 60_000),
+      },
+    });
+    await handle.client.inboxRecord.create({
+      data: {
+        connectionId,
+        id: inboxId,
+        nextAttemptAt: new Date(),
+        projectId,
+        rawWebhookEventId: rawId,
+      },
+    });
+
+    await recovery.scanOnce();
+
+    const job = await queue.getJob(telegramInboundJobIdFor(inboxId));
+    expect(job?.data).toEqual({ inboxRecordId: inboxId });
+    await job?.remove();
   });
 });
