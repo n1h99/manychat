@@ -22,6 +22,7 @@
     "@nestjs/jwt": "11.0.2",
     "@nestjs/platform-express": "11.1.28",
     "@nestjs/swagger": "11.4.6",
+    "@omnicus/automation-core": "workspace:*",
     "@omnicus/channel-secrets": "workspace:*",
     "@omnicus/channel-telegram": "workspace:*",
     "@omnicus/config": "workspace:*",

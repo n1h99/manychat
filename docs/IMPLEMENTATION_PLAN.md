@@ -9,8 +9,11 @@ test-message creation as queued rather than delivered.
 
 ## Статус
 
-План подготовлен для первого pilot. Scaffold Этапа 0 реализован; Этап 1 не
-начат. Prisma migrations, deploy и бизнес-код не выполнялись.
+Этапы 0–2 завершены и проверены. Этап 3 завершён через Stage 3C.2: Telegram
+inbound/outbound pipeline, encrypted channel secrets, channel management API и
+защищённый UI реализованы с mock-backed tests. Следующий реализуемый этап —
+Этап 4, минимальный Automation Runtime. Реальный deploy, production CRM
+adapter и live Telegram acceptance остаются внешними gates.
 
 ## Цель pilot
 

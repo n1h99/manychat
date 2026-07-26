@@ -15,6 +15,8 @@ import { TagsPage } from './pages/tags-page';
 import { ChannelsPage } from './pages/channels-page';
 import { ChannelCreatePage } from './pages/channel-create-page';
 import { ChannelDetailPage } from './pages/channel-detail-page';
+import { ScenarioEditorPage } from './pages/scenario-editor-page';
+import { ScenariosPage } from './pages/scenarios-page';
 
 export function App() {
   return (
@@ -30,6 +32,15 @@ export function App() {
           <Route element={<ContactDetailPage />} path="/projects/:projectId/contacts/:contactId" />
           <Route element={<TagsPage />} path="/projects/:projectId/tags" />
           <Route element={<CustomFieldsPage />} path="/projects/:projectId/custom-fields" />
+          <Route element={<ProjectPermissionRoute permission="automation:read" />}>
+            <Route element={<ScenariosPage />} path="/projects/:projectId/scenarios" />
+            <Route element={<ProjectPermissionRoute permission="automation:manage" />}>
+              <Route
+                element={<ScenarioEditorPage />}
+                path="/projects/:projectId/scenarios/:scenarioId"
+              />
+            </Route>
+          </Route>
           <Route element={<ProjectPermissionRoute permission="channels:read" />}>
             <Route element={<ChannelsPage />} path="/projects/:projectId/channels" />
             <Route

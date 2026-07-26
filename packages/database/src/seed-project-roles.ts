@@ -15,6 +15,8 @@ export const seedProjectRoles = [
       'contacts:merge',
       'tags:read',
       'tags:manage',
+      'automation:read',
+      'automation:manage',
       'channels:read',
       'channels:manage',
       'channels:rotate_secrets',

@@ -50,6 +50,9 @@ export function ProjectDetailPage() {
         <Link to={`/projects/${project.id}/contacts`}>Contacts</Link>
         <Link to={`/projects/${project.id}/tags`}>Tags</Link>
         <Link to={`/projects/${project.id}/custom-fields`}>Custom fields</Link>
+        {hasProjectPermission(access.data, 'automation:read') ? (
+          <Link to={`/projects/${project.id}/scenarios`}>Automation</Link>
+        ) : null}
         {hasProjectPermission(access.data, 'channels:read') ? (
           <Link to={`/projects/${project.id}/channels`}>Channels</Link>
         ) : null}

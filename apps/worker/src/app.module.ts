@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { rootEnvironmentFilePath, validateWorkerEnvironment } from '@omnicus/config/server';
 
 import { DemoQueueModule } from './queue/demo-queue.module';
+import { AutomationModule } from './automation/automation.module';
 import { DatabaseModule } from './database/database.module';
 import { TelegramInboundModule } from './telegram-inbound/telegram-inbound.module';
 import { TelegramOutboundModule } from './telegram-outbound/telegram-outbound.module';
@@ -23,6 +24,7 @@ const rootEnvFile =
       validate: validateWorkerEnvironment,
     }),
     DatabaseModule,
+    AutomationModule,
     DemoQueueModule,
     TelegramInboundModule,
     TelegramOutboundModule,

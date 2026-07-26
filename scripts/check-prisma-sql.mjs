@@ -76,6 +76,10 @@ const expectedTables = new Set([
   'messages',
   'outbox_records',
   'idempotency_records',
+  'scenarios',
+  'scenario_versions',
+  'scenario_executions',
+  'node_executions',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -253,6 +257,36 @@ if (!existsSync(stage3WebhookMigrationPath)) {
     if (!stage3WebhookMigrationSql.includes(fragment)) {
       failures.push(`Stage 3 webhook migration is missing invariant: ${fragment}`);
     }
+  }
+}
+
+const stage4MigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726220043_stage4_automation_runtime/migration.sql',
+);
+if (!existsSync(stage4MigrationPath)) {
+  failures.push('Stage 4 automation migration is missing');
+} else {
+  const stage4MigrationSql = readFileSync(stage4MigrationPath, 'utf8').replaceAll('\r\n', '\n');
+  for (const fragment of [
+    'CREATE TABLE "scenarios"',
+    'CREATE TABLE "scenario_versions"',
+    'CREATE TABLE "scenario_executions"',
+    'CREATE TABLE "node_executions"',
+    '"nextAutomationSequence" BIGINT NOT NULL DEFAULT 0',
+    '"automationModeOverride" "AutomationMode"',
+    'FOREIGN KEY ("projectId", "scenarioId", "scenarioVersionId") REFERENCES "scenario_versions"("projectId", "scenarioId", "id")',
+    'FOREIGN KEY ("projectId", "contactId") REFERENCES "contacts"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "conversationId") REFERENCES "conversations"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "triggerEventId") REFERENCES "normalized_events"("projectId", "id")',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!stage4MigrationSql.includes(fragment)) {
+      failures.push(`Stage 4 migration is missing invariant: ${fragment}`);
+    }
+  }
+  if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(stage4MigrationSql)) {
+    failures.push('Stage 4 migration contains a destructive operation');
   }
 }
 

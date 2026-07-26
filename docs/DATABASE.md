@@ -1031,12 +1031,14 @@ model WaitState {
 }
 ```
 
-При добавлении Stage 4 relations `activeVersionId`, `draftVersionId` и
-`scenarioVersionId` обязаны ссылаться composite keys
-`(projectId, scenarioId, versionId)`. Простая ссылка только по `versionId`
-запрещена: она позволила бы Scenario или execution закрепить версию другого
-scenario того же tenant. До появления этих constraints модели не входят в
-executable schema.
+Stage 4 добавляет executable `Scenario`, `ScenarioVersion`,
+`ScenarioExecution` и `NodeExecution`. `activeVersionId`, `draftVersionId` и
+`scenarioVersionId` ссылаются через composite keys
+`(projectId, scenarioId, versionId)`; простая ссылка только по `versionId`
+запрещена, так как позволила бы закрепить версию другого scenario того же
+tenant. `Conversation.nextAutomationSequence` сериализует execution order для
+одного conversation. В этом slice намеренно отсутствует `WaitState`: Wait,
+Delay и Subflow не входят в pilot.
 
 Для одного active Wait на `(projectId, conversationId, scenarioId)` требуется
 partial unique index `WHERE status = 'ACTIVE'`, добавляемый migration SQL.

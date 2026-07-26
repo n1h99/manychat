@@ -24,6 +24,7 @@ import type { WorkerEnvironment } from '@omnicus/config/server';
 import { Worker, type Job } from 'bullmq';
 
 import { DatabaseService } from '../database/database.service';
+import { AutomationRuntimeService } from '../automation/automation-runtime.service';
 import { redisConnectionFromUrl } from '../queue/redis-connection';
 import {
   classifyTelegramInboundFailure,
@@ -97,6 +98,9 @@ export class TelegramInboundProcessorService
   constructor(
     @Inject(ConfigService) private readonly config: ConfigService<WorkerEnvironment, true>,
     @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Optional()
+    @Inject(AutomationRuntimeService)
+    private readonly automation?: AutomationRuntimeService,
     @Optional()
     @Inject(TELEGRAM_INBOUND_PROCESSOR_CLIENT)
     processor?: TelegramInboundProcessorClient,
@@ -225,6 +229,7 @@ export class TelegramInboundProcessorService
         ? await this.resolveContact(transaction, claimed, event, eventAt)
         : undefined;
 
+      let conversationId: string | undefined;
       if (
         contact &&
         event.chatId &&
@@ -237,7 +242,9 @@ export class TelegramInboundProcessorService
             externalChatId: event.chatId,
             projectId: claimed.projectId,
           },
-          update: {},
+          update: {
+            lastMessageAt: eventAt,
+          },
           where: {
             projectId_connectionId_externalChatId: {
               connectionId: claimed.connectionId,
@@ -246,6 +253,7 @@ export class TelegramInboundProcessorService
             },
           },
         });
+        conversationId = conversation.id;
         await transaction.message.upsert({
           create: {
             connectionId: claimed.connectionId,
@@ -267,6 +275,16 @@ export class TelegramInboundProcessorService
               projectId: claimed.projectId,
             },
           },
+        });
+      }
+
+      if (contact && conversationId) {
+        await this.automation?.triggerInTransaction(transaction, {
+          connectionId: claimed.connectionId,
+          contactId: contact.id,
+          conversationId,
+          normalizedEventId: normalized.id,
+          projectId: claimed.projectId,
         });
       }
 
