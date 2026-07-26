@@ -207,6 +207,9 @@ importers:
       '@omnicus/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@omnicus/crm-core':
+        specifier: workspace:*
+        version: link:../../packages/crm-core
       '@omnicus/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -258,6 +261,8 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/crm-core: {}
 
   packages/database:
     dependencies:

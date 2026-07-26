@@ -80,6 +80,8 @@ const expectedTables = new Set([
   'scenario_versions',
   'scenario_executions',
   'node_executions',
+  'crm_operations',
+  'crm_project_configs',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -89,7 +91,7 @@ if (
   generatedTables.size !== expectedTables.size ||
   [...expectedTables].some((table) => !generatedTables.has(table))
 ) {
-  failures.push(`Stage 3 table slice differs: ${[...generatedTables].sort().join(', ')}`);
+  failures.push(`Executable schema table slice differs: ${[...generatedTables].sort().join(', ')}`);
 }
 
 const requiredSql = [
@@ -290,6 +292,28 @@ if (!existsSync(stage4MigrationPath)) {
   }
 }
 
+const stage5MigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726222037_stage5_crm_mock_outbox/migration.sql',
+);
+if (!existsSync(stage5MigrationPath)) {
+  failures.push('Stage 5 CRM mock outbox migration is missing');
+} else {
+  const stage5MigrationSql = readFileSync(stage5MigrationPath, 'utf8').replaceAll('\r\n', '\n');
+  for (const fragment of [
+    'CREATE TABLE "crm_project_configs"',
+    'CREATE TABLE "crm_operations"',
+    'ALTER COLUMN "connectionId" DROP NOT NULL',
+    '"kind" "OutboxKind" NOT NULL DEFAULT \'TELEGRAM\'',
+    'FOREIGN KEY ("projectId", "outboxRecordId") REFERENCES "outbox_records"("projectId", "id")',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!stage5MigrationSql.includes(fragment)) {
+      failures.push(`Stage 5 migration is missing invariant: ${fragment}`);
+    }
+  }
+}
+
 if (!proposalSql.includes('CREATE TABLE "users"')) {
   failures.push('Committed Stage 1 SQL proposal is malformed');
 }
@@ -303,7 +327,7 @@ if (failures.length > 0) {
 
 process.stdout.write(
   `${JSON.stringify({
-    check: 'stage3-sql-diff',
+    check: 'prisma-sql-diff',
     migrationCreated: true,
     status: 'passed',
     tables: [...generatedTables].sort(),

@@ -1040,6 +1040,17 @@ tenant. `Conversation.nextAutomationSequence` сериализует execution o
 одного conversation. В этом slice намеренно отсутствует `WaitState`: Wait,
 Delay и Subflow не входят в pilot.
 
+### CRM mock outbox (Stage 5)
+
+CRM side effects не используют `ChannelConnection`: один `OutboxRecord` имеет
+`kind` (`TELEGRAM` или `CRM`), а `connectionId` обязателен только для Telegram
+operation. CRM operation хранится отдельно в `CrmOperation` и ссылается на
+outbox через composite `(projectId, outboxRecordId)`. `CrmProjectConfig`
+содержит только project-specific mapping и routing; base URL и auth token
+остаются исключительно environment configuration. Это позволяет mock CRM
+обрабатывать те же transactional outbox состояния без утверждений о реальном
+provider payload.
+
 Для одного active Wait на `(projectId, conversationId, scenarioId)` требуется
 partial unique index `WHERE status = 'ACTIVE'`, добавляемый migration SQL.
 Wait/Subflow не реализуются в pilot, но schema reserved для совместимости можно

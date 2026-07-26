@@ -190,7 +190,42 @@ export class AutomationRuntimeService {
     }
     if (node.type === 'SEND_MESSAGE')
       await this.queueMessage(transaction, node, input, executionId);
+    if (node.type === 'CREATE_OR_UPDATE_LEAD' || node.type === 'FORWARD_TO_CRM')
+      await this.queueCrmOperation(transaction, node, input, executionId);
     return edges.find((edge) => edge.output === 'default') ?? edges[0];
+  }
+
+  private async queueCrmOperation(
+    transaction: RuntimeTransaction,
+    node: ScenarioGraphNode,
+    input: AutomationTriggerInput,
+    executionId: string,
+  ): Promise<void> {
+    const idempotencyKey = `crm-${executionId}-${node.id}`;
+    const existing = await transaction.outboxRecord.findUnique({
+      where: { projectId_idempotencyKey: { idempotencyKey, projectId: input.projectId } },
+    });
+    if (existing) return;
+    const outbox = await transaction.outboxRecord.create({
+      data: { idempotencyKey, kind: 'CRM', payload: {}, projectId: input.projectId },
+    });
+    const operation = await transaction.crmOperation.create({
+      data: {
+        contactId: input.contactId,
+        inputSafe: { nodeId: node.id, scenarioExecutionId: executionId },
+        normalizedEventId: input.normalizedEventId,
+        outboxRecordId: outbox.id,
+        projectId: input.projectId,
+        type:
+          node.type === 'CREATE_OR_UPDATE_LEAD'
+            ? 'CREATE_OR_UPDATE_LEAD'
+            : 'FORWARD_INBOUND_MESSAGE',
+      },
+    });
+    await transaction.outboxRecord.update({
+      data: { payload: { crmOperationId: operation.id } },
+      where: { projectId_id: { id: outbox.id, projectId: input.projectId } },
+    });
   }
 
   private async queueMessage(

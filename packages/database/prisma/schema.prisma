@@ -93,6 +93,16 @@ enum OutboxRecordStatus {
   UNKNOWN
 }
 
+enum OutboxKind {
+  TELEGRAM
+  CRM
+}
+
+enum CrmOperationType {
+  CREATE_OR_UPDATE_LEAD
+  FORWARD_INBOUND_MESSAGE
+}
+
 enum NormalizedEventType {
   MESSAGE
   COMMAND
@@ -434,6 +444,8 @@ model Project {
   channelConnections       ChannelConnection[]
   scenarios                Scenario[]
   scenarioExecutions       ScenarioExecution[]
+  crmConfig                CrmProjectConfig?
+  crmOperations            CrmOperation[]
 
   @@index([status, createdAt])
   @@map("projects")
@@ -465,6 +477,7 @@ model Contact {
   conversations      Conversation[]
   messages           Message[]
   scenarioExecutions ScenarioExecution[]
+  crmOperations      CrmOperation[]
 
   @@unique([projectId, id])
   @@index([projectId, status, createdAt])
@@ -585,6 +598,7 @@ model NormalizedEvent {
   inboxRecord   InboxRecord         @relation(fields: [projectId, inboxRecordId], references: [projectId, id], onDelete: Restrict)
   message       Message?
   scenarioExecutions ScenarioExecution[]
+  crmOperations CrmOperation[]
 
   @@unique([projectId, id])
   @@unique([projectId, inboxRecordId])
@@ -762,7 +776,8 @@ model Message {
 model OutboxRecord {
   id             String             @id @default(uuid())
   projectId      String
-  connectionId   String
+  connectionId   String?
+  kind           OutboxKind         @default(TELEGRAM)
   idempotencyKey String
   status         OutboxRecordStatus @default(PENDING)
   payload        Json
@@ -775,13 +790,55 @@ model OutboxRecord {
   completedAt    DateTime?          @db.Timestamptz(3)
   createdAt      DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
-  connection     ChannelConnection  @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  connection     ChannelConnection? @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  crmOperation   CrmOperation?
 
   @@unique([projectId, id])
   @@unique([projectId, idempotencyKey])
   @@index([status, nextAttemptAt])
   @@index([projectId, connectionId, status])
   @@map("outbox_records")
+}
+
+model CrmProjectConfig {
+  id                   String   @id @default(uuid())
+  projectId            String   @unique
+  crmProjectId         String
+  fieldMapping         Json     @default("{}")
+  defaultPipeline      String?
+  defaultStage         String?
+  additionalParameters Json     @default("{}")
+  enabled              Boolean  @default(true)
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, crmProjectId])
+  @@map("crm_project_configs")
+}
+
+model CrmOperation {
+  id                String           @id @default(uuid())
+  projectId         String
+  outboxRecordId    String           @unique
+  contactId         String?
+  normalizedEventId String?
+  type              CrmOperationType
+  inputSafe         Json
+  resultSafe        Json?
+  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @db.Timestamptz(3)
+  project           Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  outbox            OutboxRecord     @relation(fields: [projectId, outboxRecordId], references: [projectId, id], onDelete: Restrict)
+  contact           Contact?         @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  normalizedEvent   NormalizedEvent? @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, outboxRecordId])
+  @@index([projectId, contactId])
+  @@index([projectId, normalizedEventId])
+  @@map("crm_operations")
 }
 
 model IdempotencyRecord {

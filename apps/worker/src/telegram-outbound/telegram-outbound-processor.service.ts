@@ -155,7 +155,13 @@ export class TelegramOutboundProcessorService
     const now = new Date();
     const lease = `${this.workerId}-${randomUUID()}`;
     const row = await this.database.client.outboxRecord.findUnique({ where: { id } });
-    if (!row || !['PENDING', 'RETRY', 'PROCESSING'].includes(row.status)) return undefined;
+    if (
+      !row ||
+      row.kind !== 'TELEGRAM' ||
+      !row.connectionId ||
+      !['PENDING', 'RETRY', 'PROCESSING'].includes(row.status)
+    )
+      return undefined;
     const expiry = new Date(
       now.getTime() - this.config.get('TELEGRAM_OUTBOUND_LEASE_MS', { infer: true }),
     );

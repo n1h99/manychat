@@ -23,6 +23,7 @@
     "@nestjs/platform-express": "11.1.28",
     "@omnicus/channel-secrets": "workspace:*",
     "@omnicus/channel-telegram": "workspace:*",
+    "@omnicus/crm-core": "workspace:*",
     "@omnicus/config": "workspace:*",
     "@omnicus/contracts": "workspace:*",
     "@omnicus/database": "workspace:*",

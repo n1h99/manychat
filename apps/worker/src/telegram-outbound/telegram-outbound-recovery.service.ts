@@ -67,6 +67,7 @@ export class TelegramOutboundRecoveryService
       );
       const rows = await this.database.client.outboxRecord.findMany({
         where: {
+          kind: 'TELEGRAM',
           OR: [
             { status: 'PENDING', nextAttemptAt: { lte: now } },
             { status: 'RETRY', nextAttemptAt: { lte: now } },

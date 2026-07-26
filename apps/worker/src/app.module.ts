@@ -4,6 +4,7 @@ import { rootEnvironmentFilePath, validateWorkerEnvironment } from '@omnicus/con
 
 import { DemoQueueModule } from './queue/demo-queue.module';
 import { AutomationModule } from './automation/automation.module';
+import { CrmModule } from './crm/crm.module';
 import { DatabaseModule } from './database/database.module';
 import { TelegramInboundModule } from './telegram-inbound/telegram-inbound.module';
 import { TelegramOutboundModule } from './telegram-outbound/telegram-outbound.module';
@@ -25,6 +26,7 @@ const rootEnvFile =
     }),
     DatabaseModule,
     AutomationModule,
+    CrmModule,
     DemoQueueModule,
     TelegramInboundModule,
     TelegramOutboundModule,
