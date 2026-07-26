@@ -156,7 +156,6 @@ export class AutomationRuntimeService {
         operator?: ConditionOperator;
         value?: unknown;
       };
-      const actual = this.valueFor(config.field, eventPayload, customFields);
       const selected = edges
         .slice()
         .sort(
@@ -164,7 +163,14 @@ export class AutomationRuntimeService {
             (left.priority ?? Number.MAX_SAFE_INTEGER) -
             (right.priority ?? Number.MAX_SAFE_INTEGER),
         )
-        .find((_edge) => evaluateCondition(config.operator ?? 'exists', actual, config.value));
+        .find((edge) => {
+          const rule = edge.condition ?? config;
+          return evaluateCondition(
+            rule.operator ?? 'exists',
+            this.valueFor(rule.field, eventPayload, customFields),
+            rule.value,
+          );
+        });
       return selected;
     }
     if (node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG') {
