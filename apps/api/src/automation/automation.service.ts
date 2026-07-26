@@ -63,13 +63,21 @@ export class AutomationService {
   async executions(projectId: string, scenarioId: string) {
     await this.get(projectId, scenarioId);
     return this.database.client.scenarioExecution.findMany({
-      include: {
+      orderBy: { createdAt: 'desc' },
+      select: {
+        completedAt: true,
+        createdAt: true,
+        currentNodeId: true,
+        failedAt: true,
+        id: true,
+        scenarioVersionId: true,
+        status: true,
+        triggerEventId: true,
         nodeExecutions: {
           orderBy: { startedAt: 'asc' },
           select: { completedAt: true, nodeId: true, nodeType: true, status: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
       take: 100,
       where: { projectId, scenarioId },
     });

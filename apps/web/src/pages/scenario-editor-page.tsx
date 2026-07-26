@@ -1,4 +1,4 @@
-import { Button, Form, Input, Result, Space, Spin, Typography, message } from 'antd';
+import { Button, Form, Input, Result, Space, Spin, Table, Typography, message } from 'antd';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
@@ -6,6 +6,7 @@ import {
   emptyScenarioGraph,
   type ScenarioGraph,
   useScenario,
+  useScenarioExecutions,
   useScenarioMutations,
 } from '../automation-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
@@ -15,6 +16,7 @@ export function ScenarioEditorPage() {
   const navigate = useNavigate();
   const access = useProjectAccess(projectId);
   const query = useScenario(projectId, scenarioId === 'new' ? undefined : scenarioId);
+  const executions = useScenarioExecutions(projectId, scenarioId);
   const mutations = useScenarioMutations(projectId);
   const [graphText, setGraphText] = useState(() => JSON.stringify(emptyScenarioGraph, null, 2));
   if (scenarioId !== 'new' && query.isLoading) return <Spin />;
@@ -86,6 +88,31 @@ export function ScenarioEditorPage() {
           ) : null}
         </Space>
       </Form>
+      {scenario ? (
+        <section className="section-actions">
+          <Typography.Title level={4}>Execution journal</Typography.Title>
+          <Table
+            columns={[
+              {
+                dataIndex: 'createdAt',
+                render: (value) => new Date(value).toLocaleString(),
+                title: 'Started',
+              },
+              { dataIndex: 'status', title: 'Status' },
+              {
+                dataIndex: 'nodeExecutions',
+                render: (nodes: Array<{ nodeId: string; status: string }>) =>
+                  nodes.map((node) => `${node.nodeId}: ${node.status}`).join(', ') || '—',
+                title: 'Nodes',
+              },
+            ]}
+            dataSource={executions.data ?? []}
+            loading={executions.isLoading}
+            pagination={false}
+            rowKey="id"
+          />
+        </section>
+      ) : null}
     </section>
   );
 }

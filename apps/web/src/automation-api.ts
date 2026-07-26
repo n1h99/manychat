@@ -16,6 +16,13 @@ export interface ScenarioSummary {
 export interface Scenario extends ScenarioSummary {
   draftVersion: { graph: ScenarioGraph; id: string } | null;
 }
+export interface ScenarioExecution {
+  completedAt: string | null;
+  createdAt: string;
+  id: string;
+  nodeExecutions: Array<{ nodeId: string; status: string }>;
+  status: string;
+}
 export interface ScenarioGraph {
   edges: Array<{ from: string; output?: string; priority?: number; to: string }>;
   nodes: Array<{ config?: Record<string, unknown>; id: string; type: string }>;
@@ -50,6 +57,20 @@ export function useScenario(projectId?: string, scenarioId?: string) {
         accessToken,
       ),
     queryKey: ['scenario', projectId, scenarioId],
+  });
+}
+
+export function useScenarioExecutions(projectId?: string, scenarioId?: string) {
+  const { accessToken } = useAuth();
+  return useQuery({
+    enabled: Boolean(projectId && scenarioId && scenarioId !== 'new'),
+    queryFn: () =>
+      apiRequest<ScenarioExecution[]>(
+        `/api/v1/projects/${projectId}/scenarios/${scenarioId}/executions`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['scenario-executions', projectId, scenarioId],
   });
 }
 

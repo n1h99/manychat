@@ -20,6 +20,25 @@ export const graphNodeSchema = z.object({
 });
 
 export const graphEdgeSchema = z.object({
+  condition: z
+    .object({
+      field: z.string().min(1),
+      operator: z.enum([
+        'equals',
+        'not_equals',
+        'contains',
+        'starts_with',
+        'ends_with',
+        'greater_than',
+        'greater_or_equal',
+        'less_than',
+        'less_or_equal',
+        'exists',
+        'not_exists',
+      ]),
+      value: z.unknown().optional(),
+    })
+    .optional(),
   from: z.string().min(1),
   output: z.string().min(1).default('default'),
   priority: z.number().int().nonnegative().optional(),
