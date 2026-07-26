@@ -15,6 +15,7 @@ const baseEnvironment = {
   APP_ENV: 'test',
   CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
   DATABASE_URL: 'postgresql://omnicus:omnicus@localhost:5432/omnicus',
+  JWT_ACCESS_SECRET: 'test-only-jwt-secret-that-is-long-enough-for-validation',
   NODE_ENV: 'test',
   REDIS_URL: 'redis://localhost:6379',
 };

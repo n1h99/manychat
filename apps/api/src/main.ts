@@ -45,7 +45,7 @@ async function bootstrap(): Promise<void> {
     if (swaggerEnabled) {
       const swaggerConfig = new DocumentBuilder()
         .setTitle('Omnicus API')
-        .setDescription('Stage 0 infrastructure API')
+        .setDescription('Stage 1 Auth, RBAC, Users, and Projects API')
         .setVersion('0.1.0')
         .build();
       SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swaggerConfig));

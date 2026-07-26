@@ -34,6 +34,7 @@ const child = spawn(process.execPath, [resolve(repositoryRoot, '.runtime/api/dis
       ? process.env.DATABASE_URL
       : 'postgresql://unavailable:unavailable@127.0.0.1:1/omnicus_smoke',
     NODE_ENV: 'production',
+    JWT_ACCESS_SECRET: 'production-smoke-only-jwt-secret-that-is-long-enough',
     PORT: String(port),
     REDIS_URL: serviceIntegration ? process.env.REDIS_URL : 'redis://127.0.0.1:1/0',
     SWAGGER_ENABLED: 'false',

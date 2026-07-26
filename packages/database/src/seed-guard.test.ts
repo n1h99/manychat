@@ -6,6 +6,10 @@ const authorizedLocalEnvironment: SeedEnvironment = {
   ALLOW_DATABASE_SEED: 'true',
   APP_ENV: 'development',
   DATABASE_URL: 'postgresql://omnicus:omnicus@localhost:5432/omnicus',
+  SEED_ADMIN_EMAIL: 'admin@example.test',
+  SEED_ADMIN_FIRST_NAME: 'Admin',
+  SEED_ADMIN_LAST_NAME: 'User',
+  SEED_ADMIN_PASSWORD: 'test-only-seed-password',
   SEED_DATABASE_NAME_CONFIRMATION: 'omnicus',
 };
 
@@ -56,7 +60,8 @@ describe('database seed guard', () => {
   });
 
   it('authorizes an explicitly confirmed local development database', () => {
-    expect(authorizeDatabaseSeed(authorizedLocalEnvironment)).toEqual({
+    expect(authorizeDatabaseSeed(authorizedLocalEnvironment)).toMatchObject({
+      adminEmail: 'admin@example.test',
       appEnvironment: 'development',
       databaseName: 'omnicus',
       databaseUrl: authorizedLocalEnvironment.DATABASE_URL,

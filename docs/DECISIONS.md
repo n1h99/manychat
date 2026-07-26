@@ -419,3 +419,24 @@ transition обновляет token и удаляет reservation в той же
 active reservation существует для заданного scope. Prisma preview feature
 `partialIndexes` больше не нужна в Stage 1 baseline. Baseline увеличивается с
 14 до 16 tables, но остаётся stage-sliced; migration по-прежнему не создана.
+
+## ADR-023. Создание пользователей Stage 1 через временный пароль
+
+**Статус:** Accepted.
+
+**Решение:** до подключения проверенного mail provider `POST /api/v1/users`
+требует временный пароль, переданный уполномоченным администратором по
+защищённому каналу. Пароль сохраняется только как Argon2id hash и никогда не
+возвращается API, в audit или логах. Invite history/reservation модели остаются
+зарезервированными для отдельного email-delivery этапа и не используются для
+псевдо-email интеграции.
+
+Project roles физически tenant-owned, поэтому нет глобальных role templates в
+Stage 1 schema. Project creation transaction создаёт idempotentные system roles
+для нового `projectId`; development seed делает то же для уже существующих
+проектов. Это сохраняет composite project foreign keys и исключает cross-project
+assignment.
+
+**Последствия:** первый administrator и новые users могут входить сразу с
+временным паролем; принудительная смена пароля, reset flow и email invitation не
+реализуются в Этапе 1.

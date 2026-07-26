@@ -4,6 +4,12 @@ import { rootEnvironmentFilePath, validateApiEnvironment } from '@omnicus/config
 
 import { CorrelationIdMiddleware } from './platform/correlation-id.middleware';
 import { HealthModule } from './health/health.module';
+import { AccessModule } from './access/access.module';
+import { AuditModule } from './audit/audit.module';
+import { AuthModule } from './auth/auth.module';
+import { DatabaseModule } from './database/database.module';
+import { ProjectsModule } from './projects/projects.module';
+import { UsersModule } from './users/users.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -18,7 +24,13 @@ const rootEnvFile =
       isGlobal: true,
       validate: validateApiEnvironment,
     }),
+    DatabaseModule,
     HealthModule,
+    AuditModule,
+    AccessModule,
+    AuthModule,
+    ProjectsModule,
+    UsersModule,
   ],
 })
 export class AppModule implements NestModule {

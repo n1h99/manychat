@@ -1,9 +1,10 @@
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { Button, Layout, Menu, Space, Typography } from 'antd';
 import { useMemo } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useDispatch, useSelector } from 'react-redux';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 
+import { useAuth } from './auth';
 import { navigationItems } from './navigation';
 import { shellActions, type AppDispatch, type RootState } from './store';
 
@@ -14,15 +15,12 @@ export function AppShell() {
   const dispatch = useDispatch<AppDispatch>();
   const location = useLocation();
   const navigate = useNavigate();
-
+  const { identity, logout } = useAuth();
   const selectedKey = useMemo(
     () =>
-      navigationItems.find((item) =>
-        item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path),
-      )?.key ?? 'overview',
+      navigationItems.find((item) => location.pathname.startsWith(item.path))?.key ?? 'projects',
     [location.pathname],
   );
-
   return (
     <Layout className="app-shell">
       <Sider collapsed={collapsed} collapsible trigger={null} theme="light">
@@ -32,9 +30,7 @@ export function AppShell() {
           mode="inline"
           onClick={({ key }) => {
             const item = navigationItems.find((candidate) => candidate.key === key);
-            if (item) {
-              void navigate(item.path);
-            }
+            if (item) void navigate(item.path);
           }}
           selectedKeys={[selectedKey]}
         />
@@ -43,13 +39,16 @@ export function AppShell() {
         <Header className="app-header">
           <Space>
             <Button
-              aria-label={collapsed ? 'Развернуть меню' : 'Свернуть меню'}
+              aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
               icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
               onClick={() => dispatch(shellActions.toggleSidebar())}
               type="text"
             />
             <Typography.Text strong>Omnicus</Typography.Text>
-            <Typography.Text type="secondary">Infrastructure scaffold</Typography.Text>
+            <Typography.Text type="secondary">{identity?.email}</Typography.Text>
+            <Button onClick={() => void logout()} type="link">
+              Sign out
+            </Button>
           </Space>
         </Header>
         <Content className="app-content">

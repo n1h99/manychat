@@ -9,6 +9,7 @@ import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router';
 
 import { App } from './app';
+import { AuthProvider } from './auth';
 import { ErrorBoundary } from './error-boundary';
 import { readWebEnvironment } from './env';
 import { store } from './store';
@@ -39,9 +40,11 @@ try {
         >
           <Provider store={store}>
             <QueryClientProvider client={queryClient}>
-              <BrowserRouter>
-                <App />
-              </BrowserRouter>
+              <AuthProvider>
+                <BrowserRouter>
+                  <App />
+                </BrowserRouter>
+              </AuthProvider>
             </QueryClientProvider>
           </Provider>
         </ConfigProvider>

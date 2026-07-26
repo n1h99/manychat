@@ -1,9 +1,10 @@
 # Omnicus
 
 Omnicus is a `pnpm`/Turborepo monorepo. The current repository contains Stage 0
-infrastructure only: a React shell, a NestJS API, a BullMQ worker, shared
-packages, a stage-sliced Prisma proposal, tests, and deployment configuration.
-No Stage 1 business capability is implemented.
+infrastructure plus Stage 1 Auth/RBAC/Users/Projects: a React administration
+console, NestJS API, BullMQ worker, shared packages, Prisma baseline migration,
+tests, and deployment configuration. Contacts, channels, CRM, inbox/outbox,
+automation, and broadcasts remain out of scope.
 
 ## Required toolchain
 
@@ -33,6 +34,7 @@ corepack pnpm install --frozen-lockfile
 docker compose up -d postgres redis
 corepack pnpm db:validate
 corepack pnpm db:generate
+corepack pnpm db:migrate:dev
 corepack pnpm dev
 ```
 
@@ -96,29 +98,37 @@ the build or process.
 
 ## Database safety
 
-The executable Prisma schema is only the proposed Stage 1 baseline for
-Auth/RBAC/Projects plus infrastructure. It contains no migration and must not be
-applied yet. Full future-domain models remain documentation proposals.
+The executable Prisma schema is the Stage 1 baseline for Auth/RBAC/Projects and
+audit only. Its reviewed initial migration is stored in
+`packages/database/prisma/migrations/20260726000100_stage1_auth_rbac_projects`.
+Full future-domain models remain documentation proposals.
 
 `db:validate`, `db:generate`, and `db:diff:check` may use the explicit
 non-connecting CI placeholder configured by their wrapper. Migration commands
 never receive that placeholder and require a real PostgreSQL URL.
 
-Development/test seeding is deliberately opt-in:
+Development/test seeding is deliberately opt-in and requires the first admin
+values; it never uses hardcoded credentials:
 
 ```bash
 APP_ENV=development \
 ALLOW_DATABASE_SEED=true \
 SEED_DATABASE_NAME_CONFIRMATION=omnicus \
+SEED_ADMIN_EMAIL=admin@example.test \
+SEED_ADMIN_PASSWORD='replace-with-a-long-unique-password' \
+SEED_ADMIN_FIRST_NAME=Admin \
+SEED_ADMIN_LAST_NAME=User \
 DATABASE_URL=postgresql://omnicus:omnicus@localhost:5432/omnicus \
 corepack pnpm --filter @omnicus/database db:seed
 ```
 
 The seed rejects staging/production, Railway, database-name mismatches, and
-remote hosts unless an additional remote opt-in is supplied. It currently
-creates no business data.
+remote hosts unless an additional remote opt-in is supplied. It creates only
+Stage 1 permissions, system roles, the configured first administrator, and
+missing project role definitions for existing projects.
 
-Before the first migration, follow the approval and SQL-review checklist in
+The committed migration is a reviewed fresh Prisma diff. Before any future
+migration, follow the approval and SQL-review checklist in
 [Database design](docs/DATABASE.md).
 
 ## Documentation

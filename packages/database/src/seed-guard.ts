@@ -3,6 +3,10 @@ export type SeedEnvironment = Readonly<Record<string, string | undefined>>;
 const allowedEnvironments = new Set(['development', 'test']);
 
 export interface SeedAuthorization {
+  adminEmail: string;
+  adminFirstName: string;
+  adminLastName: string;
+  adminPassword: string;
   appEnvironment: 'development' | 'test';
   databaseName: string;
   databaseUrl: string;
@@ -11,6 +15,10 @@ export interface SeedAuthorization {
 export function authorizeDatabaseSeed(environment: SeedEnvironment): SeedAuthorization {
   const appEnvironment = environment.APP_ENV;
   const databaseUrl = environment.DATABASE_URL;
+  const adminEmail = environment.SEED_ADMIN_EMAIL;
+  const adminPassword = environment.SEED_ADMIN_PASSWORD;
+  const adminFirstName = environment.SEED_ADMIN_FIRST_NAME;
+  const adminLastName = environment.SEED_ADMIN_LAST_NAME;
 
   if (!appEnvironment || !allowedEnvironments.has(appEnvironment)) {
     throw new Error(
@@ -34,6 +42,12 @@ export function authorizeDatabaseSeed(environment: SeedEnvironment): SeedAuthori
     throw new Error('DATABASE_URL is required to run the development/test seed');
   }
 
+  if (!adminEmail || !adminPassword || !adminFirstName || !adminLastName) {
+    throw new Error(
+      'SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, SEED_ADMIN_FIRST_NAME and SEED_ADMIN_LAST_NAME are required',
+    );
+  }
+
   const parsed = new URL(databaseUrl);
   if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
     throw new Error('DATABASE_URL must use postgres:// or postgresql://');
@@ -54,6 +68,10 @@ export function authorizeDatabaseSeed(environment: SeedEnvironment): SeedAuthori
   }
 
   return {
+    adminEmail,
+    adminFirstName,
+    adminLastName,
+    adminPassword,
     appEnvironment: appEnvironment as SeedAuthorization['appEnvironment'],
     databaseName,
     databaseUrl,

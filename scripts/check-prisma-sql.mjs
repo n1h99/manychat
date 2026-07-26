@@ -132,8 +132,18 @@ if (sql.includes('TIMESTAMP(3) ') || sql.includes('TIMESTAMP(3),')) {
   failures.push('A lifecycle timestamp was generated without time zone');
 }
 
-if (existsSync(resolve(repositoryRoot, 'packages/database/prisma/migrations'))) {
-  failures.push('A Prisma migrations directory exists during the Stage 0 migration gate');
+const migrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726000100_stage1_auth_rbac_projects/migration.sql',
+);
+if (!existsSync(migrationPath)) {
+  failures.push('Stage 1 initial migration is missing');
+} else {
+  const migrationSql = readFileSync(migrationPath, 'utf8').replaceAll('\r\n', '\n');
+  const migrationBody = migrationSql.slice(migrationSql.indexOf('-- CreateSchema')).trim();
+  if (migrationBody !== sql.trim()) {
+    failures.push('Stage 1 initial migration differs from the generated Prisma diff');
+  }
 }
 
 if (proposalSql !== sql.trim()) {
@@ -150,7 +160,7 @@ if (failures.length > 0) {
 process.stdout.write(
   `${JSON.stringify({
     check: 'stage1-sql-diff',
-    migrationCreated: false,
+    migrationCreated: true,
     status: 'passed',
     tables: [...generatedTables].sort(),
   })}\n`,

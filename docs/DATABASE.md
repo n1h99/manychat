@@ -7,8 +7,10 @@ Executable baseline находится в
 проходить `prisma validate` и SQL diff review, но не является migration и не
 применяется к БД.
 
-Initial migration будет stage-sliced. Первый baseline, который разрешено
-предложить на Этапе 1, содержит только Auth/RBAC/Projects и необходимый audit.
+Initial migration будет stage-sliced. Первый baseline Этапа 1 содержит только
+Auth/RBAC/Projects и необходимый audit. Его migration создаётся только из
+reviewed fresh diff текущих 16 executable tables; модели последующих этапов не
+добавляются.
 Contacts, channels, inbox/outbox, automation, CRM и остальные модели ниже
 остаются design proposal до соответствующего этапа и не входят в executable
 schema. Поэтому первая migration не создаёт около 40 преждевременных таблиц.
@@ -42,6 +44,14 @@ schema. Поэтому первая migration не создаёт около 40 
     используют `RESTRICT`. Audit хранит immutable project name/slug snapshots.
 
 ## Stage-sliced migration map
+
+### Stage 1 migration status
+
+`packages/database/prisma/migrations/20260726000100_stage1_auth_rbac_projects/migration.sql`
+is the reviewed initial migration for the 16-table Stage 1 baseline. It is an
+exact fresh `prisma migrate diff --from-empty` output verified by
+`pnpm db:diff:check`; it has not been applied by this repository or deployed to
+production. Future domain models remain outside this migration.
 
 | Slice            | Executable models                                                                                                                                                                |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

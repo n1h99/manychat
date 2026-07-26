@@ -54,3 +54,35 @@ body {
   background: #f5f6f8;
   padding: 24px;
 }
+
+.page-heading {
+  display: flex;
+  margin-bottom: 18px;
+}
+
+.section-actions {
+  margin: 18px 0;
+}
+
+.login-page {
+  align-items: center;
+  background: #f5f6f8;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.login-card {
+  max-width: 420px;
+  width: 100%;
+}
+
+.form-alert {
+  margin-bottom: 16px;
+}
+
+.route-loading {
+  display: block;
+  margin: 20vh auto;
+}

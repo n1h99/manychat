@@ -8,6 +8,7 @@ const appEnvironmentSchema = z.enum(['development', 'production', 'staging', 'te
 const nodeEnvironmentSchema = z.enum(['development', 'production', 'test']);
 const portSchema = z.coerce.number().int().min(1).max(65_535);
 const durationSchema = z.coerce.number().int().min(250).max(60_000);
+const positiveIntegerSchema = z.coerce.number().int().positive();
 
 const booleanEnvironmentSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
 
@@ -121,6 +122,11 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
     API_HOST: z.string().min(1).default('0.0.0.0'),
     API_PORT: portSchema.default(3000),
     CORS_ALLOWED_ORIGINS: corsOriginsSchema,
+    JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_ACCESS_TTL_SECONDS: positiveIntegerSchema.max(3_600).default(900),
+    LOGIN_RATE_LIMIT_MAX_ATTEMPTS: positiveIntegerSchema.max(100).default(10),
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerSchema.max(3_600).default(900),
+    REFRESH_TOKEN_TTL_DAYS: positiveIntegerSchema.max(90).default(30),
     SWAGGER_ENABLED: booleanEnvironmentSchema.default(false),
     TRUST_PROXY: trustProxySchema,
   })
