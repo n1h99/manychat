@@ -180,6 +180,14 @@ provider update ID, and best-effort enqueues an inbox-record-only BullMQ job.
 Redis enqueue failure does not roll back PostgreSQL intent; recovery remains a
 later Stage 3 slice.
 
+Stage 3B.3a adds the Telegram inbound consumer only. It claims one inbox record
+with a bounded lease, parses its PostgreSQL-backed payload, and transactionally
+persists the normalized event, connection-scoped contact identity, stable
+conversation, and inbound message. Redelivery is safe through the unique inbox
+event and message constraints. Worker failures release the record for retry
+with a safe error code. Recovery scanning, dead-letter finalization, outbound
+delivery, channel CRUD, and frontend work remain outside this slice.
+
 ### Scope
 
 - InboxRecord, OutboxRecord, IdempotencyRecord, RawWebhookEvent,

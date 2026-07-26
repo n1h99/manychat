@@ -96,11 +96,25 @@ with each valid raw webhook event. The temporary SQL default only makes the
 additive migration safe for an already populated database and is dropped in the
 same migration; Prisma's executable schema has no default for this field.
 
+### Stage 3B.3a runtime behavior
+
+The Telegram inbound consumer claims an `InboxRecord` atomically before it
+reads its related raw event. `PENDING` and `RETRY` records may be claimed;
+`PROCESSING` records are reclaimable only after their lease expires; terminal
+`COMPLETED`, `FAILED`, and `DEAD_LETTER` records are no-ops. A claim writes the
+worker ID, lock time, and one attempt increment. The persistence transaction
+then creates or reuses the single `NormalizedEvent`, resolves the
+connection-scoped identity and contact, creates or reuses the stable
+conversation/message records, and marks the inbox record completed. On a safe
+processing failure it is released as `RETRY` with no provider payload in the
+error field. The future recovery scheduler and terminal dead-letter policy are
+intentionally not part of this slice.
+
 | Slice            | Executable models                                                                                                                                                                    |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invite history and active-invite reservations, `Permission`, global/project roles and assignments, `Project`, `AuditLog`     |
 | Stage 2          | `Contact`, `ChannelIdentity`, `Tag`, `ContactTag` and `CustomFieldDefinition`; contact custom-field values are stored in the contact JSON document and validated against definitions |
-| Stage 3B.1       | `ChannelConnection`, valid webhook persistence, `InboxRecord`, `OutboxRecord`, `IdempotencyRecord`, `NormalizedEvent`, `Conversation` and `Message`; no runtime yet                  |
+| Stage 3B.1–3a    | `ChannelConnection`, valid webhook persistence, `InboxRecord`, `OutboxRecord`, `IdempotencyRecord`, `NormalizedEvent`, `Conversation` and `Message`; inbound processor only          |
 | Stage 4          | scenarios and execution journal                                                                                                                                                      |
 | Stage 5          | project-specific CRM configuration after the CRM contract gate                                                                                                                       |
 | Post-pilot       | broadcasts, Wait, Delay, Subflow and advanced media workflows                                                                                                                        |

@@ -1,17 +1,18 @@
 import { Inject, Injectable, Logger, Optional, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ApiEnvironment } from '@omnicus/config/server';
+import {
+  TELEGRAM_INBOUND_JOB_NAME,
+  TELEGRAM_INBOUND_QUEUE_NAME,
+  type TelegramInboundJob,
+} from '@omnicus/channel-telegram';
 import { Queue } from 'bullmq';
 
 import { redisConnectionFromUrl } from './telegram-redis-connection';
 
-export const TELEGRAM_INBOUND_QUEUE_NAME = 'telegram-inbound';
-export const TELEGRAM_INBOUND_JOB_NAME = 'process-inbox-record';
 export const TELEGRAM_INBOUND_QUEUE = Symbol('TELEGRAM_INBOUND_QUEUE');
 
-export interface TelegramInboundJob {
-  inboxRecordId: string;
-}
+export { TELEGRAM_INBOUND_JOB_NAME, TELEGRAM_INBOUND_QUEUE_NAME, type TelegramInboundJob };
 
 export interface TelegramInboundQueueProducer {
   add(

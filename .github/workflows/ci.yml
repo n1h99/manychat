@@ -73,6 +73,8 @@ jobs:
         run: |
           pnpm db:validate
           pnpm db:diff:check
+      - name: Apply migrations to the ephemeral integration database
+        run: pnpm db:migrate:deploy
       - name: Typecheck
         run: pnpm typecheck
       - name: Unit and integration tests

@@ -17,6 +17,9 @@
   "dependencies": {
     "@omnicus/channel-core": "workspace:*"
   },
+  "devDependencies": {
+    "@omnicus/test-fixtures": "workspace:*"
+  },
   "scripts": {
     "build": "node ../../scripts/clean-output.mjs packages/channel-telegram/dist && tsc -p tsconfig.build.json",
     "test": "vitest run --passWithNoTests",

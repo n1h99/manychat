@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { rootEnvironmentFilePath, validateWorkerEnvironment } from '@omnicus/config/server';
 
 import { DemoQueueModule } from './queue/demo-queue.module';
+import { DatabaseModule } from './database/database.module';
+import { TelegramInboundModule } from './telegram-inbound/telegram-inbound.module';
 import { WorkerHealthController } from './worker-health.controller';
 
 const rootEnvFile =
@@ -19,7 +21,9 @@ const rootEnvFile =
       isGlobal: true,
       validate: validateWorkerEnvironment,
     }),
+    DatabaseModule,
     DemoQueueModule,
+    TelegramInboundModule,
   ],
 })
 export class AppModule {}

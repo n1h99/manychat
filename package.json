@@ -20,6 +20,7 @@
     "db:generate": "node scripts/run-prisma.mjs generate --config prisma.config.ts",
     "db:diff:check": "node scripts/check-prisma-sql.mjs",
     "db:migrate:dev": "node scripts/run-prisma.mjs migrate dev --config prisma.config.ts",
+    "db:migrate:deploy": "node scripts/run-prisma.mjs migrate deploy --config prisma.config.ts",
     "db:seed": "node scripts/pnpm.mjs --filter @omnicus/database db:seed",
     "db:validate": "node scripts/run-prisma.mjs validate --config prisma.config.ts",
     "dev": "node scripts/pnpm.mjs db:generate && node scripts/turbo.mjs run dev",

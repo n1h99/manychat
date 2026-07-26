@@ -27,6 +27,7 @@ const child = spawn(process.execPath, [resolve(repositoryRoot, '.runtime/worker/
   env: {
     ...process.env,
     APP_ENV: 'test',
+    CHANNEL_SECRETS_KEY: process.env.CHANNEL_SECRETS_KEY ?? Buffer.alloc(32, 13).toString('base64'),
     DATABASE_URL:
       process.env.DATABASE_URL ?? 'postgresql://omnicus:omnicus@127.0.0.1:5432/omnicus_test',
     DEMO_JOB_ENABLED: 'false',

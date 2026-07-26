@@ -11,8 +11,8 @@
     "build": "node ../../scripts/clean-output.mjs apps/worker/dist && tsc -p tsconfig.build.json",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
-    "test": "vitest run --passWithNoTests --exclude src/queue/demo-queue.integration.test.ts",
-    "test:integration": "vitest run src/queue/demo-queue.integration.test.ts",
+    "test": "vitest run --passWithNoTests --exclude 'src/**/*.integration.test.ts'",
+    "test:integration": "vitest run src/queue/demo-queue.integration.test.ts src/telegram-inbound/telegram-inbound.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -20,13 +20,16 @@
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.1.28",
     "@nestjs/platform-express": "11.1.28",
+    "@omnicus/channel-telegram": "workspace:*",
     "@omnicus/config": "workspace:*",
     "@omnicus/contracts": "workspace:*",
+    "@omnicus/database": "workspace:*",
     "bullmq": "5.81.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"
   },
   "devDependencies": {
+    "@omnicus/test-fixtures": "workspace:*",
     "@types/express": "5.0.6"
   }
 }

@@ -82,6 +82,9 @@ importers:
       '@omnicus/channel-secrets':
         specifier: workspace:*
         version: link:../../packages/channel-secrets
+      '@omnicus/channel-telegram':
+        specifier: workspace:*
+        version: link:../../packages/channel-telegram
       '@omnicus/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -186,12 +189,18 @@ importers:
       '@nestjs/platform-express':
         specifier: 11.1.28
         version: 11.1.28(@nestjs/common@11.1.28(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.28)
+      '@omnicus/channel-telegram':
+        specifier: workspace:*
+        version: link:../../packages/channel-telegram
       '@omnicus/config':
         specifier: workspace:*
         version: link:../../packages/config
       '@omnicus/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@omnicus/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       bullmq:
         specifier: 5.81.1
         version: 5.81.1
@@ -202,6 +211,9 @@ importers:
         specifier: 7.8.2
         version: 7.8.2
     devDependencies:
+      '@omnicus/test-fixtures':
+        specifier: workspace:*
+        version: link:../../packages/test-fixtures
       '@types/express':
         specifier: 5.0.6
         version: 5.0.6
@@ -215,6 +227,10 @@ importers:
       '@omnicus/channel-core':
         specifier: workspace:*
         version: link:../channel-core
+    devDependencies:
+      '@omnicus/test-fixtures':
+        specifier: workspace:*
+        version: link:../test-fixtures
 
   packages/config:
     dependencies:

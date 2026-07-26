@@ -18,7 +18,7 @@ export interface TelegramUpdate {
   message?: TelegramMessage;
   callback_query?: { id: string; data?: string; from: TelegramUser; message?: TelegramMessage };
   my_chat_member?: {
-    chat: { id: number };
+    chat: { id: number; type: string };
     from: TelegramUser;
     new_chat_member: { status: string };
   };
@@ -35,7 +35,9 @@ export interface TelegramMessage {
   message_id: number;
   chat: { id: number; type: string };
   from?: TelegramUser;
+  date?: number;
   text?: string;
+  caption?: string;
   photo?: {
     file_id: string;
     file_unique_id: string;
@@ -43,12 +45,151 @@ export interface TelegramMessage {
     height: number;
     file_size?: number;
   }[];
-  document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+  document?: {
+    file_id: string;
+    file_name?: string;
+    file_size?: number;
+    file_unique_id: string;
+    mime_type?: string;
+  };
 }
 export interface TelegramNormalizedEvent {
   externalUserId?: string;
   kind: 'callback_query' | 'message' | 'my_chat_member' | 'unsupported';
   payload: Record<string, unknown>;
+}
+
+export const TELEGRAM_INBOUND_QUEUE_NAME = 'telegram-inbound';
+export const TELEGRAM_INBOUND_JOB_NAME = 'process-inbox-record';
+
+export interface TelegramInboundJob {
+  inboxRecordId: string;
+}
+
+export type TelegramInboundEventType =
+  'CALLBACK_QUERY' | 'CHAT_MEMBER' | 'COMMAND' | 'DOCUMENT' | 'MESSAGE' | 'PHOTO' | 'UNSUPPORTED';
+
+export interface TelegramInboundEvent {
+  chatId?: string;
+  content: Record<string, unknown>;
+  externalMessageId?: string;
+  externalUserId?: string;
+  identityStatus?: 'ACTIVE' | 'BLOCKED';
+  metadata: Record<string, unknown>;
+  type: TelegramInboundEventType;
+  user?: TelegramUser;
+}
+
+function commandParts(text: string): { arguments: string[]; command: string } | undefined {
+  const match = /^\/([a-zA-Z0-9_]+)(?:@[a-zA-Z0-9_]+)?(?:\s+(.*))?$/.exec(text);
+  if (!match) return undefined;
+  const command = match[1];
+  if (!command) return undefined;
+  return { arguments: match[2]?.split(/\s+/).filter(Boolean) ?? [], command };
+}
+
+function selectedPhoto(
+  photos: NonNullable<TelegramMessage['photo']>,
+): NonNullable<TelegramMessage['photo']>[number] {
+  return [...photos].sort(
+    (left, right) =>
+      right.width * right.height - left.width * left.height ||
+      (right.file_size ?? 0) - (left.file_size ?? 0),
+  )[0]!;
+}
+
+function messageEvent(message: TelegramMessage): TelegramInboundEvent {
+  const metadata = { telegramMessage: message };
+  const base = {
+    chatId: String(message.chat.id),
+    externalMessageId: String(message.message_id),
+    metadata,
+    ...(message.from ? { externalUserId: String(message.from.id), user: message.from } : {}),
+  };
+
+  if (message.text !== undefined) {
+    const command = commandParts(message.text);
+    return command
+      ? {
+          ...base,
+          content: { arguments: command.arguments, command: command.command, text: message.text },
+          type: 'COMMAND',
+        }
+      : { ...base, content: { text: message.text }, type: 'MESSAGE' };
+  }
+  if (message.photo && message.photo.length > 0) {
+    const photo = selectedPhoto(message.photo);
+    return {
+      ...base,
+      content: {
+        caption: message.caption ?? null,
+        fileId: photo.file_id,
+        fileSize: photo.file_size ?? null,
+        fileUniqueId: photo.file_unique_id,
+        height: photo.height,
+        width: photo.width,
+      },
+      type: 'PHOTO',
+    };
+  }
+  if (message.document) {
+    return {
+      ...base,
+      content: {
+        caption: message.caption ?? null,
+        fileId: message.document.file_id,
+        fileName: message.document.file_name ?? null,
+        fileSize: message.document.file_size ?? null,
+        fileUniqueId: message.document.file_unique_id,
+        mimeType: message.document.mime_type ?? null,
+      },
+      type: 'DOCUMENT',
+    };
+  }
+  return { ...base, content: {}, type: 'UNSUPPORTED' };
+}
+
+export function normalizeTelegramUpdate(update: TelegramUpdate): TelegramInboundEvent {
+  if (!Number.isSafeInteger(update.update_id) || update.update_id < 0) {
+    throw new Error('Telegram update is malformed');
+  }
+  if (update.message) return messageEvent(update.message);
+  if (update.callback_query) {
+    return {
+      ...(update.callback_query.message
+        ? {
+            chatId: String(update.callback_query.message.chat.id),
+            externalMessageId: `callback:${update.callback_query.id}`,
+          }
+        : {}),
+      content: { data: update.callback_query.data ?? null, id: update.callback_query.id },
+      externalUserId: String(update.callback_query.from.id),
+      metadata: { telegramCallbackQuery: update.callback_query },
+      type: 'CALLBACK_QUERY',
+      user: update.callback_query.from,
+    };
+  }
+  if (update.my_chat_member) {
+    const status = update.my_chat_member.new_chat_member.status;
+    const identityStatus =
+      status === 'kicked' ? 'BLOCKED' : status === 'member' ? 'ACTIVE' : undefined;
+    return {
+      chatId: String(update.my_chat_member.chat.id),
+      content: { status },
+      // A private chat's ID is the stable identity subject. Group events are not
+      // assigned to a contact unless Telegram provides a resolvable user scope.
+      metadata: { telegramChatMember: update.my_chat_member },
+      type: 'CHAT_MEMBER',
+      ...(update.my_chat_member.chat.type === 'private'
+        ? {
+            externalUserId: String(update.my_chat_member.chat.id),
+            ...(identityStatus ? { identityStatus } : {}),
+            user: update.my_chat_member.from,
+          }
+        : {}),
+    };
+  }
+  return { content: {}, metadata: { telegramUpdate: update }, type: 'UNSUPPORTED' };
 }
 export const telegramDescriptor: ChannelAdapterDescriptor = {
   channel: 'telegram',

@@ -50,5 +50,17 @@ A valid Telegram webhook first commits `RawWebhookEvent` and a pending
 `InboxRecord` to PostgreSQL. The subsequent BullMQ enqueue is best-effort. If
 Redis is unavailable, Telegram still receives HTTP 200 and the pending inbox
 record remains the source-of-truth recovery candidate. Do not replay the
-provider request body or manually alter the raw event. Stage 3B.3 will add the
+provider request body or manually alter the raw event. Stage 3B.3b will add the
 recovery scheduler that re-enqueues pending records using their stable inbox ID.
+
+## Telegram inbound processor lease
+
+Stage 3B.3a workers consume only the stable `inboxRecordId` from BullMQ and
+load the raw event from PostgreSQL. A worker atomically claims `PENDING` or
+`RETRY` work, records its lock owner/time and increments attempts. A current
+`PROCESSING` lease must not be manually cleared; an expired lease may be
+reclaimed by a later job. Successful processing completes the record in the
+same transaction as normalized-event, contact/identity, conversation, and
+message persistence. Safe processing errors release the record as `RETRY`.
+The periodic re-enqueue/recovery scheduler and dead-letter procedure remain
+Stage 3B.3b work.
