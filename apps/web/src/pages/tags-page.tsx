@@ -18,6 +18,7 @@ export function TagsPage() {
   const { accessToken } = useAuth();
   const cache = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<TagItem>();
   const [form] = Form.useForm();
   const tags = useQuery({
     enabled: Boolean(projectId),
@@ -31,7 +32,14 @@ export function TagsPage() {
         <Typography.Title level={2}>Tags</Typography.Title>
         <Typography.Text type="secondary">Project-local contact labels.</Typography.Text>
       </Space>
-      <Button onClick={() => setOpen(true)} type="primary">
+      <Button
+        onClick={() => {
+          form.resetFields();
+          setEditing(undefined);
+          setOpen(true);
+        }}
+        type="primary"
+      >
         Create tag
       </Button>
       <Table<TagItem>
@@ -44,18 +52,29 @@ export function TagsPage() {
           { dataIndex: 'description', title: 'Description' },
           {
             render: (_, row) => (
-              <Button
-                danger
-                onClick={() =>
-                  void apiRequest(
-                    `/api/v1/projects/${projectId}/tags/${row.id}`,
-                    { method: 'DELETE' },
-                    accessToken,
-                  ).then(reload)
-                }
-              >
-                Delete
-              </Button>
+              <Space>
+                <Button
+                  onClick={() => {
+                    form.setFieldsValue(row);
+                    setEditing(row);
+                    setOpen(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  danger
+                  onClick={() =>
+                    void apiRequest(
+                      `/api/v1/projects/${projectId}/tags/${row.id}`,
+                      { method: 'DELETE' },
+                      accessToken,
+                    ).then(reload)
+                  }
+                >
+                  Delete
+                </Button>
+              </Space>
             ),
             title: 'Actions',
           },
@@ -65,14 +84,19 @@ export function TagsPage() {
         pagination={false}
         rowKey="id"
       />
-      <Drawer destroyOnHidden onClose={() => setOpen(false)} open={open} title="Create tag">
+      <Drawer
+        destroyOnHidden
+        onClose={() => setOpen(false)}
+        open={open}
+        title={editing ? 'Edit tag' : 'Create tag'}
+      >
         <Form
           form={form}
           layout="vertical"
           onFinish={async (values) => {
             await apiRequest(
-              `/api/v1/projects/${projectId}/tags`,
-              { body: JSON.stringify(values), method: 'POST' },
+              `/api/v1/projects/${projectId}/tags${editing ? `/${editing.id}` : ''}`,
+              { body: JSON.stringify(values), method: editing ? 'PATCH' : 'POST' },
               accessToken,
             );
             form.resetFields();
@@ -90,7 +114,7 @@ export function TagsPage() {
             <Input.TextArea />
           </Form.Item>
           <Button htmlType="submit" type="primary">
-            Create
+            {editing ? 'Save changes' : 'Create'}
           </Button>
         </Form>
       </Drawer>
