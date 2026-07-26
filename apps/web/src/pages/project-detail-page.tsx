@@ -53,6 +53,9 @@ export function ProjectDetailPage() {
         {hasProjectPermission(access.data, 'automation:read') ? (
           <Link to={`/projects/${project.id}/scenarios`}>Automation</Link>
         ) : null}
+        {hasProjectPermission(access.data, 'integrations:manage') ? (
+          <Link to={`/projects/${project.id}/crm-config`}>CRM mock</Link>
+        ) : null}
         {hasProjectPermission(access.data, 'channels:read') ? (
           <Link to={`/projects/${project.id}/channels`}>Channels</Link>
         ) : null}

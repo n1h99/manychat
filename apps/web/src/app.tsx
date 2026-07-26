@@ -17,6 +17,7 @@ import { ChannelCreatePage } from './pages/channel-create-page';
 import { ChannelDetailPage } from './pages/channel-detail-page';
 import { ScenarioEditorPage } from './pages/scenario-editor-page';
 import { ScenariosPage } from './pages/scenarios-page';
+import { CrmConfigPage } from './pages/crm-config-page';
 
 export function App() {
   return (
@@ -40,6 +41,9 @@ export function App() {
                 path="/projects/:projectId/scenarios/:scenarioId"
               />
             </Route>
+          </Route>
+          <Route element={<ProjectPermissionRoute permission="integrations:manage" />}>
+            <Route element={<CrmConfigPage />} path="/projects/:projectId/crm-config" />
           </Route>
           <Route element={<ProjectPermissionRoute permission="channels:read" />}>
             <Route element={<ChannelsPage />} path="/projects/:projectId/channels" />

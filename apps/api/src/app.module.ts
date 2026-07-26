@@ -14,6 +14,7 @@ import { ContactsModule } from './contacts/contacts.module';
 import { TelegramWebhookModule } from './telegram-webhook/telegram-webhook.module';
 import { ChannelsModule } from './channels/channels.module';
 import { AutomationModule } from './automation/automation.module';
+import { CrmModule } from './crm/crm.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -39,6 +40,7 @@ const rootEnvFile =
     TelegramWebhookModule,
     ChannelsModule,
     AutomationModule,
+    CrmModule,
   ],
 })
 export class AppModule implements NestModule {
