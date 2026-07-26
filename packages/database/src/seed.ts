@@ -75,9 +75,8 @@ async function seed(): Promise<void> {
       const existingFixture = await database.client.contact.findFirst({
         where: { projectId: project.id, username: 'development-contact' },
       });
-      const fixture =
-        existingFixture ??
-        (await database.client.contact.create({
+      if (!existingFixture)
+        await database.client.contact.create({
           data: {
             displayName: 'Development Contact',
             email: 'development-contact@example.test',
@@ -85,24 +84,10 @@ async function seed(): Promise<void> {
             projectId: project.id,
             username: 'development-contact',
           },
-        }));
-      await database.client.channelIdentity.upsert({
-        create: {
-          channel: 'OTHER',
-          connectionId: 'development-fixture',
-          contactId: fixture.id,
-          externalUserId: `development-contact:${project.id}`,
-          projectId: project.id,
-        },
-        update: {},
-        where: {
-          projectId_connectionId_externalUserId: {
-            connectionId: 'development-fixture',
-            externalUserId: `development-contact:${project.id}`,
-            projectId: project.id,
-          },
-        },
-      });
+        });
+      // A ChannelIdentity always requires a real provider connection. The seed
+      // intentionally creates only a provider-neutral contact fixture; channel
+      // identities are created through a configured adapter or test fixture.
     }
     process.stdout.write(
       `${JSON.stringify({
