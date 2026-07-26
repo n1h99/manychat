@@ -173,6 +173,13 @@ events, `InboxRecord`, `OutboxRecord`, `IdempotencyRecord`, `NormalizedEvent`,
 does not include a webhook endpoint, BullMQ processing, outbound delivery, a
 channel-management API or frontend. Those remain subsequent Stage 3 work.
 
+Stage 3B.2 adds the public Telegram webhook acknowledgement boundary: it
+verifies the encrypted webhook secret before persisting any body, atomically
+stores a valid `RawWebhookEvent` and pending `InboxRecord`, deduplicates on the
+provider update ID, and best-effort enqueues an inbox-record-only BullMQ job.
+Redis enqueue failure does not roll back PostgreSQL intent; recovery remains a
+later Stage 3 slice.
+
 ### Scope
 
 - InboxRecord, OutboxRecord, IdempotencyRecord, RawWebhookEvent,

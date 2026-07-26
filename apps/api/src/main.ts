@@ -30,7 +30,11 @@ async function bootstrap(): Promise<void> {
   let app: NestExpressApplication | undefined;
 
   try {
-    app = await NestFactory.create<NestExpressApplication>(AppModule, { logger });
+    app = await NestFactory.create<NestExpressApplication>(AppModule, {
+      bodyParser: false,
+      logger,
+    });
+    app.useBodyParser('json', { limit: '2mb' });
     const config = app.get(ConfigService<ApiEnvironment, true>);
     const swaggerEnabled = config.get('SWAGGER_ENABLED', { infer: true });
 

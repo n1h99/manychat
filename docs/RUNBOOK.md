@@ -43,3 +43,12 @@ The accepted pilot targets are RPO 24 hours and RTO 4 hours. A real restore test
 has not yet been performed because Stage 0 has no deployed database. Before pilot
 deployment, record backup identifier, restore destination, timestamps, integrity
 checks, measured RPO/RTO and cleanup confirmation in an operations report.
+
+## Telegram inbound enqueue failure
+
+A valid Telegram webhook first commits `RawWebhookEvent` and a pending
+`InboxRecord` to PostgreSQL. The subsequent BullMQ enqueue is best-effort. If
+Redis is unavailable, Telegram still receives HTTP 200 and the pending inbox
+record remains the source-of-truth recovery candidate. Do not replay the
+provider request body or manually alter the raw event. Stage 3B.3 will add the
+recovery scheduler that re-enqueues pending records using their stable inbox ID.

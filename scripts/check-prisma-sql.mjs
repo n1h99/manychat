@@ -93,6 +93,7 @@ const requiredSql = [
   'CREATE TABLE "project_active_invite_reservations"',
   'CREATE UNIQUE INDEX "global_active_invite_reservations_inviteTokenId_key"',
   'CREATE UNIQUE INDEX "project_active_invite_reservations_inviteTokenId_key"',
+  '"correlationId" TEXT NOT NULL',
   'CREATE UNIQUE INDEX "sessions_replacedBySessionId_userId_tokenFamilyId_key"',
   'CREATE INDEX "global_role_permissions_permissionId_idx"',
   'CREATE INDEX "project_role_permissions_permissionId_idx"',
@@ -231,6 +232,27 @@ if (!existsSync(stage3MigrationPath)) {
 
   if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(stage3MigrationSql)) {
     failures.push('Stage 3 migration contains a destructive operation');
+  }
+}
+
+const stage3WebhookMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726000400_stage3_webhook_correlation/migration.sql',
+);
+if (!existsSync(stage3WebhookMigrationPath)) {
+  failures.push('Stage 3 webhook correlation migration is missing');
+} else {
+  const stage3WebhookMigrationSql = readFileSync(stage3WebhookMigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  for (const fragment of [
+    'ADD COLUMN "correlationId" TEXT NOT NULL',
+    'CREATE INDEX "raw_webhook_events_projectId_correlationId_idx"',
+  ]) {
+    if (!stage3WebhookMigrationSql.includes(fragment)) {
+      failures.push(`Stage 3 webhook migration is missing invariant: ${fragment}`);
+    }
   }
 }
 

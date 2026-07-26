@@ -91,6 +91,11 @@ their body must not be persisted.
 The migration is a reviewed schema artifact and has not been applied or
 deployed by this repository.
 
+`20260726000400_stage3_webhook_correlation` adds the correlation ID retained
+with each valid raw webhook event. The temporary SQL default only makes the
+additive migration safe for an already populated database and is dropped in the
+same migration; Prisma's executable schema has no default for this field.
+
 | Slice            | Executable models                                                                                                                                                                    |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Stage 1 baseline | `User`, `Session`, `PasswordResetToken`, global/project invite history and active-invite reservations, `Permission`, global/project roles and assignments, `Project`, `AuditLog`     |

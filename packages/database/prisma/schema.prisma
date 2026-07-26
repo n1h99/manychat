@@ -499,6 +499,7 @@ model RawWebhookEvent {
   externalUpdateId String
   status           RawWebhookEventStatus @default(RECEIVED)
   payload          Json
+  correlationId    String
   receivedAt       DateTime              @default(now()) @db.Timestamptz(3)
   purgeAfter       DateTime              @db.Timestamptz(3)
   connection       ChannelConnection     @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
@@ -507,6 +508,7 @@ model RawWebhookEvent {
   @@unique([projectId, id])
   @@unique([connectionId, externalUpdateId])
   @@index([projectId, connectionId, receivedAt])
+  @@index([projectId, correlationId])
   @@index([projectId, purgeAfter])
   @@map("raw_webhook_events")
 }
