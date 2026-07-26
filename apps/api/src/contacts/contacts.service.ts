@@ -121,7 +121,13 @@ export class ContactsService {
     });
     await this.audit.record({
       action:
-        input.automationMode !== undefined ? 'contact.automation_mode_changed' : 'contact.updated',
+        input.automationMode !== undefined
+          ? 'contact.automation_mode_changed'
+          : input.status !== undefined
+            ? 'contact.status_changed'
+            : input.customFields !== undefined
+              ? 'custom_field.value_changed'
+              : 'contact.updated',
       actorEmailSnapshot: context.actorEmail,
       actorUserId: context.actorUserId,
       afterSafeJson: { automationMode: contact.automationMode, status: contact.status },
