@@ -20,6 +20,9 @@ export const projectPermissions = [
   'automation:read',
   'automation:manage',
   'integrations:manage',
+  'channels:read',
+  'channels:manage',
+  'channels:rotate_secrets',
 ] as const;
 
 export const allPermissionCodes = [...globalPermissions, ...projectPermissions] as const;
@@ -41,6 +44,9 @@ export const systemProjectRoles = [
       'contacts:merge',
       'tags:read',
       'tags:manage',
+      'channels:read',
+      'channels:manage',
+      'channels:rotate_secrets',
     ],
   },
   {
@@ -51,7 +57,13 @@ export const systemProjectRoles = [
   {
     name: 'Integration Manager',
     normalizedName: 'integration-manager',
-    permissions: ['project:read', 'integrations:manage'],
+    permissions: [
+      'project:read',
+      'integrations:manage',
+      'channels:read',
+      'channels:manage',
+      'channels:rotate_secrets',
+    ],
   },
   {
     name: 'Contact Manager',

@@ -76,3 +76,13 @@ and falls back to the recovery scan if its immediate enqueue fails.
 On worker crash, an active lease is left untouched until its configured expiry;
 then recovery atomically releases it for retry. Lease-token conditional updates
 prevent a late pre-crash worker from completing or releasing a newer claim.
+
+## Telegram outbound recovery
+
+The worker scans due `outbox_records` in `PENDING` or `RETRY`, plus expired
+`PROCESSING` leases, and re-enqueues a stable `telegram-outbound-<outboxId>` job.
+If Redis is unavailable after the database transaction commits, the record stays
+recoverable and delivery is not lost. `UNKNOWN` delivery is terminal: reconcile
+the provider outcome before any manual resend, because a timeout can occur after
+Telegram accepted the request. Do not expose, log, or copy channel credentials
+while investigating a record.

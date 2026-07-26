@@ -5,6 +5,7 @@ import { rootEnvironmentFilePath, validateWorkerEnvironment } from '@omnicus/con
 import { DemoQueueModule } from './queue/demo-queue.module';
 import { DatabaseModule } from './database/database.module';
 import { TelegramInboundModule } from './telegram-inbound/telegram-inbound.module';
+import { TelegramOutboundModule } from './telegram-outbound/telegram-outbound.module';
 import { WorkerHealthController } from './worker-health.controller';
 
 const rootEnvFile =
@@ -24,6 +25,7 @@ const rootEnvFile =
     DatabaseModule,
     DemoQueueModule,
     TelegramInboundModule,
+    TelegramOutboundModule,
   ],
 })
 export class AppModule {}

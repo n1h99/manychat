@@ -471,3 +471,12 @@ one; later key rotation may add a previous decrypt key and a re-encryption job.
 **Последствия:** API and worker require the same key in every environment,
 including an explicit distinct test key. A crypto failure changes the connection
 to error and records only a safe audit/security event.
+
+## ADR-026: Telegram outbound timeout is an unknown outcome
+
+Telegram outbound delivery is at-least-once only before a provider confirmation.
+If a timeout occurs after request dispatch, Stage 3C.1 stores `UNKNOWN` for the
+message and outbox record and does not blindly retry. This avoids a duplicate
+customer-facing message. Operators must reconcile an unknown delivery before a
+future manual retry. Explicit Telegram `429` and provider `5xx` remain retryable;
+invalid credentials and recipient errors are terminal.

@@ -351,3 +351,14 @@ paused project → deferred inbox → resume processing
 - Реальные Telegram credentials для live acceptance.
 - Railway staging project и environment access.
 - Решение владельца данных по необходимости application-side media encryption.
+
+## Stage 3C.1 — Telegram channel backend and transactional outbound
+
+Implemented backend-only channel management for Telegram: project-scoped channel
+permissions, encrypted token/secret handling, `getMe` validation, webhook
+connect/disable/secret rotation, and a test-message endpoint. The outbound path
+creates `Message` and `OutboxRecord` transactionally, then enqueues only the
+outbox ID. The worker claims records with a lease, records retryable failures as
+`RETRY`, preserves uncertain timeout outcomes as `UNKNOWN`, and periodically
+re-enqueues pending/retry and stale-lease records. Frontend channel screens and
+all non-Telegram providers remain outside this sub-stage.

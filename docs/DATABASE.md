@@ -1119,3 +1119,14 @@ audit retention/purge workflow. Actor может стать `NULL`, но
 - проверить, что CRM URL/token отсутствуют в tables;
 - выполнить `prisma format`, `prisma validate` и review SQL;
 - миграцию не применять автоматически к production.
+
+## Telegram outbound records
+
+`outbox_records` is the transactional source of truth for Telegram delivery.
+Stage 3C.1 adds the `RETRY` state; its JSONB payload contains only internal
+`messageId` and `channelIdentityId`. It never carries a Telegram token, webhook
+secret, or plaintext credential. `projectId + idempotencyKey` makes a test-send
+request idempotent. `PENDING`/`RETRY` records whose `nextAttemptAt` is due, and
+expired `PROCESSING` leases, are recoverable by the worker; `SUCCEEDED`,
+`FAILED`, and `UNKNOWN` are terminal. `UNKNOWN` deliberately requires manual
+reconciliation rather than a blind resend.

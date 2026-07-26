@@ -87,6 +87,7 @@ enum InboxRecordStatus {
 enum OutboxRecordStatus {
   PENDING
   PROCESSING
+  RETRY
   SUCCEEDED
   FAILED
   UNKNOWN

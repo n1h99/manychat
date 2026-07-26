@@ -61,6 +61,8 @@ export interface TelegramNormalizedEvent {
 
 export const TELEGRAM_INBOUND_QUEUE_NAME = 'telegram-inbound';
 export const TELEGRAM_INBOUND_JOB_NAME = 'process-inbox-record';
+export const TELEGRAM_OUTBOUND_QUEUE_NAME = 'telegram-outbound';
+export const TELEGRAM_OUTBOUND_JOB_NAME = 'deliver-outbox-record';
 
 export interface TelegramInboundJob {
   inboxRecordId: string;
@@ -68,6 +70,66 @@ export interface TelegramInboundJob {
 
 export function telegramInboundJobIdFor(inboxRecordId: string): string {
   return `telegram-inbound-${inboxRecordId}`;
+}
+
+export interface TelegramOutboundJob {
+  outboxRecordId: string;
+}
+
+export function telegramOutboundJobIdFor(outboxRecordId: string): string {
+  return `telegram-outbound-${outboxRecordId}`;
+}
+
+export class TelegramApiError extends Error {
+  constructor(
+    readonly errorCode: number | undefined,
+    readonly retryAfterSeconds: number | undefined,
+  ) {
+    super('Telegram API request failed');
+    this.name = 'TelegramApiError';
+  }
+}
+
+export class TelegramHttpTransport implements TelegramTransport {
+  async request(
+    token: string,
+    method: string,
+    body?: Record<string, unknown>,
+  ): Promise<{
+    ok: boolean;
+    result?: unknown;
+    errorCode?: number;
+    parameters?: { retry_after?: number };
+    description?: string;
+  }> {
+    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      ...(body === undefined
+        ? { method: 'GET' }
+        : {
+            body: JSON.stringify(body),
+            headers: { 'content-type': 'application/json' },
+            method: 'POST',
+          }),
+    });
+    const payload: unknown = await response.json().catch(() => ({}));
+    if (typeof payload !== 'object' || payload === null) return { ok: false };
+    const result = payload as {
+      description?: unknown;
+      error_code?: unknown;
+      ok?: unknown;
+      parameters?: { retry_after?: unknown };
+      result?: unknown;
+    };
+    return {
+      ok: result.ok === true,
+      result: result.result,
+      ...(typeof result.description === 'string' ? { description: result.description } : {}),
+      ...(typeof result.error_code === 'number' ? { errorCode: result.error_code } : {}),
+      ...(typeof result.parameters?.retry_after === 'number'
+        ? { parameters: { retry_after: result.parameters.retry_after } }
+        : {}),
+    };
+  }
 }
 
 export type TelegramInboundEventType =
@@ -296,7 +358,13 @@ export class TelegramAdapter {
       typeof (value as { id?: unknown }).id === 'number'
     );
   }
-  private async assertOk(response: { ok: boolean; description?: string }): Promise<void> {
-    if (!response.ok) throw new Error(response.description ?? 'Telegram API request failed');
+  private async assertOk(response: {
+    description?: string;
+    errorCode?: number;
+    ok: boolean;
+    parameters?: { retry_after?: number };
+  }): Promise<void> {
+    if (!response.ok)
+      throw new TelegramApiError(response.errorCode, response.parameters?.retry_after);
   }
 }

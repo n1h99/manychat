@@ -27,6 +27,9 @@ const projectPermissions = [
   'automation:read',
   'automation:manage',
   'integrations:manage',
+  'channels:read',
+  'channels:manage',
+  'channels:rotate_secrets',
 ];
 
 const projectRoles = [
@@ -44,6 +47,9 @@ const projectRoles = [
       'contacts:merge',
       'tags:read',
       'tags:manage',
+      'channels:read',
+      'channels:manage',
+      'channels:rotate_secrets',
     ],
   ],
   [
@@ -51,7 +57,17 @@ const projectRoles = [
     'automation-editor',
     ['project:read', 'automation:read', 'automation:manage'],
   ],
-  ['Integration Manager', 'integration-manager', ['project:read', 'integrations:manage']],
+  [
+    'Integration Manager',
+    'integration-manager',
+    [
+      'project:read',
+      'integrations:manage',
+      'channels:read',
+      'channels:manage',
+      'channels:rotate_secrets',
+    ],
+  ],
   [
     'Contact Manager',
     'contact-manager',
