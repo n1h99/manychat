@@ -17,6 +17,7 @@
     },
     "./web": {
       "types": "./dist/web.d.ts",
+      "import": "./dist/esm/web.js",
       "require": "./dist/web.js",
       "default": "./dist/web.js"
     }
@@ -25,7 +26,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "node ../../scripts/clean-output.mjs packages/config/dist && tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/clean-output.mjs packages/config/dist && tsc -p tsconfig.build.json && tsc -p tsconfig.web.build.json && node scripts/write-web-package.mjs && node scripts/check-web-export.mjs",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
