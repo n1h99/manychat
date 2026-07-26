@@ -11,6 +11,9 @@ import { ContactsPage } from './pages/contacts-page';
 import { ContactDetailPage } from './pages/contact-detail-page';
 import { CustomFieldsPage } from './pages/custom-fields-page';
 import { TagsPage } from './pages/tags-page';
+import { ChannelsPage } from './pages/channels-page';
+import { ChannelCreatePage } from './pages/channel-create-page';
+import { ChannelDetailPage } from './pages/channel-detail-page';
 
 export function App() {
   return (
@@ -26,6 +29,12 @@ export function App() {
           <Route element={<ContactDetailPage />} path="/projects/:projectId/contacts/:contactId" />
           <Route element={<TagsPage />} path="/projects/:projectId/tags" />
           <Route element={<CustomFieldsPage />} path="/projects/:projectId/custom-fields" />
+          <Route element={<ChannelsPage />} path="/projects/:projectId/channels" />
+          <Route element={<ChannelCreatePage />} path="/projects/:projectId/channels/new" />
+          <Route
+            element={<ChannelDetailPage />}
+            path="/projects/:projectId/channels/:connectionId"
+          />
           <Route element={<UsersPage />} path="/users" />
           <Route element={<Navigate replace to="/projects" />} path="*" />
         </Route>

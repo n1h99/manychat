@@ -1,5 +1,12 @@
 # OMNICUS — implementation plan
 
+## Stage 3C.2 — Telegram channel UI
+
+The protected web shell includes Telegram channel list, create and details routes.
+It uses project-scoped channel queries and mutations, never persists plaintext
+tokens in browser storage, renders only the backend masked token, and presents
+test-message creation as queued rather than delivered.
+
 ## Статус
 
 План подготовлен для первого pilot. Scaffold Этапа 0 реализован; Этап 1 не
