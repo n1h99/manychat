@@ -30,6 +30,7 @@ export function CustomFieldsPage() {
   const { accessToken } = useAuth();
   const cache = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Field>();
   const [type, setType] = useState('TEXT');
   const [form] = Form.useForm();
   const fields = useQuery({
@@ -45,7 +46,15 @@ export function CustomFieldsPage() {
         <Typography.Title level={2}>Custom fields</Typography.Title>
         <Typography.Text type="secondary">Typed, project-local contact data.</Typography.Text>
       </Space>
-      <Button onClick={() => setOpen(true)} type="primary">
+      <Button
+        onClick={() => {
+          form.resetFields();
+          setEditing(undefined);
+          setType('TEXT');
+          setOpen(true);
+        }}
+        type="primary"
+      >
         Create field
       </Button>
       <Table<Field>
@@ -60,18 +69,30 @@ export function CustomFieldsPage() {
           },
           {
             render: (_, row) => (
-              <Button
-                danger
-                onClick={() =>
-                  void apiRequest(
-                    `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
-                    { method: 'DELETE' },
-                    accessToken,
-                  ).then(reload)
-                }
-              >
-                Archive
-              </Button>
+              <Space>
+                <Button
+                  onClick={() => {
+                    form.setFieldsValue({ ...row, options: row.options?.join(', ') });
+                    setEditing(row);
+                    setType(row.type);
+                    setOpen(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  danger
+                  onClick={() =>
+                    void apiRequest(
+                      `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
+                      { method: 'DELETE' },
+                      accessToken,
+                    ).then(reload)
+                  }
+                >
+                  Archive
+                </Button>
+              </Space>
             ),
             title: 'Actions',
           },
@@ -85,7 +106,7 @@ export function CustomFieldsPage() {
         destroyOnHidden
         onClose={() => setOpen(false)}
         open={open}
-        title="Create custom field"
+        title={editing ? 'Edit custom field' : 'Create custom field'}
       >
         <Form
           form={form}
@@ -101,8 +122,19 @@ export function CustomFieldsPage() {
                 : undefined,
             };
             await apiRequest(
-              `/api/v1/projects/${projectId}/custom-fields`,
-              { body: JSON.stringify(payload), method: 'POST' },
+              `/api/v1/projects/${projectId}/custom-fields${editing ? `/${editing.id}` : ''}`,
+              {
+                body: JSON.stringify(
+                  editing
+                    ? {
+                        description: payload.description,
+                        name: payload.name,
+                        options: payload.options,
+                      }
+                    : payload,
+                ),
+                method: editing ? 'PATCH' : 'POST',
+              },
               accessToken,
             );
             form.resetFields();
@@ -118,10 +150,14 @@ export function CustomFieldsPage() {
             name="key"
             rules={[{ pattern: /^[a-z][a-z0-9_]{0,63}$/, required: true }]}
           >
-            <Input />
+            <Input disabled={Boolean(editing)} />
           </Form.Item>
           <Form.Item label="Type" name="type" rules={[{ required: true }]}>
-            <Select onChange={setType} options={fieldTypes.map((value) => ({ value }))} />
+            <Select
+              disabled={Boolean(editing)}
+              onChange={setType}
+              options={fieldTypes.map((value) => ({ value }))}
+            />
           </Form.Item>
           {type === 'SELECT' || type === 'MULTI_SELECT' ? (
             <Form.Item
@@ -136,7 +172,7 @@ export function CustomFieldsPage() {
             <Input.TextArea />
           </Form.Item>
           <Button htmlType="submit" type="primary">
-            Create
+            {editing ? 'Save changes' : 'Create'}
           </Button>
         </Form>
       </Drawer>
