@@ -18,6 +18,7 @@ import { ChannelDetailPage } from './pages/channel-detail-page';
 import { ScenarioEditorPage } from './pages/scenario-editor-page';
 import { ScenariosPage } from './pages/scenarios-page';
 import { CrmConfigPage } from './pages/crm-config-page';
+import { SegmentsPage } from './pages/segments-page';
 
 export function App() {
   return (
@@ -33,6 +34,7 @@ export function App() {
           <Route element={<ContactDetailPage />} path="/projects/:projectId/contacts/:contactId" />
           <Route element={<TagsPage />} path="/projects/:projectId/tags" />
           <Route element={<CustomFieldsPage />} path="/projects/:projectId/custom-fields" />
+          <Route element={<SegmentsPage />} path="/projects/:projectId/segments" />
           <Route element={<ProjectPermissionRoute permission="automation:read" />}>
             <Route element={<ScenariosPage />} path="/projects/:projectId/scenarios" />
             <Route element={<ProjectPermissionRoute permission="automation:manage" />}>

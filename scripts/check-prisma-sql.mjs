@@ -68,6 +68,8 @@ const expectedTables = new Set([
   'tags',
   'contact_tags',
   'custom_field_definitions',
+  'contact_custom_field_values',
+  'segments',
   'channel_connections',
   'raw_webhook_events',
   'inbox_records',
@@ -362,6 +364,44 @@ if (!existsSync(automationWaitConstraintMigrationPath)) {
   ) {
     failures.push('Automation v2 active wait partial uniqueness is missing');
   }
+}
+
+const contactsV2MigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726232847_contacts_v2_segments_merge/migration.sql',
+);
+if (!existsSync(contactsV2MigrationPath)) {
+  failures.push('Contacts v2 persistence migration is missing');
+} else {
+  const contactsV2Sql = readFileSync(contactsV2MigrationPath, 'utf8').replaceAll('\r\n', '\n');
+  for (const fragment of [
+    'CREATE TABLE "contact_custom_field_values"',
+    'CREATE TABLE "segments"',
+    'ALTER TYPE "ContactStatus" ADD VALUE \'MERGED\'',
+    'FOREIGN KEY ("projectId", "mergedIntoContactId") REFERENCES "contacts"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "contactId") REFERENCES "contacts"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "definitionId") REFERENCES "custom_field_definitions"("projectId", "id")',
+    'CREATE UNIQUE INDEX "contact_custom_field_values_projectId_contactId_definitionI_key"',
+    'CREATE UNIQUE INDEX "segments_projectId_name_key"',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!contactsV2Sql.includes(fragment))
+      failures.push(`Contacts v2 migration is missing invariant: ${fragment}`);
+  }
+}
+
+const contactsV2BackfillMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726232900_contacts_v2_custom_field_backfill/migration.sql',
+);
+if (!existsSync(contactsV2BackfillMigrationPath)) {
+  failures.push('Contacts v2 custom-field projection backfill migration is missing');
+} else if (
+  !readFileSync(contactsV2BackfillMigrationPath, 'utf8').includes(
+    'INSERT INTO "contact_custom_field_values"',
+  )
+) {
+  failures.push('Contacts v2 custom-field projection backfill is malformed');
 }
 
 if (!proposalSql.includes('CREATE TABLE "users"')) {

@@ -585,6 +585,21 @@ Typed projection columns позволяют фильтровать без неб
 JSON coercion. Runtime и DB CHECK должны гарантировать заполнение только
 projection, соответствующей definition type.
 
+### Contacts v2 persistence
+
+`ContactCustomFieldValue` is a project-bound projection of the compatible
+`Contact.customFields` JSON document. Its unique
+`(projectId, contactId, definitionId)` and composite foreign keys prevent a
+definition or contact from another project being used in a segment predicate.
+The migration backfills valid Stage 2 values, while all later updates write the
+document and its projections in one transaction.
+
+`Segment` persists only a versioned, declarative filter and never materialised
+contact membership. It is archived rather than hard deleted. `Contact` gets a
+self-relation through `(projectId, mergedIntoContactId)`; a secondary contact is
+kept for history with status `MERGED`, while project-bound dependent records are
+re-parented to the primary contact transactionally.
+
 ## Channels, identities и conversations
 
 ```prisma

@@ -41,6 +41,10 @@ export class ContactsQueryDto {
   tagId?: string;
 
   @IsOptional()
+  @IsString()
+  segmentId?: string;
+
+  @IsOptional()
   @IsIn(['true', 'false'])
   hasCrmLeadId?: 'true' | 'false';
 
@@ -85,8 +89,8 @@ export class UpdateContactDto {
   email?: string | null;
 
   @IsOptional()
-  @IsIn(['ACTIVE', 'ARCHIVED'])
-  status?: 'ACTIVE' | 'ARCHIVED';
+  @IsIn(['ACTIVE', 'BLOCKED', 'UNSUBSCRIBED', 'ARCHIVED', 'MERGED'])
+  status?: 'ACTIVE' | 'BLOCKED' | 'UNSUBSCRIBED' | 'ARCHIVED' | 'MERGED';
 
   @IsOptional()
   @IsIn(['ENABLED', 'DISABLED'])
@@ -146,6 +150,59 @@ export class BulkTagsDto {
 
   @IsBoolean()
   add!: boolean;
+}
+
+export class SegmentFilterDto {
+  @IsOptional()
+  @IsIn(['ACTIVE', 'BLOCKED', 'UNSUBSCRIBED', 'ARCHIVED'])
+  status?: 'ACTIVE' | 'BLOCKED' | 'UNSUBSCRIBED' | 'ARCHIVED';
+
+  @IsOptional()
+  @IsString()
+  channel?: string;
+
+  @IsOptional()
+  @IsString()
+  tagId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  hasCrmLeadId?: boolean;
+
+  @IsOptional()
+  @IsString()
+  customFieldKey?: string;
+
+  @IsOptional()
+  customFieldValue?: string | number | boolean;
+}
+
+export class CreateSegmentDto {
+  @IsString()
+  @Length(1, 120)
+  name!: string;
+
+  @IsObject()
+  filter!: Record<string, unknown>;
+}
+
+export class UpdateSegmentDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  name?: string;
+
+  @IsOptional()
+  @IsObject()
+  filter?: Record<string, unknown>;
+}
+
+export class MergeContactsDto {
+  @IsString()
+  primaryContactId!: string;
+
+  @IsString()
+  secondaryContactId!: string;
 }
 
 export class CreateCustomFieldDto {

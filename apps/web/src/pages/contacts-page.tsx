@@ -11,7 +11,7 @@ interface ContactRow {
   displayName: string;
   email: string | null;
   lastInteractionAt: string | null;
-  status: 'ACTIVE' | 'ARCHIVED';
+  status: 'ACTIVE' | 'BLOCKED' | 'UNSUBSCRIBED' | 'ARCHIVED' | 'MERGED';
   tags: { tag: { id: string; name: string; color: string | null } }[];
   channelIdentities: { channel: string }[];
 }
@@ -22,6 +22,10 @@ interface ContactPage {
   pageSize: number;
   total: number;
 }
+interface SegmentItem {
+  id: string;
+  name: string;
+}
 
 export function ContactsPage() {
   const { projectId } = useParams();
@@ -29,6 +33,7 @@ export function ContactsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>();
+  const [segmentId, setSegmentId] = useState<string>();
   const queryString = useMemo(
     () =>
       new URLSearchParams({
@@ -36,8 +41,9 @@ export function ContactsPage() {
         pageSize: '25',
         ...(search ? { search } : {}),
         ...(status ? { status } : {}),
+        ...(segmentId ? { segmentId } : {}),
       }).toString(),
-    [page, search, status],
+    [page, search, segmentId, status],
   );
   const contacts = useQuery({
     enabled: Boolean(projectId),
@@ -48,6 +54,12 @@ export function ContactsPage() {
         accessToken,
       ),
     queryKey: ['contacts', projectId, accessToken, queryString],
+  });
+  const segments = useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () =>
+      apiRequest<SegmentItem[]>(`/api/v1/projects/${projectId}/segments`, {}, accessToken),
+    queryKey: ['segments', projectId],
   });
   return (
     <section>
@@ -75,10 +87,27 @@ export function ContactsPage() {
           }}
           options={[
             { label: 'Active', value: 'ACTIVE' },
+            { label: 'Blocked', value: 'BLOCKED' },
+            { label: 'Unsubscribed', value: 'UNSUBSCRIBED' },
             { label: 'Archived', value: 'ARCHIVED' },
+            { label: 'Merged', value: 'MERGED' },
           ]}
           placeholder="Status"
           value={status}
+        />
+        <Select
+          allowClear
+          aria-label="Contact segment"
+          onChange={(value) => {
+            setPage(1);
+            setSegmentId(value);
+          }}
+          options={(segments.data ?? []).map((segment) => ({
+            label: segment.name,
+            value: segment.id,
+          }))}
+          placeholder="Segment"
+          value={segmentId}
         />
       </Space>
       <Table<ContactRow>

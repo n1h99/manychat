@@ -457,6 +457,31 @@ as history and is no longer editable through the API.
 slice. A later indexed-value/segment migration must explicitly backfill and
 retain the same validation semantics before it can replace this representation.
 
+## ADR-029. Contacts v2 uses typed projections, saved filters and explicit merge
+
+**Статус:** Accepted.
+
+**Решение:** Contacts v2 keeps `Contact.customFields` as the canonical document
+for compatibility, and introduces `ContactCustomFieldValue` as a validated,
+typed projection for filtering. The migration backfills valid existing values;
+each subsequent contact update updates the document and projection in one
+transaction. `Segment` stores a versioned declarative filter — never a copied
+recipient/contact list.
+
+Contact merge is manual, project-scoped and transactional. The chosen primary
+contact keeps its identity; tags and non-conflicting identities are moved,
+dependent conversations, messages, CRM operations and scenario executions are
+re-parented, and the secondary contact becomes `MERGED` with an immutable
+`mergedIntoContactId`. No matching by name, email or username starts a merge.
+
+The existing `AutomationMode` values remain unchanged in this slice. A separate
+automation-policy ADR is required before introducing another user-visible mode,
+so existing `ENABLED`/`DISABLED` semantics do not silently change.
+
+**Последствия:** segment predicates are constrained to known fields, tags,
+channels and typed custom fields. A merge preserves historical audit and message
+records but makes the secondary contact read-only.
+
 ## ADR-025. Channel secret encryption envelope
 
 **Статус:** Accepted.

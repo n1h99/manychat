@@ -97,6 +97,20 @@ Matching нескольких scenarios создаёт executions для все�
 События одной conversation получают монотонный `conversationSequence` и
 обрабатываются последовательно. Lock не хранится только в памяти.
 
+## Contact
+
+Состояния: `active`, `blocked`, `unsubscribed`, `archived`, `merged`.
+
+| From                                            | Event                 | Guard                                                        | To                   | Side effects                                                                                                       | Retry policy                                         |
+| ----------------------------------------------- | --------------------- | ------------------------------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `active`                                        | `contact.block`       | Permission и project boundary                                | `blocked`            | Сохранить status; audit                                                                                            | none                                                 |
+| `active`                                        | `contact.unsubscribe` | Permission/system channel event                              | `unsubscribed`       | Остановить новые outbound по consent policy; audit                                                                 | none                                                 |
+| `active`, `blocked`, `unsubscribed`             | `contact.archive`     | Permission                                                   | `archived`           | Set `archivedAt`; сохранить историю                                                                                | none                                                 |
+| `active`, `blocked`, `unsubscribed`, `archived` | `contact.merge`       | Primary и secondary принадлежат project; secondary не merged | `merged` (secondary) | Transactionally re-parent dependent records, tags and non-conflicting identities; set `mergedIntoContactId`; audit | none; operator chooses a new merge only after review |
+
+`merged` is terminal for direct updates. Contact merge is never inferred from a
+name, email or username match.
+
 ## Message
 
 Состояния: `received`, `pending`, `processing`, `submitted`, `sent`, `delivered`,

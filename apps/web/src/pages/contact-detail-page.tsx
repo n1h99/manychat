@@ -4,6 +4,7 @@ import { useParams } from 'react-router';
 
 import { apiRequest } from '../api';
 import { useAuth } from '../auth';
+import { hasProjectPermission, useProjectAccess } from '../project-access';
 
 interface Contact {
   id: string;
@@ -13,7 +14,7 @@ interface Contact {
   username: string | null;
   phone: string | null;
   email: string | null;
-  status: 'ACTIVE' | 'ARCHIVED';
+  status: 'ACTIVE' | 'BLOCKED' | 'UNSUBSCRIBED' | 'ARCHIVED' | 'MERGED';
   automationMode: 'ENABLED' | 'DISABLED';
   crmLeadId: string | null;
   crmContactId: string | null;
@@ -36,6 +37,7 @@ export function ContactDetailPage() {
   const { contactId, projectId } = useParams();
   const { accessToken } = useAuth();
   const cache = useQueryClient();
+  const access = useProjectAccess(projectId);
   const contact = useQuery({
     enabled: Boolean(projectId && contactId),
     queryFn: () =>
@@ -120,7 +122,14 @@ export function ContactDetailPage() {
           <Input />
         </Form.Item>
         <Form.Item label="Status" name="status">
-          <Select options={[{ value: 'ACTIVE' }, { value: 'ARCHIVED' }]} />
+          <Select
+            options={[
+              { value: 'ACTIVE' },
+              { value: 'BLOCKED' },
+              { value: 'UNSUBSCRIBED' },
+              { value: 'ARCHIVED' },
+            ]}
+          />
         </Form.Item>
         <Form.Item label="Automation mode" name="automationMode">
           <Select options={[{ value: 'ENABLED' }, { value: 'DISABLED' }]} />
@@ -171,6 +180,39 @@ export function ContactDetailPage() {
         </Form.Item>
         <Button htmlType="submit">Save custom fields</Button>
       </Form>
+      {hasProjectPermission(access.data, 'contacts:merge') ? (
+        <>
+          <Typography.Title level={4}>Merge into another contact</Typography.Title>
+          <Form
+            layout="inline"
+            onFinish={async (values: { primaryContactId: string }) => {
+              await apiRequest(
+                `/api/v1/projects/${projectId}/contacts/merge`,
+                {
+                  body: JSON.stringify({
+                    primaryContactId: values.primaryContactId,
+                    secondaryContactId: contactId,
+                  }),
+                  method: 'POST',
+                },
+                accessToken,
+              );
+              window.location.assign(`/projects/${projectId}/contacts/${values.primaryContactId}`);
+            }}
+          >
+            <Form.Item
+              label="Primary contact ID"
+              name="primaryContactId"
+              rules={[{ required: true }]}
+            >
+              <Input />
+            </Form.Item>
+            <Button danger htmlType="submit">
+              Merge
+            </Button>
+          </Form>
+        </>
+      ) : null}
     </section>
   );
 }

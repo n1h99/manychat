@@ -371,6 +371,15 @@ published-version execution, durable Delay/Wait continuations and pinned
 Subflows. External HTTP, broadcasts, templates, extra channels and advanced
 media remain outside this slice.
 
+## Contacts v2 — approved post-pilot slice
+
+Contacts v2 adds saved segments, typed custom-field projections and an explicit,
+manual contact merge. It keeps the existing Telegram identity model and does
+not introduce broadcasts, import/export, another channel or media workflows.
+The primary contact is selected by an operator; merge never starts from a fuzzy
+match. Segment membership is calculated at query time from project-scoped
+filters and is not stored as a mutable recipient list.
+
 ## Pilot NFR
 
 | Requirement                  | Initial target                                                                            |

@@ -38,6 +38,14 @@ enum ProjectStatus {
 
 enum ContactStatus {
   ACTIVE
+  BLOCKED
+  UNSUBSCRIBED
+  ARCHIVED
+  MERGED
+}
+
+enum SegmentStatus {
+  ACTIVE
   ARCHIVED
 }
 
@@ -213,6 +221,7 @@ model User {
   globalInvitesSent   GlobalUserInviteToken[]  @relation("GlobalInviteInvitedBy")
   projectInvitesSent  ProjectUserInviteToken[] @relation("ProjectInviteInvitedBy")
   auditLogs           AuditLog[]               @relation("AuditActor")
+  segmentsCreated     Segment[]
 
   @@map("users")
 }
@@ -457,6 +466,8 @@ model Project {
   contacts                 Contact[]
   tags                     Tag[]
   customFieldDefinitions   CustomFieldDefinition[]
+  customFieldValues        ContactCustomFieldValue[]
+  segments                 Segment[]
   channelConnections       ChannelConnection[]
   scenarios                Scenario[]
   scenarioExecutions       ScenarioExecution[]
@@ -487,6 +498,7 @@ model Contact {
   firstInteractionAt DateTime?      @db.Timestamptz(3)
   lastInteractionAt  DateTime?      @db.Timestamptz(3)
   archivedAt         DateTime?      @db.Timestamptz(3)
+  mergedIntoContactId String?
   createdAt          DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime       @updatedAt @db.Timestamptz(3)
   project            Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -496,12 +508,16 @@ model Contact {
   messages           Message[]
   scenarioExecutions ScenarioExecution[]
   crmOperations      CrmOperation[]
+  customFieldValues  ContactCustomFieldValue[]
+  mergedInto         Contact?       @relation("ContactMerge", fields: [projectId, mergedIntoContactId], references: [projectId, id], onDelete: Restrict)
+  mergedContacts     Contact[]      @relation("ContactMerge")
 
   @@unique([projectId, id])
   @@index([projectId, status, createdAt])
   @@index([projectId, lastInteractionAt])
   @@index([projectId, displayName])
   @@index([projectId, crmLeadId])
+  @@index([projectId, mergedIntoContactId])
   @@map("contacts")
 }
 
@@ -989,11 +1005,56 @@ model CustomFieldDefinition {
   createdAt   DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
   project     Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  values      ContactCustomFieldValue[]
 
   @@unique([projectId, id])
   @@unique([projectId, key])
   @@index([projectId, archivedAt])
   @@map("custom_field_definitions")
+}
+
+model ContactCustomFieldValue {
+  id            String                @id @default(uuid())
+  projectId     String
+  contactId     String
+  definitionId  String
+  valueJson     Json
+  valueText     String?
+  valueNumber   Decimal?              @db.Decimal(30, 10)
+  valueBoolean  Boolean?
+  valueDateTime DateTime?             @db.Timestamptz(3)
+  createdAt     DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime              @updatedAt @db.Timestamptz(3)
+  project       Project               @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  contact       Contact               @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  definition    CustomFieldDefinition @relation(fields: [projectId, definitionId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, contactId, definitionId])
+  @@index([projectId, definitionId, valueText])
+  @@index([projectId, definitionId, valueNumber])
+  @@index([projectId, definitionId, valueDateTime])
+  @@map("contact_custom_field_values")
+}
+
+model Segment {
+  id                  String        @id @default(uuid())
+  projectId           String
+  name                String
+  filterSchemaVersion Int           @default(1)
+  filter              Json
+  status              SegmentStatus @default(ACTIVE)
+  archivedAt          DateTime?     @db.Timestamptz(3)
+  createdById         String?
+  createdAt           DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime      @updatedAt @db.Timestamptz(3)
+  project             Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy           User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, id])
+  @@unique([projectId, name])
+  @@index([projectId, status, updatedAt])
+  @@map("segments")
 }
 
 model AuditLog {

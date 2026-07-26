@@ -21,9 +21,12 @@ import type { RequestSecurityContext } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   CreateCustomFieldDto,
+  CreateSegmentDto,
   CreateTagDto,
+  MergeContactsDto,
   UpdateContactDto,
   UpdateCustomFieldDto,
+  UpdateSegmentDto,
   UpdateTagDto,
 } from './dto';
 import type { AddTagDto, BulkTagsDto, ContactsQueryDto } from './dto';
@@ -67,6 +70,63 @@ export class ContactsController {
   @RequireProjectPermission('contacts:read')
   async timeline(@Param('projectId') projectId: string, @Param('contactId') contactId: string) {
     return { data: await this.contacts.timeline(projectId, contactId), meta: {} };
+  }
+
+  @Post('contacts/merge')
+  @RequireProjectPermission('contacts:merge')
+  @ApiBody({ type: MergeContactsDto })
+  async merge(
+    @Param('projectId') projectId: string,
+    @Body() body: MergeContactsDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return { data: await this.contacts.merge(projectId, body, this.context(request)), meta: {} };
+  }
+
+  @Get('segments')
+  @RequireProjectPermission('contacts:read')
+  async listSegments(@Param('projectId') projectId: string) {
+    return { data: await this.contacts.listSegments(projectId), meta: {} };
+  }
+
+  @Post('segments')
+  @RequireProjectPermission('contacts:update')
+  @ApiBody({ type: CreateSegmentDto })
+  async createSegment(
+    @Param('projectId') projectId: string,
+    @Body() body: CreateSegmentDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.contacts.createSegment(projectId, body, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Patch('segments/:segmentId')
+  @RequireProjectPermission('contacts:update')
+  @ApiBody({ type: UpdateSegmentDto })
+  async updateSegment(
+    @Param('projectId') projectId: string,
+    @Param('segmentId') segmentId: string,
+    @Body() body: UpdateSegmentDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.contacts.updateSegment(projectId, segmentId, body, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Delete('segments/:segmentId')
+  @HttpCode(204)
+  @RequireProjectPermission('contacts:update')
+  async archiveSegment(
+    @Param('projectId') projectId: string,
+    @Param('segmentId') segmentId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.contacts.archiveSegment(projectId, segmentId, this.context(request));
   }
 
   @Get('tags')

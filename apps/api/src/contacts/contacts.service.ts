@@ -9,9 +9,12 @@ import type {
   BulkTagsDto,
   ContactsQueryDto,
   CreateCustomFieldDto,
+  CreateSegmentDto,
   CreateTagDto,
+  MergeContactsDto,
   UpdateContactDto,
   UpdateCustomFieldDto,
+  UpdateSegmentDto,
   UpdateTagDto,
 } from './dto';
 
@@ -63,6 +66,17 @@ export class ContactsService {
           }
         : {}),
     };
+    if (query.segmentId) {
+      const segment = await this.database.client.segment.findFirst({
+        where: { archivedAt: null, id: query.segmentId, projectId, status: 'ACTIVE' },
+      });
+      if (!segment)
+        throw new NotFoundException({
+          code: 'SEGMENT_NOT_FOUND',
+          message: 'Segment was not found',
+        });
+      Object.assign(where, await this.whereForSegment(projectId, segment.filter));
+    }
     const [items, total] = await this.database.client.$transaction([
       this.database.client.contact.findMany({
         include: {
@@ -100,24 +114,41 @@ export class ContactsService {
   ) {
     const before = await this.get(projectId, contactId);
     if (input.customFields) await this.assertCustomFields(projectId, input.customFields);
-    const contact = await this.database.client.contact.update({
-      data: {
-        ...(input.automationMode === undefined ? {} : { automationMode: input.automationMode }),
-        ...(input.customFields === undefined
-          ? {}
-          : { customFields: input.customFields as Prisma.InputJsonValue }),
-        ...(input.displayName === undefined ? {} : { displayName: input.displayName }),
-        ...(input.email === undefined ? {} : { email: input.email }),
-        ...(input.firstName === undefined ? {} : { firstName: input.firstName }),
-        ...(input.lastName === undefined ? {} : { lastName: input.lastName }),
-        ...(input.phone === undefined ? {} : { phone: input.phone }),
-        ...(input.status === undefined
-          ? {}
-          : { archivedAt: input.status === 'ARCHIVED' ? new Date() : null, status: input.status }),
-        ...(input.username === undefined ? {} : { username: input.username }),
-      },
-      select: contactSelect,
-      where: { projectId_id: { id: contactId, projectId } },
+    if (before.status === 'MERGED')
+      throw new ConflictException({
+        code: 'CONTACT_MERGED',
+        message: 'Merged contacts are read-only',
+      });
+    const nextCustomFields =
+      input.customFields === undefined
+        ? undefined
+        : { ...this.jsonObject(before.customFields), ...input.customFields };
+    const contact = await this.database.client.$transaction(async (transaction) => {
+      const updated = await transaction.contact.update({
+        data: {
+          ...(input.automationMode === undefined ? {} : { automationMode: input.automationMode }),
+          ...(nextCustomFields === undefined
+            ? {}
+            : { customFields: nextCustomFields as Prisma.InputJsonValue }),
+          ...(input.displayName === undefined ? {} : { displayName: input.displayName }),
+          ...(input.email === undefined ? {} : { email: input.email }),
+          ...(input.firstName === undefined ? {} : { firstName: input.firstName }),
+          ...(input.lastName === undefined ? {} : { lastName: input.lastName }),
+          ...(input.phone === undefined ? {} : { phone: input.phone }),
+          ...(input.status === undefined
+            ? {}
+            : {
+                archivedAt: input.status === 'ARCHIVED' ? new Date() : null,
+                status: input.status,
+              }),
+          ...(input.username === undefined ? {} : { username: input.username }),
+        },
+        select: contactSelect,
+        where: { projectId_id: { id: contactId, projectId } },
+      });
+      if (input.customFields)
+        await this.syncCustomFieldValues(transaction, projectId, contactId, input.customFields);
+      return updated;
     });
     await this.audit.record({
       action:
@@ -450,6 +481,306 @@ export class ContactsService {
     });
   }
 
+  async listSegments(projectId: string) {
+    return this.database.client.segment.findMany({
+      orderBy: { name: 'asc' },
+      where: { archivedAt: null, projectId, status: 'ACTIVE' },
+    });
+  }
+
+  async createSegment(
+    projectId: string,
+    input: CreateSegmentDto,
+    context: RequestSecurityContext & { actorUserId: string; actorEmail: string },
+  ) {
+    const filter = await this.validateSegmentFilter(projectId, input.filter);
+    try {
+      const segment = await this.database.client.segment.create({
+        data: { createdById: context.actorUserId, filter, name: input.name.trim(), projectId },
+      });
+      await this.audit.record({
+        action: 'segment.created',
+        actorEmailSnapshot: context.actorEmail,
+        actorUserId: context.actorUserId,
+        afterSafeJson: { name: segment.name },
+        correlationId: context.correlationId,
+        entityId: segment.id,
+        entityType: 'Segment',
+        ip: context.ip,
+        projectId,
+        userAgent: context.userAgent,
+      });
+      return segment;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+        throw new ConflictException({
+          code: 'SEGMENT_NAME_EXISTS',
+          message: 'Segment name already exists',
+        });
+      throw error;
+    }
+  }
+
+  async updateSegment(
+    projectId: string,
+    segmentId: string,
+    input: UpdateSegmentDto,
+    context: RequestSecurityContext & { actorUserId: string; actorEmail: string },
+  ) {
+    await this.assertSegment(projectId, segmentId);
+    const filter =
+      input.filter === undefined
+        ? undefined
+        : await this.validateSegmentFilter(projectId, input.filter);
+    const segment = await this.database.client.segment.update({
+      data: {
+        ...(filter === undefined ? {} : { filter }),
+        ...(input.name === undefined ? {} : { name: input.name.trim() }),
+      },
+      where: { projectId_id: { id: segmentId, projectId } },
+    });
+    await this.audit.record({
+      action: 'segment.updated',
+      actorEmailSnapshot: context.actorEmail,
+      actorUserId: context.actorUserId,
+      correlationId: context.correlationId,
+      entityId: segmentId,
+      entityType: 'Segment',
+      ip: context.ip,
+      projectId,
+      userAgent: context.userAgent,
+    });
+    return segment;
+  }
+
+  async archiveSegment(
+    projectId: string,
+    segmentId: string,
+    context: RequestSecurityContext & { actorUserId: string; actorEmail: string },
+  ) {
+    await this.assertSegment(projectId, segmentId);
+    await this.database.client.segment.update({
+      data: { archivedAt: new Date(), status: 'ARCHIVED' },
+      where: { projectId_id: { id: segmentId, projectId } },
+    });
+    await this.audit.record({
+      action: 'segment.archived',
+      actorEmailSnapshot: context.actorEmail,
+      actorUserId: context.actorUserId,
+      correlationId: context.correlationId,
+      entityId: segmentId,
+      entityType: 'Segment',
+      ip: context.ip,
+      projectId,
+      userAgent: context.userAgent,
+    });
+  }
+
+  async merge(
+    projectId: string,
+    input: MergeContactsDto,
+    context: RequestSecurityContext & { actorUserId: string; actorEmail: string },
+  ) {
+    if (input.primaryContactId === input.secondaryContactId)
+      throw new ConflictException({
+        code: 'CONTACT_MERGE_IDENTICAL',
+        message: 'Contacts must be different',
+      });
+    const merged = await this.database.client.$transaction(async (transaction) => {
+      const contacts = await transaction.contact.findMany({
+        include: { channelIdentities: true, tags: true },
+        where: { id: { in: [input.primaryContactId, input.secondaryContactId] }, projectId },
+      });
+      const primary = contacts.find((contact) => contact.id === input.primaryContactId);
+      const secondary = contacts.find((contact) => contact.id === input.secondaryContactId);
+      if (!primary || !secondary || primary.status === 'MERGED' || secondary.status === 'MERGED')
+        throw new NotFoundException({
+          code: 'CONTACT_NOT_FOUND',
+          message: 'Active contact was not found',
+        });
+      const primaryIdentityKeys = new Set(
+        primary.channelIdentities.map(
+          (identity) => `${identity.connectionId}:${identity.externalUserId}`,
+        ),
+      );
+      const duplicateIdentityIds = secondary.channelIdentities
+        .filter((identity) =>
+          primaryIdentityKeys.has(`${identity.connectionId}:${identity.externalUserId}`),
+        )
+        .map((identity) => identity.id);
+      if (duplicateIdentityIds.length)
+        await transaction.channelIdentity.deleteMany({
+          where: { id: { in: duplicateIdentityIds }, projectId },
+        });
+      await transaction.channelIdentity.updateMany({
+        where: { contactId: secondary.id, projectId },
+        data: { contactId: primary.id },
+      });
+      await transaction.contactTag.createMany({
+        data: secondary.tags.map((tag) => ({
+          contactId: primary.id,
+          projectId,
+          source: 'MERGE',
+          tagId: tag.tagId,
+        })),
+        skipDuplicates: true,
+      });
+      await transaction.contactTag.deleteMany({ where: { contactId: secondary.id, projectId } });
+      await Promise.all([
+        transaction.conversation.updateMany({
+          where: { contactId: secondary.id, projectId },
+          data: { contactId: primary.id },
+        }),
+        transaction.message.updateMany({
+          where: { contactId: secondary.id, projectId },
+          data: { contactId: primary.id },
+        }),
+        transaction.scenarioExecution.updateMany({
+          where: { contactId: secondary.id, projectId },
+          data: { contactId: primary.id },
+        }),
+        transaction.crmOperation.updateMany({
+          where: { contactId: secondary.id, projectId },
+          data: { contactId: primary.id },
+        }),
+      ]);
+      const mergedFields = {
+        ...this.jsonObject(secondary.customFields),
+        ...this.jsonObject(primary.customFields),
+      };
+      await transaction.contact.update({
+        data: { customFields: mergedFields as Prisma.InputJsonValue },
+        where: { projectId_id: { id: primary.id, projectId } },
+      });
+      await this.syncCustomFieldValues(transaction, projectId, primary.id, mergedFields);
+      await transaction.contact.update({
+        data: { archivedAt: new Date(), mergedIntoContactId: primary.id, status: 'MERGED' },
+        where: { projectId_id: { id: secondary.id, projectId } },
+      });
+      return { primaryContactId: primary.id, secondaryContactId: secondary.id };
+    });
+    await this.audit.record({
+      action: 'contact.merged',
+      actorEmailSnapshot: context.actorEmail,
+      actorUserId: context.actorUserId,
+      afterSafeJson: merged,
+      correlationId: context.correlationId,
+      entityId: merged.primaryContactId,
+      entityType: 'Contact',
+      ip: context.ip,
+      projectId,
+      userAgent: context.userAgent,
+    });
+    return merged;
+  }
+
+  private async assertSegment(projectId: string, segmentId: string) {
+    const segment = await this.database.client.segment.findUnique({
+      where: { projectId_id: { id: segmentId, projectId } },
+    });
+    if (!segment || segment.archivedAt || segment.status !== 'ACTIVE')
+      throw new NotFoundException({ code: 'SEGMENT_NOT_FOUND', message: 'Segment was not found' });
+    return segment;
+  }
+
+  private async validateSegmentFilter(projectId: string, input: Record<string, unknown>) {
+    const allowed = new Set([
+      'channel',
+      'customFieldKey',
+      'customFieldValue',
+      'hasCrmLeadId',
+      'status',
+      'tagId',
+    ]);
+    if (Object.keys(input).some((key) => !allowed.has(key)))
+      throw new ConflictException({
+        code: 'SEGMENT_FILTER_INVALID',
+        message: 'Segment filter contains an unsupported predicate',
+      });
+    if (
+      input.status !== undefined &&
+      !['ACTIVE', 'BLOCKED', 'UNSUBSCRIBED', 'ARCHIVED'].includes(String(input.status))
+    )
+      throw new ConflictException({
+        code: 'SEGMENT_FILTER_INVALID',
+        message: 'Segment status is invalid',
+      });
+    if (input.hasCrmLeadId !== undefined && typeof input.hasCrmLeadId !== 'boolean')
+      throw new ConflictException({
+        code: 'SEGMENT_FILTER_INVALID',
+        message: 'CRM lead predicate must be boolean',
+      });
+    if (input.customFieldKey !== undefined) {
+      if (typeof input.customFieldKey !== 'string')
+        throw new ConflictException({
+          code: 'SEGMENT_FILTER_INVALID',
+          message: 'Custom field key is invalid',
+        });
+      const definition = await this.database.client.customFieldDefinition.findFirst({
+        where: { archivedAt: null, key: input.customFieldKey, projectId },
+      });
+      if (!definition)
+        throw new NotFoundException({
+          code: 'CUSTOM_FIELD_NOT_FOUND',
+          message: 'Custom field was not found',
+        });
+      if (input.customFieldValue === undefined)
+        throw new ConflictException({
+          code: 'SEGMENT_FILTER_INVALID',
+          message: 'Custom field value is required',
+        });
+      if (!this.isFieldValueValid(definition.type, input.customFieldValue, definition.options))
+        throw new ConflictException({
+          code: 'SEGMENT_FILTER_INVALID',
+          message: 'Custom field value is invalid',
+        });
+    } else if (input.customFieldValue !== undefined) {
+      throw new ConflictException({
+        code: 'SEGMENT_FILTER_INVALID',
+        message: 'Custom field key is required',
+      });
+    }
+    return input as Prisma.InputJsonValue;
+  }
+
+  private async whereForSegment(
+    projectId: string,
+    filterValue: Prisma.JsonValue,
+  ): Promise<Prisma.ContactWhereInput> {
+    const filter = this.jsonObject(filterValue);
+    const where: Prisma.ContactWhereInput = {
+      ...(typeof filter.status === 'string' ? { status: filter.status as never } : {}),
+      ...(typeof filter.channel === 'string'
+        ? { channelIdentities: { some: { channel: filter.channel as never } } }
+        : {}),
+      ...(typeof filter.tagId === 'string' ? { tags: { some: { tagId: filter.tagId } } } : {}),
+      ...(typeof filter.hasCrmLeadId === 'boolean'
+        ? { crmLeadId: filter.hasCrmLeadId ? { not: null } : null }
+        : {}),
+    };
+    if (typeof filter.customFieldKey === 'string') {
+      const definition = await this.database.client.customFieldDefinition.findFirst({
+        where: { archivedAt: null, key: filter.customFieldKey, projectId },
+      });
+      if (!definition) return { id: '__missing_segment_definition__' };
+      const value = filter.customFieldValue;
+      const projection =
+        typeof value === 'number'
+          ? { valueNumber: value }
+          : typeof value === 'boolean'
+            ? { valueBoolean: value }
+            : { valueText: String(value) };
+      where.customFieldValues = { some: { definitionId: definition.id, projectId, ...projection } };
+    }
+    return where;
+  }
+
+  private jsonObject(value: Prisma.JsonValue): Record<string, Prisma.JsonValue> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, Prisma.JsonValue>)
+      : {};
+  }
+
   private async assertTag(projectId: string, tagId: string) {
     const tag = await this.database.client.tag.findUnique({
       where: { projectId_id: { id: tagId, projectId } },
@@ -499,6 +830,57 @@ export class ContactsService {
           message: `Invalid value for ${definition.key}`,
         });
     }
+  }
+  private async syncCustomFieldValues(
+    transaction: Prisma.TransactionClient,
+    projectId: string,
+    contactId: string,
+    values: Record<string, unknown>,
+  ) {
+    const definitions = await transaction.customFieldDefinition.findMany({
+      where: { archivedAt: null, key: { in: Object.keys(values) }, projectId },
+    });
+    for (const definition of definitions) {
+      const value = values[definition.key];
+      const projections = this.customFieldProjections(definition.type, value);
+      await transaction.contactCustomFieldValue.upsert({
+        create: {
+          contactId,
+          definitionId: definition.id,
+          projectId,
+          valueJson: value as Prisma.InputJsonValue,
+          ...projections,
+        },
+        update: { valueJson: value as Prisma.InputJsonValue, ...projections },
+        where: {
+          projectId_contactId_definitionId: { contactId, definitionId: definition.id, projectId },
+        },
+      });
+    }
+  }
+  private customFieldProjections(type: CustomFieldType, value: unknown) {
+    if (value === null)
+      return { valueBoolean: null, valueDateTime: null, valueNumber: null, valueText: null };
+    if (type === 'NUMBER')
+      return {
+        valueBoolean: null,
+        valueDateTime: null,
+        valueNumber: new Prisma.Decimal(value as number),
+        valueText: null,
+      };
+    if (type === 'BOOLEAN')
+      return {
+        valueBoolean: value as boolean,
+        valueDateTime: null,
+        valueNumber: null,
+        valueText: null,
+      };
+    return {
+      valueBoolean: null,
+      valueDateTime: null,
+      valueNumber: null,
+      valueText: typeof value === 'string' ? value : null,
+    };
   }
   private isFieldValueValid(
     type: CustomFieldType,
