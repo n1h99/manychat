@@ -55,7 +55,7 @@ provider request body or manually alter the raw event.
 Worker recovery periodically queries a bounded batch of due `PENDING` and
 `RETRY` records, plus `PROCESSING` records whose lease has expired. It adds a
 job containing only `inboxRecordId`; BullMQ's stable
-`telegram-inbound:<inboxRecordId>` job ID makes concurrent workers safe. An
+`telegram-inbound-<inboxRecordId>` job ID makes concurrent workers safe. An
 enqueue failure only creates a safe `recovery_enqueue_failed` log event: the
 PostgreSQL record remains due for the next scan.
 
@@ -86,3 +86,20 @@ recoverable and delivery is not lost. `UNKNOWN` delivery is terminal: reconcile
 the provider outcome before any manual resend, because a timeout can occur after
 Telegram accepted the request. Do not expose, log, or copy channel credentials
 while investigating a record.
+
+## CRM mock outbox and reconciliation
+
+CRM mock operations use the same PostgreSQL-backed outbox principle. The worker
+polls bounded due CRM records in `PENDING` or `RETRY`; a Redis outage cannot
+discard a committed CRM intent because the record stays eligible for the next
+worker scan. The mock adapter never receives or stores a real CRM credential.
+
+Inspect the project CRM operation journal for `SUCCEEDED`, `RETRY`, `FAILED`,
+or `UNKNOWN` state and safe error codes only. A failed operation may be retried
+from the journal. An `UNKNOWN` operation requires explicit confirmation because
+the provider might already have applied the request; confirm provider state
+before requeueing it. The retry resets a new attempt group, is audited, and
+never exposes request payload, credentials, or provider raw errors.
+
+For a real CRM, use the reconciliation contract in
+`docs/CRM_CONTRACT_REQUIRED.md`; never infer delivery from a timeout alone.

@@ -480,3 +480,17 @@ message and outbox record and does not blindly retry. This avoids a duplicate
 customer-facing message. Operators must reconcile an unknown delivery before a
 future manual retry. Explicit Telegram `429` and provider `5xx` remain retryable;
 invalid credentials and recipient errors are terminal.
+
+## ADR-027: CRM mock reconciliation uses explicit terminal retry
+
+CRM mock operations are delivered through PostgreSQL-backed `OutboxRecord`
+entries and retain the same at-least-once boundary as other external side
+effects. A safe operation journal exposes only operation type, state, attempt
+count, safe error code and safe provider reference.
+
+`FAILED` operations may be requeued by a project integration manager. `UNKNOWN`
+requires an explicit confirmation because a future real provider may already
+have accepted the request before the observed failure. Retrying creates a new
+attempt group, preserves the original idempotency key and records an audit event.
+The mock adapter is intentionally not evidence of production provider delivery;
+the real reconciliation contract remains blocked by `CRM_CONTRACT_REQUIRED.md`.

@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["tsconfig.base.json"],
   "globalEnv": ["OMNICUS_TOOLCHAIN_NODE_VERSION"],
   "globalPassThroughEnv": ["OMNICUS_NODE_EXECUTABLE", "OMNICUS_PNPM_EXECUTABLE"],
   "tasks": {

@@ -303,6 +303,15 @@ paused project → deferred inbox → resume processing
 - полный execution correlation;
 - Telegram outbound response.
 
+### Current mock implementation
+
+The pilot mock includes a per-project configuration, deterministic `CrmClient`
+adapter, CRM-specific outbox records, safe retry classification and a project
+operation journal. Terminal `FAILED` records can be requeued; `UNKNOWN` requires
+explicit operator confirmation because the external side effect may already have
+occurred. This is not a production CRM integration and remains gated by
+`docs/CRM_CONTRACT_REQUIRED.md`.
+
 ### Key tests
 
 - CRM mock success;
@@ -320,6 +329,14 @@ paused project → deferred inbox → resume processing
 - Backup restore procedure выполнена и задокументирована.
 - Railway staging deployment соответствует RPO 24h/RTO 4h baseline.
 - Проведён pilot review и принято решение о следующих функциях.
+
+### External validation gates
+
+The mock pipeline is the only CRM path that can be completed without outside
+access. `docs/PILOT_EXTERNAL_GATES.md` lists the exact CRM contract, Telegram
+test bot, Railway staging and backup-restore inputs required before a real
+provider/deployment acceptance run. WhatsApp and Instagram remain explicitly
+outside this pilot.
 
 ## После pilot
 

@@ -1,13 +1,34 @@
-import { Alert, Button, Form, Input, Result, Spin, Switch, Typography, message } from 'antd';
+import {
+  Alert,
+  Button,
+  Form,
+  Input,
+  Popconfirm,
+  Result,
+  Spin,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import { useParams } from 'react-router';
 
-import { useCrmProjectConfig, useSaveCrmProjectConfig } from '../crm-api';
+import {
+  type CrmOperation,
+  useCrmOperations,
+  useCrmProjectConfig,
+  useRetryCrmOperation,
+  useSaveCrmProjectConfig,
+} from '../crm-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
 export function CrmConfigPage() {
   const { projectId } = useParams();
   const access = useProjectAccess(projectId);
   const config = useCrmProjectConfig(projectId);
+  const operations = useCrmOperations(projectId);
+  const retry = useRetryCrmOperation(projectId);
   const save = useSaveCrmProjectConfig(projectId);
   if (access.isLoading || config.isLoading) return <Spin />;
   if (!hasProjectPermission(access.data, 'integrations:manage'))
@@ -76,6 +97,67 @@ export function CrmConfigPage() {
           Save configuration
         </Button>
       </Form>
+      <Typography.Title level={3}>CRM operation journal</Typography.Title>
+      <Alert
+        showIcon
+        type="warning"
+        message="Unknown delivery requires confirmation"
+        description="Повтор UNKNOWN-операции возможен только после проверки, что внешняя CRM не применила запрос. Это защищает от слепого дублирования side effect."
+      />
+      <Table<CrmOperation>
+        dataSource={operations.data ?? []}
+        loading={operations.isLoading}
+        locale={{
+          emptyText: operations.isError
+            ? 'Не удалось загрузить журнал операций.'
+            : 'CRM operations пока нет.',
+        }}
+        pagination={{ pageSize: 10, showSizeChanger: false }}
+        rowKey="id"
+        columns={[
+          { dataIndex: 'type', key: 'type', title: 'Operation' },
+          {
+            dataIndex: 'status',
+            key: 'status',
+            render: (status: CrmOperation['status']) => <Tag>{status}</Tag>,
+            title: 'Status',
+          },
+          { dataIndex: 'attempts', key: 'attempts', title: 'Attempts' },
+          { dataIndex: 'lastError', key: 'lastError', title: 'Safe error' },
+          {
+            key: 'retry',
+            render: (_value: unknown, record: CrmOperation) =>
+              record.status === 'FAILED' || record.status === 'UNKNOWN' ? (
+                <Popconfirm
+                  cancelText="Cancel"
+                  description={
+                    record.status === 'UNKNOWN'
+                      ? 'The CRM may already have applied this operation. Continue only after reconciliation.'
+                      : 'Requeue this failed mock CRM operation?'
+                  }
+                  okText="Retry"
+                  onConfirm={async () => {
+                    try {
+                      await retry.mutateAsync({
+                        confirmUnknownDelivery: record.status === 'UNKNOWN',
+                        operationId: record.id,
+                      });
+                      void message.success('CRM operation queued for retry.');
+                    } catch {
+                      void message.error('Unable to retry the CRM operation.');
+                    }
+                  }}
+                  title="Retry CRM operation?"
+                >
+                  <Button loading={retry.isPending} size="small">
+                    Retry
+                  </Button>
+                </Popconfirm>
+              ) : null,
+            title: 'Action',
+          },
+        ]}
+      />
     </section>
   );
 }

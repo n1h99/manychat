@@ -27,3 +27,13 @@ export class UpsertCrmProjectConfigDto {
   @IsBoolean()
   enabled?: boolean;
 }
+
+/**
+ * Unknown delivery is deliberately not retried without an operator explicitly
+ * accepting that a provider may already have applied the request.
+ */
+export class RetryCrmOperationDto {
+  @IsOptional()
+  @IsBoolean()
+  confirmUnknownDelivery?: boolean;
+}
