@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
 const pnpmExecutable = process.env.npm_execpath;
@@ -20,6 +20,35 @@ if (!command) {
 }
 
 const environment = { ...process.env };
+
+// Prisma CLI runs from packages/database, while local developers invoke this
+// wrapper from the repository root. Load only DATABASE_URL from the root .env
+// for local commands when the platform did not already provide it. Production
+// and staging intentionally rely exclusively on Railway/CI process variables.
+function loadLocalDatabaseUrl() {
+  if (
+    environment.DATABASE_URL ||
+    environment.APP_ENV === 'production' ||
+    environment.APP_ENV === 'staging'
+  ) {
+    return 'process-env';
+  }
+  const rootEnvironment = resolve(import.meta.dirname, '../.env');
+  if (!existsSync(rootEnvironment)) return 'missing';
+  const line = readFileSync(rootEnvironment, 'utf8')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .find((candidate) => candidate.startsWith('DATABASE_URL='));
+  if (!line) return 'missing';
+  const value = line.slice('DATABASE_URL='.length).trim();
+  environment.DATABASE_URL =
+    (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))
+      ? value.slice(1, -1)
+      : value;
+  return 'root-dotenv';
+}
+
+const databaseUrlSource = loadLocalDatabaseUrl();
 
 if (command === 'generate') {
   const generatedClientDirectory = resolve(
@@ -56,6 +85,21 @@ if (!environment.DATABASE_URL) {
 const databaseUrl = new URL(environment.DATABASE_URL);
 if (databaseUrl.protocol !== 'postgres:' && databaseUrl.protocol !== 'postgresql:') {
   throw new Error('DATABASE_URL must use postgres:// or postgresql://');
+}
+
+if (environment.PRISMA_ENV_DIAGNOSTICS === '1') {
+  process.stdout.write(
+    `${JSON.stringify({
+      database: databaseUrl.pathname.slice(1),
+      databaseUrlSource,
+      host: databaseUrl.hostname,
+      passwordLength: decodeURIComponent(databaseUrl.password).length,
+      passwordPresent: databaseUrl.password.length > 0,
+      port: databaseUrl.port || '5432',
+      protocol: databaseUrl.protocol,
+      username: decodeURIComponent(databaseUrl.username),
+    })}\n`,
+  );
 }
 
 const result = spawnSync(
