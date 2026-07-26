@@ -4,11 +4,13 @@ import { Link, useParams } from 'react-router';
 
 import { apiRequest } from '../api';
 import { useAuth } from '../auth';
+import { hasProjectPermission, useProjectAccess } from '../project-access';
 import type { Project } from './projects-page';
 
 export function ProjectDetailPage() {
   const { projectId } = useParams();
   const { accessToken } = useAuth();
+  const access = useProjectAccess(projectId);
   const queryClient = useQueryClient();
   const query = useQuery({
     enabled: Boolean(projectId),
@@ -48,6 +50,9 @@ export function ProjectDetailPage() {
         <Link to={`/projects/${project.id}/contacts`}>Contacts</Link>
         <Link to={`/projects/${project.id}/tags`}>Tags</Link>
         <Link to={`/projects/${project.id}/custom-fields`}>Custom fields</Link>
+        {hasProjectPermission(access.data, 'channels:read') ? (
+          <Link to={`/projects/${project.id}/channels`}>Channels</Link>
+        ) : null}
       </Space>
       <Typography.Title level={4}>Edit project</Typography.Title>
       <Form

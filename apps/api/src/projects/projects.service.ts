@@ -61,6 +61,11 @@ export class ProjectsService {
     return project;
   }
 
+  async getAccess(projectId: string, auth: AuthenticatedUser) {
+    await this.assertProjectRead(projectId, auth);
+    return this.access.getProjectAccess(auth.userId, projectId);
+  }
+
   async listRoles(projectId: string, auth: AuthenticatedUser) {
     await this.assertProjectRead(projectId, auth);
     return this.database.client.projectRole.findMany({

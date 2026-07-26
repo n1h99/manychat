@@ -22,6 +22,7 @@
     "db:migrate:dev": "node scripts/run-prisma.mjs migrate dev --config prisma.config.ts",
     "db:migrate:deploy": "node scripts/run-prisma.mjs migrate deploy --config prisma.config.ts",
     "db:seed": "node scripts/pnpm.mjs --filter @omnicus/database db:seed",
+    "db:sync-system-roles": "node scripts/pnpm.mjs --filter @omnicus/database db:sync-system-roles",
     "db:validate": "node scripts/run-prisma.mjs validate --config prisma.config.ts",
     "dev": "node scripts/pnpm.mjs db:generate && node scripts/turbo.mjs run dev",
     "dev:api": "node scripts/pnpm.mjs db:generate && node scripts/turbo.mjs run dev --filter=@omnicus/api...",

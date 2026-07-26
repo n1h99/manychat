@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router';
 
 import { AppShell } from './app-shell';
 import { ProtectedRoute } from './protected-route';
+import { ProjectPermissionRoute } from './project-permission-route';
 import { LoginPage } from './pages/login-page';
 import { MembersPage } from './pages/members-page';
 import { ProjectDetailPage } from './pages/project-detail-page';
@@ -29,12 +30,16 @@ export function App() {
           <Route element={<ContactDetailPage />} path="/projects/:projectId/contacts/:contactId" />
           <Route element={<TagsPage />} path="/projects/:projectId/tags" />
           <Route element={<CustomFieldsPage />} path="/projects/:projectId/custom-fields" />
-          <Route element={<ChannelsPage />} path="/projects/:projectId/channels" />
-          <Route element={<ChannelCreatePage />} path="/projects/:projectId/channels/new" />
-          <Route
-            element={<ChannelDetailPage />}
-            path="/projects/:projectId/channels/:connectionId"
-          />
+          <Route element={<ProjectPermissionRoute permission="channels:read" />}>
+            <Route element={<ChannelsPage />} path="/projects/:projectId/channels" />
+            <Route
+              element={<ChannelDetailPage />}
+              path="/projects/:projectId/channels/:connectionId"
+            />
+            <Route element={<ProjectPermissionRoute permission="channels:manage" />}>
+              <Route element={<ChannelCreatePage />} path="/projects/:projectId/channels/new" />
+            </Route>
+          </Route>
           <Route element={<UsersPage />} path="/users" />
           <Route element={<Navigate replace to="/projects" />} path="*" />
         </Route>

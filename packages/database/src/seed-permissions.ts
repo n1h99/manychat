@@ -1,0 +1,26 @@
+export const seedGlobalPermissions = [
+  'projects:create',
+  'projects:read',
+  'users:manage',
+  'users:read',
+  'roles:manage',
+] as const;
+
+export const seedProjectPermissions = [
+  'project:read',
+  'project:manage',
+  'members:manage',
+  'contacts:read',
+  'contacts:manage',
+  'contacts:update',
+  'contacts:export',
+  'contacts:merge',
+  'tags:read',
+  'tags:manage',
+  'automation:read',
+  'automation:manage',
+  'integrations:manage',
+  'channels:read',
+  'channels:manage',
+  'channels:rotate_secrets',
+] as const;

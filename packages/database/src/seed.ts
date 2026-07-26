@@ -4,86 +4,9 @@ import { config as loadEnvironment } from 'dotenv';
 
 import { createDatabaseHandle } from './client';
 import { authorizeDatabaseSeed } from './seed-guard';
+import { seedGlobalPermissions, seedProjectPermissions } from './seed-permissions';
+import { backfillSystemProjectRoles } from './seed-project-roles';
 import * as argon2 from 'argon2';
-
-const globalPermissions = [
-  'projects:create',
-  'projects:read',
-  'users:manage',
-  'users:read',
-  'roles:manage',
-];
-const projectPermissions = [
-  'project:read',
-  'project:manage',
-  'members:manage',
-  'contacts:read',
-  'contacts:manage',
-  'contacts:update',
-  'contacts:export',
-  'contacts:merge',
-  'tags:read',
-  'tags:manage',
-  'automation:read',
-  'automation:manage',
-  'integrations:manage',
-  'channels:read',
-  'channels:manage',
-  'channels:rotate_secrets',
-];
-
-const projectRoles = [
-  [
-    'Project Admin',
-    'project-admin',
-    [
-      'project:read',
-      'project:manage',
-      'members:manage',
-      'contacts:read',
-      'contacts:manage',
-      'contacts:update',
-      'contacts:export',
-      'contacts:merge',
-      'tags:read',
-      'tags:manage',
-      'channels:read',
-      'channels:manage',
-      'channels:rotate_secrets',
-    ],
-  ],
-  [
-    'Automation Editor',
-    'automation-editor',
-    ['project:read', 'automation:read', 'automation:manage'],
-  ],
-  [
-    'Integration Manager',
-    'integration-manager',
-    [
-      'project:read',
-      'integrations:manage',
-      'channels:read',
-      'channels:manage',
-      'channels:rotate_secrets',
-    ],
-  ],
-  [
-    'Contact Manager',
-    'contact-manager',
-    [
-      'project:read',
-      'contacts:read',
-      'contacts:manage',
-      'contacts:update',
-      'contacts:export',
-      'contacts:merge',
-      'tags:read',
-      'tags:manage',
-    ],
-  ],
-  ['Viewer', 'viewer', ['project:read', 'contacts:read', 'tags:read', 'automation:read']],
-] as const;
 
 loadEnvironment({ path: resolve(__dirname, '../../../.env'), quiet: true });
 
@@ -93,7 +16,7 @@ async function seed(): Promise<void> {
 
   try {
     await database.client.$queryRaw`SELECT 1`;
-    const permissionCodes = [...globalPermissions, ...projectPermissions];
+    const permissionCodes = [...seedGlobalPermissions, ...seedProjectPermissions];
     for (const code of permissionCodes) {
       await database.client.permission.upsert({
         create: { code, description: code },
@@ -112,7 +35,7 @@ async function seed(): Promise<void> {
       update: { name: 'Super Admin', system: true },
       where: { normalizedName: 'super-admin' },
     });
-    for (const code of globalPermissions) {
+    for (const code of seedGlobalPermissions) {
       const permissionId = permissionsByCode.get(code);
       if (!permissionId) {
         throw new Error(`Missing seed permission: ${code}`);
@@ -148,30 +71,7 @@ async function seed(): Promise<void> {
     });
     const projects = await database.client.project.findMany({ select: { id: true } });
     for (const project of projects) {
-      for (const [name, normalizedName, rolePermissions] of projectRoles) {
-        const role = await database.client.projectRole.upsert({
-          create: { name, normalizedName, projectId: project.id, system: true },
-          update: { name, system: true },
-          where: { projectId_normalizedName: { normalizedName, projectId: project.id } },
-        });
-        for (const permissionCode of rolePermissions) {
-          const permissionId = permissionsByCode.get(permissionCode);
-          if (!permissionId) {
-            throw new Error(`Missing seed permission: ${permissionCode}`);
-          }
-          await database.client.projectRolePermission.upsert({
-            create: { permissionId, projectId: project.id, projectRoleId: role.id },
-            update: {},
-            where: {
-              projectId_projectRoleId_permissionId: {
-                permissionId,
-                projectId: project.id,
-                projectRoleId: role.id,
-              },
-            },
-          });
-        }
-      }
+      await backfillSystemProjectRoles(database.client, project.id, permissionsByCode);
       const existingFixture = await database.client.contact.findFirst({
         where: { projectId: project.id, username: 'development-contact' },
       });

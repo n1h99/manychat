@@ -1,10 +1,12 @@
 import { Button, Empty, Space, Spin, Table, Tag, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 import { useChannels, type Channel } from '../channels-api';
+import { hasProjectPermission, useProjectAccess } from '../project-access';
 export function ChannelsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const query = useChannels(projectId);
+  const access = useProjectAccess(projectId);
   if (query.isLoading) return <Spin />;
   if (query.isError)
     return <Typography.Text type="danger">Не удалось загрузить каналы.</Typography.Text>;
@@ -14,9 +16,11 @@ export function ChannelsPage() {
         <Typography.Title level={2}>Каналы</Typography.Title>
         <Typography.Text type="secondary">Подключения Telegram текущего проекта.</Typography.Text>
       </Space>
-      <Button type="primary" onClick={() => navigate(`/projects/${projectId}/channels/new`)}>
-        Подключить Telegram
-      </Button>
+      {hasProjectPermission(access.data, 'channels:manage') ? (
+        <Button type="primary" onClick={() => navigate(`/projects/${projectId}/channels/new`)}>
+          Подключить Telegram
+        </Button>
+      ) : null}
       {query.data?.length ? (
         <Table<Channel>
           rowKey="id"

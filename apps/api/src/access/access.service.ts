@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { SUPER_ADMIN_ROLE } from './permissions';
+import { projectPermissions, SUPER_ADMIN_ROLE } from './permissions';
 import { DatabaseService } from '../database/database.service';
 
 @Injectable()
@@ -50,5 +50,28 @@ export class AccessService {
       membership?.status === 'ACTIVE' &&
       membership.projectRole.permissions.some((entry) => entry.permission.code === permission),
     );
+  }
+
+  async getProjectAccess(
+    userId: string,
+    projectId: string,
+  ): Promise<{ permissions: string[]; projectRoleName: string | null }> {
+    const globalAccess = await this.getGlobalAccess(userId);
+    if (globalAccess.roleNames.includes(SUPER_ADMIN_ROLE)) {
+      return { permissions: [...projectPermissions], projectRoleName: null };
+    }
+    const membership = await this.database.client.projectMembership.findUnique({
+      include: { projectRole: { include: { permissions: { include: { permission: true } } } } },
+      where: { projectId_userId: { projectId, userId } },
+    });
+    if (!membership || membership.status !== 'ACTIVE') {
+      return { permissions: [], projectRoleName: null };
+    }
+    return {
+      permissions: [
+        ...new Set(membership.projectRole.permissions.map((entry) => entry.permission.code)),
+      ],
+      projectRoleName: membership.projectRole.normalizedName,
+    };
   }
 }

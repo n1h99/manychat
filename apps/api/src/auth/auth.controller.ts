@@ -116,10 +116,13 @@ export class AuthController {
     const secure =
       this.config.get('APP_ENV', { infer: true }) !== 'development' &&
       this.config.get('APP_ENV', { infer: true }) !== 'test';
+    // The browser must read this non-HttpOnly token from every SPA route before
+    // it posts to /auth/refresh. The HttpOnly refresh cookie remains scoped.
+    response.clearCookie(csrfCookieName, { path: '/api/v1/auth', sameSite: 'strict' });
     response.cookie(csrfCookieName, tokens.csrfToken, {
       httpOnly: false,
       maxAge: this.config.get('REFRESH_TOKEN_TTL_DAYS', { infer: true }) * 24 * 60 * 60 * 1_000,
-      path: '/api/v1/auth',
+      path: '/',
       sameSite: 'strict',
       secure,
     });
@@ -133,6 +136,7 @@ export class AuthController {
   }
 
   private clearSessionCookies(response: Response): void {
+    response.clearCookie(csrfCookieName, { path: '/', sameSite: 'strict' });
     response.clearCookie(csrfCookieName, { path: '/api/v1/auth', sameSite: 'strict' });
     response.clearCookie(refreshCookieName, {
       httpOnly: true,
