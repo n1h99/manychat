@@ -10,6 +10,7 @@ import {
   type ScenarioGraphNode,
 } from '@omnicus/automation-core';
 import type { Prisma } from '@omnicus/database';
+import { renderTemplate } from '@omnicus/media-core';
 
 import { DatabaseService } from '../database/database.service';
 
@@ -24,8 +25,10 @@ export interface AutomationTriggerInput {
 type RuntimeTransaction = Prisma.TransactionClient;
 
 interface RuntimeContext extends AutomationTriggerInput {
+  contactVariables: Record<string, Prisma.JsonValue>;
   customFields: Prisma.JsonValue;
   eventPayload: Prisma.JsonValue;
+  subflowDepth: number;
 }
 
 interface NodeResult {
@@ -87,7 +90,16 @@ export class AutomationRuntimeService {
   ): Promise<void> {
     const [contact, conversation, event, scenarios] = await Promise.all([
       transaction.contact.findUnique({
-        select: { automationMode: true, customFields: true },
+        select: {
+          automationMode: true,
+          customFields: true,
+          displayName: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          username: true,
+        },
         where: { projectId_id: { id: input.contactId, projectId: input.projectId } },
       }),
       transaction.conversation.findUnique({
@@ -114,8 +126,10 @@ export class AutomationRuntimeService {
     });
     const context: RuntimeContext = {
       ...input,
+      contactVariables: this.contactVariables(contact),
       customFields: contact.customFields,
       eventPayload: event.payload,
+      subflowDepth: 0,
     };
     for (const scenario of scenarios) {
       const version = scenario.activeVersion;
@@ -255,11 +269,13 @@ export class AutomationRuntimeService {
             })
           ).connectionId,
         contactId: execution.contactId,
+        contactVariables: this.contactVariables(contact),
         conversationId: execution.conversationId,
         customFields: contact.customFields,
         eventPayload: event.payload,
         normalizedEventId: eventOverride?.normalizedEventId ?? execution.triggerEventId,
         projectId,
+        subflowDepth: 0,
       },
       startNodeId ?? undefined,
     );
@@ -409,12 +425,24 @@ export class AutomationRuntimeService {
     if (node.type === 'START_SUBFLOW') {
       const scenarioId =
         typeof node.config.scenarioId === 'string' ? node.config.scenarioId : undefined;
-      if (!scenarioId) throw new Error('automation_subflow_invalid');
+      const scenarioVersionId =
+        typeof node.config.scenarioVersionId === 'string'
+          ? node.config.scenarioVersionId
+          : undefined;
+      if (!scenarioId || !scenarioVersionId) throw new Error('automation_subflow_invalid');
+      if (context.subflowDepth >= 10) throw new Error('automation_subflow_depth_exceeded');
       const target = await transaction.scenario.findUnique({
-        include: { activeVersion: true },
         where: { projectId_id: { id: scenarioId, projectId: context.projectId } },
       });
-      if (!target?.activeVersion?.compiledDefinition || target.status !== 'PUBLISHED')
+      const targetVersion = await transaction.scenarioVersion.findFirst({
+        where: {
+          id: scenarioVersionId,
+          projectId: context.projectId,
+          scenarioId,
+          status: { in: ['PUBLISHED', 'SUPERSEDED'] },
+        },
+      });
+      if (!target || !targetVersion?.compiledDefinition)
         throw new Error('automation_subflow_unpublished');
       const child = await transaction.scenarioExecution.upsert({
         create: {
@@ -426,7 +454,7 @@ export class AutomationRuntimeService {
           projectId: context.projectId,
           resumeNodeId: defaultEdge?.to ?? null,
           scenarioId: target.id,
-          scenarioVersionId: target.activeVersion.id,
+          scenarioVersionId: targetVersion.id,
           startedAt: new Date(),
           status: 'RUNNING',
           triggerEventId: context.normalizedEventId,
@@ -447,10 +475,13 @@ export class AutomationRuntimeService {
           data: { currentNodeId: node.id, status: 'WAITING' },
           where: { projectId_id: { id: executionId, projectId: context.projectId } },
         });
-      const graph = scenarioGraphSchema.safeParse(target.activeVersion.compiledDefinition);
+      const graph = scenarioGraphSchema.safeParse(targetVersion.compiledDefinition);
       if (!graph.success) throw new Error('automation_subflow_graph_invalid');
       if (!['COMPLETED', 'FAILED', 'CANCELLED'].includes(child.status))
-        await this.executeGraph(transaction, graph.data, child.id, context);
+        await this.executeGraph(transaction, graph.data, child.id, {
+          ...context,
+          subflowDepth: context.subflowDepth + 1,
+        });
       return awaitChild ? { suspended: true } : { next: defaultEdge };
     }
     if (node.type === 'SET_CUSTOM_FIELD') {
@@ -478,7 +509,7 @@ export class AutomationRuntimeService {
     }
     if (node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG')
       await this.applyTag(transaction, node, context);
-    if (node.type === 'SEND_MESSAGE')
+    if (node.type === 'SEND_MESSAGE' || node.type === 'SEND_TEMPLATE')
       await this.queueMessage(transaction, node, context, executionId);
     if (node.type === 'CREATE_OR_UPDATE_LEAD' || node.type === 'FORWARD_TO_CRM')
       await this.queueCrmOperation(transaction, node, context, executionId);
@@ -567,8 +598,36 @@ export class AutomationRuntimeService {
     context: RuntimeContext,
     executionId: string,
   ): Promise<void> {
-    const text = typeof node.config.text === 'string' ? node.config.text : undefined;
-    if (!text) return;
+    const templateVersionId =
+      typeof node.config.templateVersionId === 'string' ? node.config.templateVersionId : undefined;
+    const templateVersion = templateVersionId
+      ? await transaction.messageTemplateVersion.findFirst({
+          where: {
+            id: templateVersionId,
+            projectId: context.projectId,
+            status: { in: ['PUBLISHED', 'SUPERSEDED'] },
+            ...(typeof node.config.templateId === 'string'
+              ? { templateId: node.config.templateId }
+              : {}),
+          },
+        })
+      : undefined;
+    const templateContent = templateVersion?.content as
+      { caption?: string; text?: string } | undefined;
+    const sourceText =
+      templateVersion?.kind === 'TEXT'
+        ? templateContent?.text
+        : templateVersion
+          ? (templateContent?.caption ?? '')
+          : typeof node.config.text === 'string'
+            ? node.config.text
+            : undefined;
+    if (sourceText === undefined) return;
+    const rendered = renderTemplate(sourceText, {
+      contact: context.contactVariables,
+      event: context.eventPayload,
+    });
+    if (rendered.missing.length) throw new Error('automation_template_variable_missing');
     const identity = await transaction.channelIdentity.findFirst({
       where: {
         connectionId: context.connectionId,
@@ -589,13 +648,25 @@ export class AutomationRuntimeService {
       data: {
         connectionId: context.connectionId,
         contactId: context.contactId,
-        content: { text },
+        content:
+          templateVersion && templateVersion.kind !== 'TEXT'
+            ? { caption: rendered.output }
+            : { text: rendered.output },
         conversationId: context.conversationId,
         direction: 'OUTBOUND',
-        metadata: { source: 'automation' },
+        mediaAssetId: templateVersion?.mediaAssetId ?? null,
+        metadata: {
+          source: 'automation',
+          ...(templateVersion
+            ? {
+                templateId: templateVersion.templateId,
+                templateVersionId: templateVersion.id,
+              }
+            : {}),
+        },
         projectId: context.projectId,
         status: 'QUEUED',
-        type: 'TEXT',
+        type: templateVersion?.kind ?? 'TEXT',
       },
     });
     await transaction.outboxRecord.create({
@@ -650,5 +721,25 @@ export class AutomationRuntimeService {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, Prisma.JsonValue>)
       : {};
+  }
+
+  private contactVariables(contact: {
+    customFields: Prisma.JsonValue;
+    displayName: string;
+    email: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    phone: string | null;
+    username: string | null;
+  }): Record<string, Prisma.JsonValue> {
+    return {
+      customFields: contact.customFields,
+      displayName: contact.displayName,
+      email: contact.email,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      phone: contact.phone,
+      username: contact.username,
+    };
   }
 }

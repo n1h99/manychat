@@ -14,17 +14,37 @@ export interface ScenarioSummary {
   updatedAt: string;
 }
 export interface Scenario extends ScenarioSummary {
+  activeVersion: { graph: ScenarioGraph; id: string } | null;
   draftVersion: { graph: ScenarioGraph; id: string } | null;
+  versions: Array<{
+    id: string;
+    publishedAt: string | null;
+    status: string;
+    version: number;
+  }>;
 }
 export interface ScenarioExecution {
   completedAt: string | null;
   createdAt: string;
+  currentNodeId: string | null;
   id: string;
-  nodeExecutions: Array<{ nodeId: string; status: string }>;
+  nodeExecutions: Array<{
+    attempt: number;
+    nodeId: string;
+    nodeType: string;
+    status: string;
+  }>;
   status: string;
 }
 export interface ScenarioGraph {
-  edges: Array<{ from: string; id?: string; output?: string; priority?: number; to: string }>;
+  edges: Array<{
+    condition?: { field: string; operator: string; value?: unknown };
+    from: string;
+    id?: string;
+    output?: string;
+    priority?: number;
+    to: string;
+  }>;
   nodes: Array<{
     config?: Record<string, unknown>;
     id: string;
@@ -82,7 +102,11 @@ export function useScenarioExecutions(projectId?: string, scenarioId?: string) {
 export function useScenarioMutations(projectId?: string) {
   const { accessToken } = useAuth();
   const client = useQueryClient();
-  const invalidate = () => client.invalidateQueries({ queryKey: ['scenarios', projectId] });
+  const invalidate = async () => {
+    await client.invalidateQueries({ queryKey: ['scenarios', projectId] });
+    await client.invalidateQueries({ queryKey: ['scenario', projectId] });
+    await client.invalidateQueries({ queryKey: ['scenario-executions', projectId] });
+  };
   const request = <T>(path: string, method: string, body?: unknown) =>
     apiRequest<T>(
       `/api/v1/projects/${projectId}/scenarios${path}`,

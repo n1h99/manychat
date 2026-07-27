@@ -1198,3 +1198,27 @@ request idempotent. `PENDING`/`RETRY` records whose `nextAttemptAt` is due, and
 expired `PROCESSING` leases, are recoverable by the worker; `SUCCEEDED`,
 `FAILED`, and `UNKNOWN` are terminal. `UNKNOWN` deliberately requires manual
 reconciliation rather than a blind resend.
+
+## Executable media and template slice
+
+The executable advanced-media slice uses `MediaAsset`, `MessageTemplate` and
+`MessageTemplateVersion`. Every row is project-owned and every optional
+connection, message, asset and template-version relation uses a project-bound
+composite foreign key. `MediaAsset.bucketKey` is unique, but presigned URLs and
+bucket credentials are never persisted. Provider references may remain
+`PROVIDER_REFERENCE`; only validated objects become `AVAILABLE`.
+
+Published template versions are immutable application records. Scenario graphs
+and prepared broadcasts reference a concrete `(projectId, templateId,
+templateVersionId)` tuple. Archiving a template does not delete its versions or
+media, so existing execution and audit history remains reproducible. All media
+lifecycle timestamps use `TIMESTAMPTZ(3)` and provider metadata/content use
+`JSONB`.
+
+The executable changes are recorded by
+`20260727002750_telegram_media_templates`; the follow-up
+`20260727004642_template_content_hash_index` changes `contentHash` from a Prisma
+unique selector to a normal lookup index so identical historical content can be
+restored without manufacturing uniqueness. Tenant-safe version and asset
+constraints remain unique. `PUBLISHED` and `SUPERSEDED` template versions both
+retain referenced media because existing scenarios can pin either state.

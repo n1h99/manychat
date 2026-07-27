@@ -45,6 +45,8 @@ function createHarness(options: HarnessOptions = {}) {
   const identityUpdate = vi.fn().mockResolvedValue(undefined);
   const conversationUpsert = vi.fn().mockResolvedValue({ id: 'conversation-a' });
   const messageUpsert = vi.fn().mockResolvedValue({ id: 'message-a' });
+  const messageUpdate = vi.fn().mockResolvedValue({ id: 'message-a' });
+  const mediaAssetUpsert = vi.fn().mockResolvedValue({ id: 'media-a' });
   const inboxUpdate = vi
     .fn()
     .mockImplementation(async ({ data }: { data: { status: typeof record.status } }) => {
@@ -76,7 +78,8 @@ function createHarness(options: HarnessOptions = {}) {
     contact: { create: contactCreate, update: contactUpdate, updateMany: contactUpdateMany },
     conversation: { upsert: conversationUpsert },
     inboxRecord: { update: inboxUpdate, updateMany: transactionInboxUpdateMany },
-    message: { upsert: messageUpsert },
+    mediaAsset: { upsert: mediaAssetUpsert },
+    message: { update: messageUpdate, upsert: messageUpsert },
     normalizedEvent: { upsert: normalizedUpsert },
   };
   const inboxUpdateMany = vi
@@ -136,6 +139,8 @@ function createHarness(options: HarnessOptions = {}) {
     identityUpdate,
     inboxUpdateMany,
     messageUpsert,
+    messageUpdate,
+    mediaAssetUpsert,
     normalizedUpsert,
     record,
     service,
@@ -236,13 +241,28 @@ describe('TelegramInboundProcessorService', () => {
     ['document', telegramInboundFixtures.document.payload, 'DOCUMENT'],
     ['callback', telegramInboundFixtures.callbackQuery.payload, 'CALLBACK_QUERY'],
   ])('persists %s metadata without downloading media', async (_name, payload, type) => {
-    const { messageUpsert, service } = createHarness({ payload });
+    const { mediaAssetUpsert, messageUpdate, messageUpsert, service } = createHarness({ payload });
 
     await service.process({ inboxRecordId: 'inbox-a' });
 
     expect(messageUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: expect.objectContaining({ type }) }),
     );
+    if (type === 'PHOTO' || type === 'DOCUMENT') {
+      expect(mediaAssetUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            source: 'TELEGRAM',
+            status: 'PROVIDER_REFERENCE',
+          }),
+        }),
+      );
+      expect(messageUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { mediaAssetId: 'media-a' } }),
+      );
+    } else {
+      expect(mediaAssetUpsert).not.toHaveBeenCalled();
+    }
   });
 
   it('updates existing identities for blocked and unblocked chat member events', async () => {

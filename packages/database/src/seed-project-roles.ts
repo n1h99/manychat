@@ -26,12 +26,24 @@ export const seedProjectRoles = [
       'broadcasts:launch',
       'broadcasts:pause',
       'broadcasts:cancel',
+      'media:read',
+      'media:manage',
+      'templates:read',
+      'templates:manage',
     ],
   ],
   [
     'Automation Editor',
     'automation-editor',
-    ['project:read', 'automation:read', 'automation:manage'],
+    [
+      'project:read',
+      'automation:read',
+      'automation:manage',
+      'media:read',
+      'media:manage',
+      'templates:read',
+      'templates:manage',
+    ],
   ],
   [
     'Integration Manager',
@@ -58,7 +70,18 @@ export const seedProjectRoles = [
       'tags:manage',
     ],
   ],
-  ['Viewer', 'viewer', ['project:read', 'contacts:read', 'tags:read', 'automation:read']],
+  [
+    'Viewer',
+    'viewer',
+    [
+      'project:read',
+      'contacts:read',
+      'tags:read',
+      'automation:read',
+      'media:read',
+      'templates:read',
+    ],
+  ],
 ] as const;
 
 export async function backfillSystemProjectRoles(

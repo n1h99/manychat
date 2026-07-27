@@ -24,6 +24,67 @@ const channelSecretsKeySchema = z.string().superRefine((value, context) => {
 
 const booleanEnvironmentSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
 
+const mediaStorageEnvironment = {
+  MEDIA_BUCKET: z.string().min(1).optional(),
+  MEDIA_BUCKET_ACCESS_KEY_ID: z.string().min(1).optional(),
+  MEDIA_BUCKET_ENDPOINT: urlWithProtocol(['https:', 'http:'], 'MEDIA_BUCKET_ENDPOINT').optional(),
+  MEDIA_BUCKET_FORCE_PATH_STYLE: booleanEnvironmentSchema.default(false),
+  MEDIA_BUCKET_REGION: z.string().min(1).default('auto'),
+  MEDIA_BUCKET_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  MEDIA_MAX_UPLOAD_BYTES: positiveIntegerSchema.max(20 * 1024 * 1024).default(20 * 1024 * 1024),
+  MEDIA_RETENTION_DAYS: positiveIntegerSchema.max(365).default(30),
+  MEDIA_SIGNED_URL_TTL_SECONDS: positiveIntegerSchema.max(3_600).default(300),
+  MEDIA_STORAGE_ENABLED: booleanEnvironmentSchema.default(false),
+};
+
+function validateMediaStorage(
+  environment: {
+    APP_ENV: z.infer<typeof appEnvironmentSchema>;
+    MEDIA_BUCKET?: string | undefined;
+    MEDIA_BUCKET_ACCESS_KEY_ID?: string | undefined;
+    MEDIA_BUCKET_ENDPOINT?: string | undefined;
+    MEDIA_BUCKET_SECRET_ACCESS_KEY?: string | undefined;
+    MEDIA_STORAGE_ENABLED: boolean;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (
+    (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
+    !environment.MEDIA_STORAGE_ENABLED
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'MEDIA_STORAGE_ENABLED must be true for staging and production',
+      path: ['MEDIA_STORAGE_ENABLED'],
+    });
+  }
+  if (!environment.MEDIA_STORAGE_ENABLED) return;
+  for (const key of [
+    'MEDIA_BUCKET',
+    'MEDIA_BUCKET_ACCESS_KEY_ID',
+    'MEDIA_BUCKET_ENDPOINT',
+    'MEDIA_BUCKET_SECRET_ACCESS_KEY',
+  ] as const) {
+    if (!environment[key]) {
+      context.addIssue({
+        code: 'custom',
+        message: `${key} is required when media storage is enabled`,
+        path: [key],
+      });
+    }
+  }
+  if (
+    (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
+    environment.MEDIA_BUCKET_ENDPOINT &&
+    new URL(environment.MEDIA_BUCKET_ENDPOINT).protocol !== 'https:'
+  )
+    context.addIssue({
+      code: 'custom',
+      message: 'MEDIA_BUCKET_ENDPOINT must use HTTPS outside local development',
+      path: ['MEDIA_BUCKET_ENDPOINT'],
+    });
+}
+
 function urlWithProtocol(protocols: readonly string[], name: string) {
   return z
     .string()
@@ -142,8 +203,10 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
     REFRESH_TOKEN_TTL_DAYS: positiveIntegerSchema.max(90).default(30),
     SWAGGER_ENABLED: booleanEnvironmentSchema.default(false),
     TRUST_PROXY: trustProxySchema,
+    ...mediaStorageEnvironment,
   })
   .superRefine((environment, context) => {
+    validateMediaStorage(environment, context);
     if (
       (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
       environment.NODE_ENV !== 'production'
@@ -202,8 +265,12 @@ export const workerEnvironmentSchema = serviceEnvironmentSchema
     WORKER_HOST: z.string().min(1).default('0.0.0.0'),
     WORKER_PORT: portSchema.default(3001),
     WORKER_SHUTDOWN_TIMEOUT_MS: durationSchema.default(10_000),
+    MEDIA_RETENTION_INTERVAL_MS: durationSchema.default(60_000),
+    MEDIA_RETENTION_BATCH_SIZE: positiveIntegerSchema.max(1_000).default(100),
+    ...mediaStorageEnvironment,
   })
   .superRefine((environment, context) => {
+    validateMediaStorage(environment, context);
     if (
       (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
       environment.NODE_ENV !== 'production'

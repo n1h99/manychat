@@ -52,4 +52,25 @@ describe('automation graph validation', () => {
     });
     expect(result.errors).toContain('Delay node delay requires a positive integer delaySeconds');
   });
+
+  it('requires pinned versions for templates and subflows', () => {
+    const result = validateScenarioGraph({
+      edges: [
+        { from: 'trigger', to: 'template' },
+        { from: 'template', to: 'subflow' },
+      ],
+      nodes: [
+        { id: 'trigger', type: 'INCOMING_MESSAGE' },
+        { config: { templateId: 'template-a' }, id: 'template', type: 'SEND_TEMPLATE' },
+        { config: { scenarioId: 'scenario-a' }, id: 'subflow', type: 'START_SUBFLOW' },
+      ],
+    });
+
+    expect(result.errors).toContain(
+      'Send Template node template requires a pinned template version',
+    );
+    expect(result.errors).toContain(
+      'Subflow node subflow requires a pinned published scenario version',
+    );
+  });
 });

@@ -27,6 +27,10 @@ describe('seed project role backfill', () => {
         'broadcasts:launch',
         'broadcasts:pause',
         'broadcasts:cancel',
+        'media:read',
+        'media:manage',
+        'templates:read',
+        'templates:manage',
       ].map((code) => [code, `permission-${code}`]),
     );
     const upsertPermission = vi.fn().mockResolvedValue(undefined);

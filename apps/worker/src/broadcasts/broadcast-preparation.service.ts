@@ -15,6 +15,7 @@ import {
   type TelegramOutboundJob,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
+import { renderMessageTemplateContent } from '@omnicus/media-core';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
@@ -164,6 +165,20 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
       for (const recipient of pending) {
         const identity = identityById.get(recipient.channelIdentityId);
         if (!identity) continue;
+        const rendered = renderMessageTemplateContent(broadcast.content, {
+          contact: identity.contact,
+        });
+        if (rendered.missing.length) {
+          await this.database.client.broadcastRecipient.updateMany({
+            data: {
+              completedAt: new Date(),
+              lastError: 'broadcast_template_variable_missing',
+              status: 'FAILED',
+            },
+            where: { id: recipient.id, projectId, status: 'PENDING' },
+          });
+          continue;
+        }
         const outboxId = await this.database.client.$transaction(async (tx) => {
           const current = await tx.broadcast.findUnique({
             where: { projectId_id: { id: broadcastId, projectId } },
@@ -193,10 +208,15 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
               contactId: recipient.contactId,
               conversationId: conversation.id,
               direction: 'OUTBOUND',
-              type: 'TEXT',
+              type: this.messageType(rendered.content),
+              mediaAssetId: this.mediaAssetId(rendered.content),
               status: 'QUEUED',
-              content: current.content as Prisma.InputJsonValue,
-              metadata: { broadcastId, broadcastRecipientId: recipient.id },
+              content: rendered.content as Prisma.InputJsonValue,
+              metadata: {
+                broadcastId,
+                broadcastRecipientId: recipient.id,
+                templateVersionId: current.templateVersionId,
+              },
             },
           });
           const outbox = await tx.outboxRecord.create({
@@ -221,6 +241,7 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
         });
         if (outboxId) await this.enqueue(outboxId);
       }
+      await this.completeIfTerminal(projectId, broadcastId);
     } catch {
       await this.database.client.broadcast.updateMany({
         where: { id: broadcastId, projectId, status: 'PREPARING', preparationLockedBy: lease },
@@ -281,8 +302,50 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
         status: 'ACTIVE',
         contact: { is: contact },
       },
-      select: { id: true, contactId: true, externalUserId: true },
+      select: {
+        id: true,
+        contactId: true,
+        externalUserId: true,
+        contact: {
+          select: {
+            customFields: true,
+            displayName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            username: true,
+          },
+        },
+      },
     });
+  }
+
+  private async completeIfTerminal(projectId: string, broadcastId: string): Promise<void> {
+    const nonTerminal = await this.database.client.broadcastRecipient.count({
+      where: {
+        broadcastId,
+        projectId,
+        status: { in: ['PENDING', 'QUEUED', 'PROCESSING'] },
+      },
+    });
+    if (nonTerminal === 0)
+      await this.database.client.broadcast.updateMany({
+        data: { completedAt: new Date(), status: 'COMPLETED' },
+        where: { id: broadcastId, projectId, status: 'RUNNING' },
+      });
+  }
+
+  private mediaAssetId(content: unknown): string | null {
+    if (!content || typeof content !== 'object' || Array.isArray(content)) return null;
+    const value = (content as Record<string, Prisma.JsonValue>).mediaAssetId;
+    return typeof value === 'string' ? value : null;
+  }
+
+  private messageType(content: unknown): 'DOCUMENT' | 'PHOTO' | 'TEXT' {
+    if (!content || typeof content !== 'object' || Array.isArray(content)) return 'TEXT';
+    const kind = (content as Record<string, Prisma.JsonValue>).kind;
+    return kind === 'PHOTO' || kind === 'DOCUMENT' ? kind : 'TEXT';
   }
 
   private async segmentWhere(

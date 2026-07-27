@@ -10,6 +10,7 @@ import { TelegramInboundModule } from './telegram-inbound/telegram-inbound.modul
 import { TelegramOutboundModule } from './telegram-outbound/telegram-outbound.module';
 import { WorkerHealthController } from './worker-health.controller';
 import { BroadcastsModule } from './broadcasts/broadcasts.module';
+import { MediaModule } from './media/media.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -32,6 +33,7 @@ const rootEnvFile =
     TelegramInboundModule,
     TelegramOutboundModule,
     BroadcastsModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

@@ -6,6 +6,7 @@ export const automationNodeTypes = [
   'ADD_TAG',
   'REMOVE_TAG',
   'SEND_MESSAGE',
+  'SEND_TEMPLATE',
   'CREATE_OR_UPDATE_LEAD',
   'FORWARD_TO_CRM',
   'SET_CUSTOM_FIELD',
@@ -140,8 +141,19 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
         errors.push(`Wait for Reply node ${node.id} requires a positive integer timeoutSeconds`);
       }
     }
-    if (node.type === 'START_SUBFLOW' && typeof node.config.scenarioId !== 'string') {
-      errors.push(`Subflow node ${node.id} requires a scenarioId`);
+    if (
+      node.type === 'START_SUBFLOW' &&
+      (typeof node.config.scenarioId !== 'string' ||
+        typeof node.config.scenarioVersionId !== 'string')
+    ) {
+      errors.push(`Subflow node ${node.id} requires a pinned published scenario version`);
+    }
+    if (
+      node.type === 'SEND_TEMPLATE' &&
+      (typeof node.config.templateId !== 'string' ||
+        typeof node.config.templateVersionId !== 'string')
+    ) {
+      errors.push(`Send Template node ${node.id} requires a pinned template version`);
     }
   }
 

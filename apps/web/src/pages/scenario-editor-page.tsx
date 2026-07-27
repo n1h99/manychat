@@ -8,107 +8,89 @@ import {
   useNodesState,
   type Connection,
   type Edge,
-  type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { validateScenarioGraph } from '@omnicus/automation-core';
 import {
+  Alert,
   Button,
   Card,
   Col,
+  Descriptions,
+  Drawer,
   Form,
   Input,
+  InputNumber,
   Result,
   Row,
+  Select,
   Space,
   Spin,
   Table,
+  Tag,
+  Timeline,
   Typography,
   message,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
+import { AutomationNodeConfig } from '../automation-node-config';
+import {
+  type AutomationEdgeData,
+  flowToScenarioGraph,
+  scenarioGraphToFlow,
+} from '../automation-editor-graph';
 import {
   emptyScenarioGraph,
-  type ScenarioGraph,
+  type ScenarioExecution,
   useScenario,
   useScenarioExecutions,
   useScenarioMutations,
+  useScenarios,
 } from '../automation-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { useTemplates } from '../templates-api';
 
 const palette = [
-  ['INCOMING_MESSAGE', 'Incoming Message'],
+  ['INCOMING_MESSAGE', 'Incoming message'],
   ['CONDITION', 'Condition'],
-  ['SEND_MESSAGE', 'Send Message'],
-  ['ADD_TAG', 'Add Tag'],
-  ['REMOVE_TAG', 'Remove Tag'],
-  ['SET_CUSTOM_FIELD', 'Set Custom Field'],
+  ['SEND_MESSAGE', 'Send message'],
+  ['SEND_TEMPLATE', 'Send template'],
+  ['ADD_TAG', 'Add tag'],
+  ['REMOVE_TAG', 'Remove tag'],
+  ['SET_CUSTOM_FIELD', 'Set custom field'],
   ['DELAY', 'Delay'],
-  ['WAIT_FOR_REPLY', 'Wait for Reply'],
+  ['WAIT_FOR_REPLY', 'Wait for reply'],
   ['START_SUBFLOW', 'Subflow'],
-  ['PAUSE_AUTOMATION', 'Pause Automation'],
-  ['RESUME_AUTOMATION', 'Resume Automation'],
+  ['PAUSE_AUTOMATION', 'Pause automation'],
+  ['RESUME_AUTOMATION', 'Resume automation'],
   ['STOP', 'Stop'],
 ] as const;
-
-function toFlow(graph: ScenarioGraph): { edges: Edge[]; nodes: Node[] } {
-  return {
-    edges: graph.edges.map((edge, index) => ({
-      id: edge.id ?? `edge-${index}-${edge.from}-${edge.to}`,
-      label: edge.output && edge.output !== 'default' ? edge.output : undefined,
-      source: edge.from,
-      target: edge.to,
-    })),
-    nodes: graph.nodes.map((node) => ({
-      data: { label: node.type },
-      id: node.id,
-      position: node.position ?? { x: 0, y: 0 },
-      type: 'default',
-    })),
-  };
-}
-
-function toGraph(
-  nodes: Node[],
-  edges: Edge[],
-  configs: Record<string, Record<string, unknown>>,
-): ScenarioGraph {
-  return {
-    edges: edges.map((edge) => ({
-      from: edge.source,
-      id: edge.id,
-      output: typeof edge.label === 'string' ? edge.label : 'default',
-      to: edge.target,
-    })),
-    nodes: nodes.map((node) => ({
-      config: configs[node.id] ?? {},
-      id: node.id,
-      position: node.position,
-      type: String(node.data.label),
-    })),
-  };
-}
 
 export function ScenarioEditorPage() {
   const { projectId, scenarioId } = useParams();
   const navigate = useNavigate();
   const access = useProjectAccess(projectId);
   const scenarioQuery = useScenario(projectId, scenarioId === 'new' ? undefined : scenarioId);
+  const scenarios = useScenarios(projectId);
+  const templates = useTemplates(projectId);
   const executions = useScenarioExecutions(projectId, scenarioId);
   const mutations = useScenarioMutations(projectId);
   const [form] = Form.useForm<{ description?: string; name: string }>();
-  const initial = useMemo(() => toFlow(emptyScenarioGraph), []);
+  const initial = useMemo(() => scenarioGraphToFlow(emptyScenarioGraph), []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const [configs, setConfigs] = useState<Record<string, Record<string, unknown>>>({});
   const [selectedId, setSelectedId] = useState<string>();
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
+  const [inspectedExecution, setInspectedExecution] = useState<ScenarioExecution>();
 
   useEffect(() => {
     const scenario = scenarioQuery.data;
-    const graph = scenario?.draftVersion?.graph;
+    const graph = scenario?.draftVersion?.graph ?? scenario?.activeVersion?.graph;
     if (!graph || !scenario) return;
-    const flow = toFlow(graph);
+    const flow = scenarioGraphToFlow(graph);
     setNodes(flow.nodes);
     setEdges(flow.edges);
     setConfigs(Object.fromEntries(graph.nodes.map((node) => [node.id, node.config ?? {}])));
@@ -127,8 +109,12 @@ export function ScenarioEditorPage() {
         subTitle="Automation editing permission is required."
       />
     );
+
+  const graph = flowToScenarioGraph(nodes, edges, configs);
+  const validation = validateScenarioGraph(graph);
   const selected = nodes.find((node) => node.id === selectedId);
-  const selectedConfig = selected ? (configs[selected.id] ?? {}) : {};
+  const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
+
   const addNode = (type: string) => {
     const id = `${type.toLowerCase()}-${crypto.randomUUID().slice(0, 8)}`;
     setNodes((current) => [
@@ -136,7 +122,7 @@ export function ScenarioEditorPage() {
       {
         data: { label: type },
         id,
-        position: { x: 140 + current.length * 40, y: 140 + current.length * 30 },
+        position: { x: 140 + current.length * 45, y: 120 + current.length * 35 },
         type: 'default',
       },
     ]);
@@ -150,12 +136,43 @@ export function ScenarioEditorPage() {
             : {},
     }));
   };
+
   const connect = (connection: Connection) => {
     if (!connection.source || !connection.target) return;
-    setEdges((current) => addEdge({ ...connection, label: 'default' }, current));
+    const source = nodes.find((node) => node.id === connection.source);
+    const outgoing = edges.filter((edge) => edge.source === connection.source);
+    const sourceType = String(source?.data.label);
+    if (sourceType !== 'CONDITION' && sourceType !== 'WAIT_FOR_REPLY' && outgoing.length) {
+      void message.warning('This output already has an active connection.');
+      return;
+    }
+    const data: AutomationEdgeData =
+      sourceType === 'CONDITION'
+        ? {
+            condition: { field: 'message.text', operator: 'exists' },
+            output: `branch-${outgoing.length + 1}`,
+            priority: outgoing.length,
+          }
+        : sourceType === 'WAIT_FOR_REPLY'
+          ? { output: outgoing.length === 0 ? 'reply' : 'timeout' }
+          : { output: 'default' };
+    setEdges((current) =>
+      addEdge(
+        {
+          ...connection,
+          data,
+          label: data.output === 'default' ? undefined : data.output,
+        },
+        current,
+      ),
+    );
   };
+
   const save = async (values: { description?: string; name: string }) => {
-    const graph = toGraph(nodes, edges, configs);
+    if (validation.errors.length) {
+      void message.error('Fix graph validation errors before saving.');
+      return;
+    }
     try {
       if (scenarioQuery.data)
         await mutations.update.mutateAsync({ id: scenarioQuery.data.id, ...values, graph });
@@ -163,33 +180,34 @@ export function ScenarioEditorPage() {
         const created = await mutations.create.mutateAsync({ ...values, graph });
         void navigate(`/projects/${projectId}/scenarios/${created.id}`);
       }
-      void message.success('Черновик сохранён.');
+      void message.success('Scenario draft saved.');
     } catch {
-      void message.error('Не удалось сохранить сценарий. Проверьте настройки узлов.');
+      void message.error('Scenario could not be saved.');
     }
   };
+
   return (
     <section>
-      <Typography.Title level={2}>{scenarioQuery.data?.name ?? 'Новый сценарий'}</Typography.Title>
+      <Typography.Title level={2}>{scenarioQuery.data?.name ?? 'New scenario'}</Typography.Title>
       <Form form={form} initialValues={{ name: '' }} layout="vertical" onFinish={save}>
         <Row gutter={16}>
           <Col span={12}>
-            <Form.Item label="Название" name="name" rules={[{ required: true }]}>
+            <Form.Item label="Name" name="name" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item label="Описание" name="description">
+            <Form.Item label="Description" name="description">
               <Input />
             </Form.Item>
           </Col>
         </Row>
         <Row gutter={16}>
           <Col span={5}>
-            <Card size="small" title="Узлы">
+            <Card size="small" title="Node palette">
               <Space direction="vertical" style={{ width: '100%' }}>
                 {palette.map(([type, label]) => (
-                  <Button key={type} onClick={() => addNode(type)}>
+                  <Button block key={type} onClick={() => addNode(type)}>
                     {label}
                   </Button>
                 ))}
@@ -197,14 +215,21 @@ export function ScenarioEditorPage() {
             </Card>
           </Col>
           <Col span={14}>
-            <div aria-label="Scenario canvas" style={{ border: '1px solid #d9d9d9', height: 520 }}>
+            <div aria-label="Scenario canvas" style={{ border: '1px solid #d9d9d9', height: 560 }}>
               <ReactFlow
                 edges={edges}
                 fitView
                 nodes={nodes}
                 onConnect={connect}
+                onEdgeClick={(_, edge) => {
+                  setSelectedEdgeId(edge.id);
+                  setSelectedId(undefined);
+                }}
                 onEdgesChange={onEdgesChange}
-                onNodeClick={(_, node) => setSelectedId(node.id)}
+                onNodeClick={(_, node) => {
+                  setSelectedId(node.id);
+                  setSelectedEdgeId(undefined);
+                }}
                 onNodesChange={onNodesChange}
               >
                 <Background />
@@ -214,26 +239,47 @@ export function ScenarioEditorPage() {
             </div>
           </Col>
           <Col span={5}>
-            <Card size="small" title="Настройки узла">
+            <Card size="small" title={selected ? 'Node settings' : 'Edge settings'}>
               {selected ? (
                 <>
-                  <Typography.Text>{String(selected.data.label)}</Typography.Text>
-                  <Input.TextArea
-                    aria-label="Node configuration JSON"
-                    autoSize={{ minRows: 10 }}
-                    value={JSON.stringify(selectedConfig, null, 2)}
-                    onChange={(event) => {
-                      try {
-                        const config = JSON.parse(event.target.value) as Record<string, unknown>;
-                        setConfigs((current) => ({ ...current, [selected.id]: config }));
-                      } catch {
-                        /* incomplete JSON stays uncommitted */
-                      }
-                    }}
+                  <Tag>{String(selected.data.label)}</Tag>
+                  <AutomationNodeConfig
+                    config={configs[selected.id] ?? {}}
+                    nodeType={String(selected.data.label)}
+                    onChange={(config) =>
+                      setConfigs((current) => ({ ...current, [selected.id]: config }))
+                    }
+                    scenarios={scenarios.data ?? []}
+                    templates={templates.data ?? []}
                   />
+                  {String(selected.data.label) !== 'INCOMING_MESSAGE' ? (
+                    <Button
+                      danger
+                      onClick={() => {
+                        setNodes((current) => current.filter((node) => node.id !== selected.id));
+                        setEdges((current) =>
+                          current.filter(
+                            (edge) => edge.source !== selected.id && edge.target !== selected.id,
+                          ),
+                        );
+                        setSelectedId(undefined);
+                      }}
+                    >
+                      Delete node
+                    </Button>
+                  ) : null}
                 </>
+              ) : selectedEdge ? (
+                <EdgeConfiguration
+                  edge={selectedEdge}
+                  onChange={(next) =>
+                    setEdges((current) =>
+                      current.map((edge) => (edge.id === next.id ? next : edge)),
+                    )
+                  }
+                />
               ) : (
-                'Выберите узел на canvas.'
+                <Typography.Text type="secondary">Select a node or edge.</Typography.Text>
               )}
             </Card>
           </Col>
@@ -244,21 +290,70 @@ export function ScenarioEditorPage() {
             loading={mutations.create.isPending || mutations.update.isPending}
             type="primary"
           >
-            Сохранить черновик
+            Save draft
           </Button>
           {scenarioQuery.data ? (
             <Button
+              disabled={validation.errors.length > 0}
               loading={mutations.publish.isPending}
               onClick={() => void mutations.publish.mutateAsync(scenarioQuery.data!.id)}
             >
-              Опубликовать
+              Publish
             </Button>
           ) : null}
         </Space>
       </Form>
+      <Space direction="vertical" style={{ marginTop: 16, width: '100%' }}>
+        {validation.errors.length ? (
+          <Alert
+            description={validation.errors.map((error) => (
+              <div key={error}>{error}</div>
+            ))}
+            message="Graph cannot be published"
+            showIcon
+            type="error"
+          />
+        ) : (
+          <Alert message="Graph validation passed" showIcon type="success" />
+        )}
+        {validation.warnings.length ? (
+          <Alert description={validation.warnings.join('; ')} message="Warnings" type="warning" />
+        ) : null}
+      </Space>
       {scenarioQuery.data ? (
-        <section className="section-actions">
-          <Typography.Title level={4}>Execution journal</Typography.Title>
+        <>
+          <Typography.Title level={4}>Version history</Typography.Title>
+          <Table
+            columns={[
+              { dataIndex: 'version', title: 'Version' },
+              { dataIndex: 'status', title: 'Status', render: (value) => <Tag>{value}</Tag> },
+              {
+                dataIndex: 'publishedAt',
+                title: 'Published',
+                render: (value) => (value ? new Date(value).toLocaleString() : '—'),
+              },
+              {
+                key: 'restore',
+                render: (_, version) => (
+                  <Button
+                    onClick={() =>
+                      void mutations.restoreVersion.mutateAsync({
+                        scenarioId: scenarioQuery.data!.id,
+                        versionId: version.id,
+                      })
+                    }
+                    size="small"
+                  >
+                    Restore to draft
+                  </Button>
+                ),
+              },
+            ]}
+            dataSource={scenarioQuery.data.versions ?? []}
+            pagination={false}
+            rowKey="id"
+          />
+          <Typography.Title level={4}>Execution inspector</Typography.Title>
           <Table
             columns={[
               {
@@ -266,21 +361,133 @@ export function ScenarioEditorPage() {
                 render: (value) => new Date(value).toLocaleString(),
                 title: 'Started',
               },
-              { dataIndex: 'status', title: 'Status' },
+              { dataIndex: 'status', title: 'Status', render: (value) => <Tag>{value}</Tag> },
               {
-                dataIndex: 'nodeExecutions',
-                render: (items: Array<{ nodeId: string; status: string }>) =>
-                  items.map((item) => `${item.nodeId}: ${item.status}`).join(', ') || '—',
-                title: 'Nodes',
+                dataIndex: 'currentNodeId',
+                title: 'Current node',
+                render: (value) => value ?? '—',
               },
             ]}
             dataSource={executions.data ?? []}
             loading={executions.isLoading}
+            onRow={(record) => ({ onClick: () => setInspectedExecution(record) })}
             pagination={false}
             rowKey="id"
           />
-        </section>
+        </>
       ) : null}
+      <Drawer
+        onClose={() => setInspectedExecution(undefined)}
+        open={Boolean(inspectedExecution)}
+        title="Execution details"
+        width={520}
+      >
+        {inspectedExecution ? (
+          <>
+            <Descriptions
+              column={1}
+              items={[
+                { children: inspectedExecution.id, key: 'id', label: 'Execution' },
+                { children: inspectedExecution.status, key: 'status', label: 'Status' },
+                {
+                  children: inspectedExecution.currentNodeId ?? '—',
+                  key: 'current',
+                  label: 'Current node',
+                },
+              ]}
+            />
+            <Timeline
+              items={inspectedExecution.nodeExecutions.map((node) => ({
+                children: (
+                  <Space direction="vertical" size={0}>
+                    <Typography.Text strong>{node.nodeId}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {node.nodeType} · {node.status} · attempt {node.attempt}
+                    </Typography.Text>
+                  </Space>
+                ),
+                color:
+                  node.status === 'SUCCEEDED' ? 'green' : node.status === 'FAILED' ? 'red' : 'blue',
+              }))}
+            />
+          </>
+        ) : null}
+      </Drawer>
     </section>
+  );
+}
+
+function EdgeConfiguration({ edge, onChange }: { edge: Edge; onChange(edge: Edge): void }) {
+  const data = (edge.data ?? {}) as AutomationEdgeData;
+  const update = (next: Partial<AutomationEdgeData>) => {
+    const merged = { ...data, ...next };
+    onChange({
+      ...edge,
+      data: merged,
+      label: merged.output === 'default' ? undefined : merged.output,
+    });
+  };
+  return (
+    <Space direction="vertical" style={{ width: '100%' }}>
+      <Form.Item label="Output port">
+        <Input onChange={(event) => update({ output: event.target.value })} value={data.output} />
+      </Form.Item>
+      {data.priority !== undefined ? (
+        <>
+          <Form.Item label="Branch priority">
+            <InputNumber
+              min={0}
+              onChange={(value) => update({ priority: value ?? 0 })}
+              value={data.priority}
+            />
+          </Form.Item>
+          <Form.Item label="Field">
+            <Input
+              onChange={(event) =>
+                update({
+                  condition: {
+                    field: event.target.value,
+                    operator: data.condition?.operator ?? 'exists',
+                    value: data.condition?.value,
+                  },
+                })
+              }
+              value={data.condition?.field}
+            />
+          </Form.Item>
+          <Form.Item label="Operator">
+            <Select
+              onChange={(operator) =>
+                update({
+                  condition: {
+                    field: data.condition?.field ?? 'message.text',
+                    operator: operator ?? 'exists',
+                    value: data.condition?.value,
+                  },
+                })
+              }
+              options={['equals', 'not_equals', 'contains', 'exists', 'not_exists'].map(
+                (value) => ({ label: value, value }),
+              )}
+              value={data.condition?.operator}
+            />
+          </Form.Item>
+          <Form.Item label="Value">
+            <Input
+              onChange={(event) =>
+                update({
+                  condition: {
+                    field: data.condition?.field ?? 'message.text',
+                    operator: data.condition?.operator ?? 'equals',
+                    value: event.target.value,
+                  },
+                })
+              }
+              value={typeof data.condition?.value === 'string' ? data.condition.value : undefined}
+            />
+          </Form.Item>
+        </>
+      ) : null}
+    </Space>
   );
 }

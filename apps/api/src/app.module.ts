@@ -16,6 +16,8 @@ import { ChannelsModule } from './channels/channels.module';
 import { AutomationModule } from './automation/automation.module';
 import { CrmModule } from './crm/crm.module';
 import { BroadcastsModule } from './broadcasts/broadcasts.module';
+import { MediaModule } from './media/media.module';
+import { TemplatesModule } from './templates/templates.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -43,6 +45,8 @@ const rootEnvFile =
     AutomationModule,
     CrmModule,
     BroadcastsModule,
+    MediaModule,
+    TemplatesModule,
   ],
 })
 export class AppModule implements NestModule {

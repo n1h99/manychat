@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@omnicus/database';
+import { renderMessageTemplateContent } from '@omnicus/media-core';
 
 import { AuditService } from '../audit/audit.service';
 import type { RequestSecurityContext } from '../auth/auth.service';
@@ -60,6 +61,9 @@ export class BroadcastsService {
   async create(projectId: string, dto: CreateBroadcastDto, context: AuditContext) {
     this.assertAudience(dto.audience);
     await this.assertConnection(projectId, dto.connectionId);
+    const templateVersion = dto.templateVersionId
+      ? await this.templateVersion(projectId, dto.templateVersionId)
+      : undefined;
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
     if (scheduledAt && scheduledAt.getTime() <= Date.now())
       throw new BadRequestException({
@@ -71,10 +75,13 @@ export class BroadcastsService {
         data: {
           audience: dto.audience as unknown as Prisma.InputJsonValue,
           connectionId: dto.connectionId,
-          content: { text: dto.text },
+          content: templateVersion
+            ? this.templateSnapshot(templateVersion)
+            : { kind: 'TEXT', text: dto.text! },
           createdById: context.actorUserId,
           name: dto.name.trim(),
           projectId,
+          templateVersionId: templateVersion?.id ?? null,
           scheduledAt,
           status: scheduledAt ? 'SCHEDULED' : 'DRAFT',
         },
@@ -119,6 +126,9 @@ export class BroadcastsService {
         message: 'Broadcast is not editable',
       });
     if (dto.audience) this.assertAudience(dto.audience);
+    const templateVersion = dto.templateVersionId
+      ? await this.templateVersion(projectId, dto.templateVersionId)
+      : undefined;
     const scheduledAt =
       dto.scheduledAt === undefined
         ? undefined
@@ -135,7 +145,14 @@ export class BroadcastsService {
       data: {
         ...(dto.audience ? { audience: dto.audience as unknown as Prisma.InputJsonValue } : {}),
         ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
-        ...(dto.text === undefined ? {} : { content: { text: dto.text } }),
+        ...(templateVersion
+          ? {
+              content: this.templateSnapshot(templateVersion),
+              templateVersionId: templateVersion.id,
+            }
+          : dto.text === undefined
+            ? {}
+            : { content: { kind: 'TEXT', text: dto.text }, templateVersionId: null }),
         ...(scheduledAt === undefined
           ? {}
           : { scheduledAt, status: scheduledAt ? 'SCHEDULED' : 'DRAFT' }),
@@ -385,6 +402,22 @@ export class BroadcastsService {
     });
     const outboxIds: string[] = [];
     for (const recipient of pending) {
+      const identity = identities.find((candidate) => candidate.id === recipient.channelIdentityId);
+      if (!identity) continue;
+      const rendered = renderMessageTemplateContent(broadcast.content, {
+        contact: identity.contact,
+      });
+      if (rendered.missing.length) {
+        await this.database.client.broadcastRecipient.updateMany({
+          data: {
+            completedAt: new Date(),
+            lastError: 'broadcast_template_variable_missing',
+            status: 'FAILED',
+          },
+          where: { id: recipient.id, projectId, status: 'PENDING' },
+        });
+        continue;
+      }
       const result = await this.database.client.$transaction(async (tx) => {
         const current = await tx.broadcast.findUnique({
           where: { projectId_id: { id: broadcastId, projectId } },
@@ -395,18 +428,14 @@ export class BroadcastsService {
             projectId_connectionId_externalChatId: {
               projectId,
               connectionId: broadcast.connectionId,
-              externalChatId:
-                identities.find((identity) => identity.id === recipient.channelIdentityId)
-                  ?.externalUserId ?? '',
+              externalChatId: identity.externalUserId,
             },
           },
           create: {
             projectId,
             connectionId: broadcast.connectionId,
             contactId: recipient.contactId,
-            externalChatId:
-              identities.find((identity) => identity.id === recipient.channelIdentityId)
-                ?.externalUserId ?? '',
+            externalChatId: identity.externalUserId,
             status: 'ACTIVE',
           },
           update: {},
@@ -418,10 +447,15 @@ export class BroadcastsService {
             contactId: recipient.contactId,
             conversationId: conversation.id,
             direction: 'OUTBOUND',
-            type: 'TEXT',
+            type: this.messageType(rendered.content),
+            mediaAssetId: this.mediaAssetId(rendered.content),
             status: 'QUEUED',
-            content: current.content as Prisma.InputJsonValue,
-            metadata: { broadcastId, broadcastRecipientId: recipient.id },
+            content: rendered.content as Prisma.InputJsonValue,
+            metadata: {
+              broadcastId,
+              broadcastRecipientId: recipient.id,
+              templateVersionId: current.templateVersionId,
+            },
           },
         });
         const outbox = await tx.outboxRecord.create({
@@ -448,6 +482,7 @@ export class BroadcastsService {
       if (result) outboxIds.push(result);
     }
     await this.enqueue(outboxIds);
+    await this.completeIfTerminal(projectId, broadcastId);
     return outboxIds.length;
   }
 
@@ -472,8 +507,38 @@ export class BroadcastsService {
   private async audienceIdentities(projectId: string, connectionId: string, audience: Audience) {
     return this.database.client.channelIdentity.findMany({
       where: await this.audienceWhere(projectId, connectionId, audience),
-      select: { id: true, contactId: true, externalUserId: true },
+      select: {
+        id: true,
+        contactId: true,
+        externalUserId: true,
+        contact: {
+          select: {
+            customFields: true,
+            displayName: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            username: true,
+          },
+        },
+      },
     });
+  }
+
+  private async completeIfTerminal(projectId: string, broadcastId: string): Promise<void> {
+    const nonTerminal = await this.database.client.broadcastRecipient.count({
+      where: {
+        broadcastId,
+        projectId,
+        status: { in: ['PENDING', 'QUEUED', 'PROCESSING'] },
+      },
+    });
+    if (nonTerminal === 0)
+      await this.database.client.broadcast.updateMany({
+        data: { completedAt: new Date(), status: 'COMPLETED' },
+        where: { id: broadcastId, projectId, status: 'RUNNING' },
+      });
   }
 
   private async audienceWhere(
@@ -626,13 +691,59 @@ export class BroadcastsService {
     };
   }
 
+  private async templateVersion(projectId: string, templateVersionId: string) {
+    const version = await this.database.client.messageTemplateVersion.findFirst({
+      where: {
+        id: templateVersionId,
+        projectId,
+        status: 'PUBLISHED',
+        template: { status: 'PUBLISHED' },
+      },
+    });
+    if (!version)
+      throw new BadRequestException({
+        code: 'BROADCAST_TEMPLATE_VERSION_INVALID',
+        message: 'A published template version is required',
+      });
+    return version;
+  }
+
+  private templateSnapshot(version: {
+    content: Prisma.JsonValue;
+    id: string;
+    kind: 'DOCUMENT' | 'PHOTO' | 'TEXT';
+    mediaAssetId: string | null;
+    templateId: string;
+  }): Prisma.InputJsonValue {
+    return {
+      ...(version.content as object),
+      kind: version.kind,
+      mediaAssetId: version.mediaAssetId,
+      templateId: version.templateId,
+      templateVersionId: version.id,
+    } as Prisma.InputJsonValue;
+  }
+
+  private mediaAssetId(content: unknown): string | null {
+    if (!content || typeof content !== 'object' || Array.isArray(content)) return null;
+    const value = (content as Record<string, Prisma.JsonValue>).mediaAssetId;
+    return typeof value === 'string' ? value : null;
+  }
+
+  private messageType(content: unknown): 'DOCUMENT' | 'PHOTO' | 'TEXT' {
+    if (!content || typeof content !== 'object' || Array.isArray(content)) return 'TEXT';
+    const kind = (content as Record<string, Prisma.JsonValue>).kind;
+    return kind === 'PHOTO' || kind === 'DOCUMENT' ? kind : 'TEXT';
+  }
+
   private text(value: Prisma.JsonValue): string {
-    return value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      typeof (value as { text?: unknown }).text === 'string'
-      ? (value as { text: string }).text
-      : '';
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+    const content = value as { caption?: unknown; text?: unknown };
+    return typeof content.text === 'string'
+      ? content.text
+      : typeof content.caption === 'string'
+        ? content.caption
+        : '';
   }
 
   private async auditEvent(

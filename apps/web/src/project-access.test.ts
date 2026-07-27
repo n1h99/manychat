@@ -34,4 +34,16 @@ describe('project channel access', () => {
     expect(hasProjectPermission(access, 'broadcasts:read')).toBe(true);
     expect(hasProjectPermission(access, 'broadcasts:launch')).toBe(false);
   });
+
+  it('keeps media and template read/manage permissions distinct', () => {
+    const access = {
+      permissions: ['media:read', 'templates:read'],
+      projectRoleName: 'viewer',
+    };
+
+    expect(hasProjectPermission(access, 'media:read')).toBe(true);
+    expect(hasProjectPermission(access, 'media:manage')).toBe(false);
+    expect(hasProjectPermission(access, 'templates:read')).toBe(true);
+    expect(hasProjectPermission(access, 'templates:manage')).toBe(false);
+  });
 });

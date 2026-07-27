@@ -28,6 +28,10 @@ export const projectPermissions = [
   'broadcasts:launch',
   'broadcasts:pause',
   'broadcasts:cancel',
+  'media:read',
+  'media:manage',
+  'templates:read',
+  'templates:manage',
 ] as const;
 
 export const allPermissionCodes = [...globalPermissions, ...projectPermissions] as const;
@@ -60,12 +64,24 @@ export const systemProjectRoles = [
       'broadcasts:launch',
       'broadcasts:pause',
       'broadcasts:cancel',
+      'media:read',
+      'media:manage',
+      'templates:read',
+      'templates:manage',
     ],
   },
   {
     name: 'Automation Editor',
     normalizedName: 'automation-editor',
-    permissions: ['project:read', 'automation:read', 'automation:manage'],
+    permissions: [
+      'project:read',
+      'automation:read',
+      'automation:manage',
+      'media:read',
+      'media:manage',
+      'templates:read',
+      'templates:manage',
+    ],
   },
   {
     name: 'Integration Manager',
@@ -95,6 +111,13 @@ export const systemProjectRoles = [
   {
     name: 'Viewer',
     normalizedName: 'viewer',
-    permissions: ['project:read', 'contacts:read', 'tags:read', 'automation:read'],
+    permissions: [
+      'project:read',
+      'contacts:read',
+      'tags:read',
+      'automation:read',
+      'media:read',
+      'templates:read',
+    ],
   },
 ] as const;

@@ -35,7 +35,13 @@ export type BroadcastRecipient = {
   contact: { displayName: string };
   channelIdentity: { username: string | null; externalUserId: string };
 };
-type Input = { name: string; connectionId: string; audience: BroadcastAudience; text: string };
+type Input = {
+  name: string;
+  connectionId: string;
+  audience: BroadcastAudience;
+  templateVersionId?: string;
+  text?: string;
+};
 
 export function useBroadcasts(projectId?: string) {
   const { accessToken } = useAuth();

@@ -393,6 +393,26 @@ This slice is Telegram text only. It excludes templates, WhatsApp, Instagram,
 advanced media, analytics funnels and consent workflows beyond the current
 blocked/unsubscribed eligibility guard.
 
+## Telegram media, templates and visual automation completion
+
+This post-broadcast slice adds lazy Telegram photo/document materialization,
+private object storage, signed access, application retention jobs and media
+delivery through the existing transactional outbox. It also adds project-scoped
+text/photo/document templates with immutable published versions and pins those
+versions from scenarios and broadcasts.
+
+The existing React Flow editor is completed with typed node forms, port-aware
+connections, validation feedback, template selection, version history and a
+node-by-node execution inspector. This slice remains Telegram-only and does not
+introduce CRM provider endpoints, WhatsApp, Instagram or deployment.
+
+Implementation additionally preserves branch output/priority/conditions during
+canvas round-trips, pins both template and subflow versions, renders broadcast
+templates per recipient, and rejects save/publish while deterministic graph
+validation has errors. Media remains a provider reference until requested;
+validated materialization, signed delivery and retention all use PostgreSQL
+lifecycle state rather than an in-memory assumption.
+
 ## Pilot NFR
 
 | Requirement                  | Initial target                                                                            |

@@ -88,6 +88,9 @@ const expectedTables = new Set([
   'delayed_actions',
   'broadcasts',
   'broadcast_recipients',
+  'media_assets',
+  'message_templates',
+  'message_template_versions',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -463,6 +466,52 @@ if (
       );
     }
   }
+}
+
+const mediaTemplatesMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260727002750_telegram_media_templates/migration.sql',
+);
+const templateHashIndexMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260727004642_template_content_hash_index/migration.sql',
+);
+if (!existsSync(mediaTemplatesMigrationPath) || !existsSync(templateHashIndexMigrationPath)) {
+  failures.push('Telegram media and template migrations are missing');
+} else {
+  const mediaTemplatesSql = readFileSync(mediaTemplatesMigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  const templateHashIndexSql = readFileSync(templateHashIndexMigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  for (const fragment of [
+    'CREATE TABLE "media_assets"',
+    'CREATE TABLE "message_templates"',
+    'CREATE TABLE "message_template_versions"',
+    '"providerMetadata" JSONB',
+    '"retentionUntil" TIMESTAMPTZ(3)',
+    'FOREIGN KEY ("projectId", "connectionId") REFERENCES "channel_connections"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "mediaAssetId") REFERENCES "media_assets"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "templateVersionId") REFERENCES "message_template_versions"("projectId", "id")',
+    'CREATE UNIQUE INDEX "media_assets_projectId_connectionId_providerMediaId_key"',
+    'CREATE UNIQUE INDEX "message_template_versions_projectId_templateId_version_key"',
+  ]) {
+    if (!mediaTemplatesSql.includes(fragment))
+      failures.push(`Telegram media/template migration is missing invariant: ${fragment}`);
+  }
+  for (const forbidden of ['botToken', 'webhookSecret', 'credentialsEncrypted']) {
+    if (mediaTemplatesSql.includes(forbidden))
+      failures.push(`Telegram media/template migration contains secret material: ${forbidden}`);
+  }
+  if (
+    !templateHashIndexSql.includes(
+      'CREATE INDEX "message_template_versions_projectId_templateId_contentHash_idx"',
+    )
+  )
+    failures.push('Template content hashes are not represented by a non-selector index');
 }
 
 if (!proposalSql.includes('CREATE TABLE "users"')) {

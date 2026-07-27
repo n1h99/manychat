@@ -129,3 +129,28 @@ never exposes request payload, credentials, or provider raw errors.
 
 For a real CRM, use the reconciliation contract in
 `docs/CRM_CONTRACT_REQUIRED.md`; never infer delivery from a timeout alone.
+
+## Telegram media and template assets
+
+`MediaAsset` is the lifecycle source of truth. Inbound Telegram photo/document
+events initially store only `file_id`, safe metadata and
+`PROVIDER_REFERENCE`; an operator materializes the object only when a template
+or durable asset needs it. The API calls `getFile`, enforces the 20 MB
+application limit, checks magic bytes, MIME and extension, and only then writes
+to the private S3-compatible bucket. Provider and bucket credentials must never
+be copied into an incident, database query output or browser state.
+
+`AVAILABLE` objects receive signed URLs only on demand. URLs are short-lived and
+must not be persisted. The worker scans bounded expired assets according to
+`MEDIA_RETENTION_INTERVAL_MS` and `MEDIA_RETENTION_BATCH_SIZE`; assets referenced
+by `PUBLISHED` or `SUPERSEDED` template versions are retained. A bucket outage
+does not delete the PostgreSQL record: failed upload/materialization/delete
+operations remain visible through safe lifecycle status and can be retried
+after storage recovery.
+
+Staging and production require `MEDIA_STORAGE_ENABLED=true` plus
+`MEDIA_BUCKET`, `MEDIA_BUCKET_ENDPOINT`, `MEDIA_BUCKET_REGION`,
+`MEDIA_BUCKET_ACCESS_KEY_ID`, and `MEDIA_BUCKET_SECRET_ACCESS_KEY`. The endpoint
+must be HTTPS outside local development. Railway Bucket is authenticated object
+storage, not a private network; this runbook does not assume native lifecycle,
+versioning or server-side encryption features.

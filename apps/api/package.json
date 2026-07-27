@@ -28,6 +28,7 @@
     "@omnicus/config": "workspace:*",
     "@omnicus/contracts": "workspace:*",
     "@omnicus/database": "workspace:*",
+    "@omnicus/media-core": "workspace:*",
     "@omnicus/shared": "workspace:*",
     "argon2": "0.44.0",
     "bullmq": "5.81.1",

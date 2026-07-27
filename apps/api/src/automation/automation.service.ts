@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { validateScenarioGraph } from '@omnicus/automation-core';
+import { scenarioGraphSchema, validateScenarioGraph } from '@omnicus/automation-core';
 import type { Prisma } from '@omnicus/database';
 
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -75,7 +75,14 @@ export class AutomationService {
         triggerEventId: true,
         nodeExecutions: {
           orderBy: { startedAt: 'asc' },
-          select: { completedAt: true, nodeId: true, nodeType: true, status: true },
+          select: {
+            attempt: true,
+            completedAt: true,
+            nodeId: true,
+            nodeType: true,
+            startedAt: true,
+            status: true,
+          },
         },
       },
       take: 100,
@@ -200,6 +207,8 @@ export class AutomationService {
       });
     const draftVersion = scenario.draftVersion;
     const validation = this.assertValidGraph(draftVersion.graph);
+    await this.assertPinnedTemplates(projectId, draftVersion.graph);
+    await this.assertPinnedSubflows(projectId, scenarioId, draftVersion.graph);
     return this.database.client.$transaction(async (transaction) => {
       if (scenario.activeVersionId)
         await transaction.scenarioVersion.update({
@@ -344,6 +353,66 @@ export class AutomationService {
         message: 'Scenario graph is invalid',
       });
     return validation;
+  }
+
+  private async assertPinnedTemplates(projectId: string, graph: unknown): Promise<void> {
+    const parsed = scenarioGraphSchema.safeParse(graph);
+    if (!parsed.success) return;
+    for (const node of parsed.data.nodes.filter(
+      (candidate) => candidate.type === 'SEND_TEMPLATE',
+    )) {
+      const templateId = node.config.templateId;
+      const templateVersionId = node.config.templateVersionId;
+      if (typeof templateId !== 'string' || typeof templateVersionId !== 'string') continue;
+      const version = await this.database.client.messageTemplateVersion.findFirst({
+        where: {
+          id: templateVersionId,
+          projectId,
+          status: 'PUBLISHED',
+          templateId,
+          template: { status: 'PUBLISHED' },
+        },
+      });
+      if (!version)
+        throw new BadRequestException({
+          code: 'SCENARIO_TEMPLATE_VERSION_INVALID',
+          message: 'Scenario references an unavailable template version',
+        });
+    }
+  }
+
+  private async assertPinnedSubflows(
+    projectId: string,
+    sourceScenarioId: string,
+    graph: unknown,
+  ): Promise<void> {
+    const parsed = scenarioGraphSchema.safeParse(graph);
+    if (!parsed.success) return;
+    for (const node of parsed.data.nodes.filter(
+      (candidate) => candidate.type === 'START_SUBFLOW',
+    )) {
+      const scenarioId = node.config.scenarioId;
+      const scenarioVersionId = node.config.scenarioVersionId;
+      if (typeof scenarioId !== 'string' || typeof scenarioVersionId !== 'string') continue;
+      if (scenarioId === sourceScenarioId)
+        throw new BadRequestException({
+          code: 'SCENARIO_SUBFLOW_SELF_REFERENCE',
+          message: 'A scenario cannot start itself as a subflow',
+        });
+      const version = await this.database.client.scenarioVersion.findFirst({
+        where: {
+          id: scenarioVersionId,
+          projectId,
+          scenarioId,
+          status: 'PUBLISHED',
+        },
+      });
+      if (!version)
+        throw new BadRequestException({
+          code: 'SCENARIO_SUBFLOW_VERSION_INVALID',
+          message: 'Scenario references an unavailable subflow version',
+        });
+    }
   }
 
   private hash(graph: unknown): string {

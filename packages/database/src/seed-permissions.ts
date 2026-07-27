@@ -28,4 +28,8 @@ export const seedProjectPermissions = [
   'broadcasts:launch',
   'broadcasts:pause',
   'broadcasts:cancel',
+  'media:read',
+  'media:manage',
+  'templates:read',
+  'templates:manage',
 ] as const;

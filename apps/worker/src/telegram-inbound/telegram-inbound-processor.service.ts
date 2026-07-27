@@ -254,7 +254,7 @@ export class TelegramInboundProcessorService
           },
         });
         conversationId = conversation.id;
-        await transaction.message.upsert({
+        const message = await transaction.message.upsert({
           create: {
             connectionId: claimed.connectionId,
             contactId: contact.id,
@@ -276,6 +276,49 @@ export class TelegramInboundProcessorService
             },
           },
         });
+        if (event.type === 'PHOTO' || event.type === 'DOCUMENT') {
+          const providerMediaId =
+            typeof event.content.fileId === 'string' ? event.content.fileId : undefined;
+          if (providerMediaId) {
+            const mediaAsset = await transaction.mediaAsset.upsert({
+              create: {
+                connectionId: claimed.connectionId,
+                declaredMimeType:
+                  typeof event.content.mimeType === 'string' ? event.content.mimeType : null,
+                kind: event.type,
+                originalFilename:
+                  typeof event.content.fileName === 'string' ? event.content.fileName : null,
+                projectId: claimed.projectId,
+                providerMediaId,
+                providerMediaUniqueId:
+                  typeof event.content.fileUniqueId === 'string'
+                    ? event.content.fileUniqueId
+                    : null,
+                providerMetadata: event.content as Prisma.InputJsonValue,
+                sizeBytes:
+                  typeof event.content.fileSize === 'number'
+                    ? BigInt(event.content.fileSize)
+                    : null,
+                source: 'TELEGRAM',
+                status: 'PROVIDER_REFERENCE',
+              },
+              update: {
+                providerMetadata: event.content as Prisma.InputJsonValue,
+              },
+              where: {
+                projectId_connectionId_providerMediaId: {
+                  connectionId: claimed.connectionId,
+                  projectId: claimed.projectId,
+                  providerMediaId,
+                },
+              },
+            });
+            await transaction.message.update({
+              data: { mediaAssetId: mediaAsset.id },
+              where: { projectId_id: { id: message.id, projectId: claimed.projectId } },
+            });
+          }
+        }
       }
 
       if (contact && conversationId) {

@@ -156,6 +156,38 @@ enum MessageStatus {
   UNKNOWN
 }
 
+enum MediaAssetSource {
+  USER_UPLOAD
+  TELEGRAM
+}
+
+enum MediaAssetStatus {
+  PROVIDER_REFERENCE
+  PENDING_UPLOAD
+  AVAILABLE
+  REJECTED
+  UNAVAILABLE
+  DELETED
+}
+
+enum MessageTemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MessageTemplateVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+enum MessageTemplateKind {
+  TEXT
+  PHOTO
+  DOCUMENT
+}
+
 enum BroadcastStatus {
   DRAFT
   SCHEDULED
@@ -227,27 +259,28 @@ enum DelayedActionStatus {
 }
 
 model User {
-  id                  String                   @id @default(uuid())
-  email               String
-  normalizedEmail     String                   @unique
-  passwordHash        String
-  firstName           String
-  lastName            String
-  status              UserStatus               @default(ACTIVE)
-  lastLoginAt         DateTime?                @db.Timestamptz(3)
-  createdAt           DateTime                 @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime                 @updatedAt @db.Timestamptz(3)
-  sessions            Session[]
-  passwordResetTokens PasswordResetToken[]
-  globalRoles         GlobalUserRole[]         @relation("GlobalUserRoleUser")
-  globalRolesCreated  GlobalUserRole[]         @relation("GlobalUserRoleCreatedBy")
-  memberships         ProjectMembership[]      @relation("ProjectMembershipUser")
-  membershipsCreated  ProjectMembership[]      @relation("ProjectMembershipCreatedBy")
-  globalInvitesSent   GlobalUserInviteToken[]  @relation("GlobalInviteInvitedBy")
-  projectInvitesSent  ProjectUserInviteToken[] @relation("ProjectInviteInvitedBy")
-  auditLogs           AuditLog[]               @relation("AuditActor")
-  segmentsCreated     Segment[]
-  broadcastsCreated   Broadcast[]
+  id                      String                   @id @default(uuid())
+  email                   String
+  normalizedEmail         String                   @unique
+  passwordHash            String
+  firstName               String
+  lastName                String
+  status                  UserStatus               @default(ACTIVE)
+  lastLoginAt             DateTime?                @db.Timestamptz(3)
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                 @updatedAt @db.Timestamptz(3)
+  sessions                Session[]
+  passwordResetTokens     PasswordResetToken[]
+  globalRoles             GlobalUserRole[]         @relation("GlobalUserRoleUser")
+  globalRolesCreated      GlobalUserRole[]         @relation("GlobalUserRoleCreatedBy")
+  memberships             ProjectMembership[]      @relation("ProjectMembershipUser")
+  membershipsCreated      ProjectMembership[]      @relation("ProjectMembershipCreatedBy")
+  globalInvitesSent       GlobalUserInviteToken[]  @relation("GlobalInviteInvitedBy")
+  projectInvitesSent      ProjectUserInviteToken[] @relation("ProjectInviteInvitedBy")
+  auditLogs               AuditLog[]               @relation("AuditActor")
+  segmentsCreated         Segment[]
+  broadcastsCreated       Broadcast[]
+  messageTemplatesCreated MessageTemplate[]
 
   @@map("users")
 }
@@ -494,6 +527,9 @@ model Project {
   customFieldDefinitions   CustomFieldDefinition[]
   customFieldValues        ContactCustomFieldValue[]
   segments                 Segment[]
+  mediaAssets              MediaAsset[]
+  messageTemplates         MessageTemplate[]
+  messageTemplateVersions  MessageTemplateVersion[]
   channelConnections       ChannelConnection[]
   scenarios                Scenario[]
   scenarioExecutions       ScenarioExecution[]
@@ -598,6 +634,7 @@ model ChannelConnection {
   outboxRecords          OutboxRecord[]
   broadcasts             Broadcast[]
   broadcastRecipients    BroadcastRecipient[]
+  mediaAssets            MediaAsset[]
 
   @@unique([projectId, id])
   @@index([projectId, status])
@@ -888,6 +925,7 @@ model Message {
   conversationId     String
   contactId          String
   normalizedEventId  String?
+  mediaAssetId       String?
   direction          MessageDirection
   type               MessageType
   status             MessageStatus
@@ -902,6 +940,7 @@ model Message {
   connection         ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
   conversation       Conversation        @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
   normalizedEvent    NormalizedEvent?    @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+  mediaAsset         MediaAsset?         @relation(fields: [projectId, mediaAssetId], references: [projectId, id], onDelete: Restrict)
   broadcastRecipient BroadcastRecipient? @relation("BroadcastRecipientMessage")
 
   @@unique([projectId, id])
@@ -909,6 +948,7 @@ model Message {
   @@unique([connectionId, direction, externalMessageId])
   @@index([projectId, conversationId, createdAt])
   @@index([projectId, connectionId, externalMessageId])
+  @@index([projectId, mediaAssetId])
   @@map("messages")
 }
 
@@ -941,35 +981,128 @@ model OutboxRecord {
 }
 
 model Broadcast {
-  id                  String               @id @default(uuid())
+  id                  String                  @id @default(uuid())
   projectId           String
   connectionId        String
+  templateVersionId   String?
   name                String
-  status              BroadcastStatus      @default(DRAFT)
+  status              BroadcastStatus         @default(DRAFT)
   audience            Json
   content             Json
-  scheduledAt         DateTime?            @db.Timestamptz(3)
-  startedAt           DateTime?            @db.Timestamptz(3)
-  completedAt         DateTime?            @db.Timestamptz(3)
-  pausedAt            DateTime?            @db.Timestamptz(3)
-  cancelledAt         DateTime?            @db.Timestamptz(3)
-  failedAt            DateTime?            @db.Timestamptz(3)
+  scheduledAt         DateTime?               @db.Timestamptz(3)
+  startedAt           DateTime?               @db.Timestamptz(3)
+  completedAt         DateTime?               @db.Timestamptz(3)
+  pausedAt            DateTime?               @db.Timestamptz(3)
+  cancelledAt         DateTime?               @db.Timestamptz(3)
+  failedAt            DateTime?               @db.Timestamptz(3)
   errorCode           String?
-  preparationLockedAt DateTime?            @db.Timestamptz(3)
+  preparationLockedAt DateTime?               @db.Timestamptz(3)
   preparationLockedBy String?
   createdById         String?
-  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
-  project             Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  connection          ChannelConnection    @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  createdBy           User?                @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt           DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                @updatedAt @db.Timestamptz(3)
+  project             Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection          ChannelConnection       @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  templateVersion     MessageTemplateVersion? @relation(fields: [projectId, templateVersionId], references: [projectId, id], onDelete: Restrict)
+  createdBy           User?                   @relation(fields: [createdById], references: [id], onDelete: SetNull)
   recipients          BroadcastRecipient[]
 
   @@unique([projectId, id])
   @@unique([projectId, name])
   @@index([projectId, status, scheduledAt])
   @@index([projectId, connectionId, status])
+  @@index([projectId, templateVersionId])
   @@map("broadcasts")
+}
+
+model MediaAsset {
+  id                    String                   @id @default(uuid())
+  projectId             String
+  connectionId          String?
+  source                MediaAssetSource
+  kind                  MessageTemplateKind
+  status                MediaAssetStatus
+  providerMediaId       String?
+  providerMediaUniqueId String?
+  providerMetadata      Json?
+  bucketKey             String?                  @unique
+  originalFilename      String?
+  detectedMimeType      String?
+  declaredMimeType      String?
+  extension             String?
+  sizeBytes             BigInt?
+  checksumSha256        String?
+  retentionUntil        DateTime?                @db.Timestamptz(3)
+  availableAt           DateTime?                @db.Timestamptz(3)
+  rejectedAt            DateTime?                @db.Timestamptz(3)
+  deletedAt             DateTime?                @db.Timestamptz(3)
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                 @updatedAt @db.Timestamptz(3)
+  project               Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection            ChannelConnection?       @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  messages              Message[]
+  templateVersions      MessageTemplateVersion[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, providerMediaId])
+  @@index([projectId, status, retentionUntil])
+  @@index([projectId, connectionId, providerMediaId])
+  @@map("media_assets")
+}
+
+model MessageTemplate {
+  id              String                   @id @default(uuid())
+  projectId       String
+  name            String
+  description     String?
+  status          MessageTemplateStatus    @default(DRAFT)
+  activeVersionId String?
+  draftVersionId  String?
+  createdById     String?
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                 @updatedAt @db.Timestamptz(3)
+  project         Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy       User?                    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  versions        MessageTemplateVersion[] @relation("MessageTemplateVersions")
+  activeVersion   MessageTemplateVersion?  @relation("MessageTemplateActiveVersion", fields: [projectId, id, activeVersionId], references: [projectId, templateId, id], onDelete: Restrict)
+  draftVersion    MessageTemplateVersion?  @relation("MessageTemplateDraftVersion", fields: [projectId, id, draftVersionId], references: [projectId, templateId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, name])
+  @@unique([projectId, id, activeVersionId])
+  @@unique([projectId, id, draftVersionId])
+  @@index([projectId, status, updatedAt])
+  @@map("message_templates")
+}
+
+model MessageTemplateVersion {
+  id           String                       @id @default(uuid())
+  projectId    String
+  templateId   String
+  version      Int
+  status       MessageTemplateVersionStatus @default(DRAFT)
+  kind         MessageTemplateKind
+  content      Json
+  mediaAssetId String?
+  variables    Json                         @default("[]")
+  contentHash  String
+  createdById  String?
+  createdAt    DateTime                     @default(now()) @db.Timestamptz(3)
+  publishedAt  DateTime?                    @db.Timestamptz(3)
+  template     MessageTemplate              @relation("MessageTemplateVersions", fields: [projectId, templateId], references: [projectId, id], onDelete: Restrict)
+  activeFor    MessageTemplate?             @relation("MessageTemplateActiveVersion")
+  draftFor     MessageTemplate?             @relation("MessageTemplateDraftVersion")
+  mediaAsset   MediaAsset?                  @relation(fields: [projectId, mediaAssetId], references: [projectId, id], onDelete: Restrict)
+  broadcasts   Broadcast[]
+  project      Project                      @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, id])
+  @@unique([projectId, templateId, id])
+  @@unique([projectId, templateId, version])
+  @@index([projectId, templateId, contentHash])
+  @@index([projectId, templateId, status])
+  @@index([projectId, mediaAssetId])
+  @@map("message_template_versions")
 }
 
 model BroadcastRecipient {

@@ -6,6 +6,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Max,
   Min,
@@ -49,7 +50,12 @@ export class CreateBroadcastDto {
   @ValidateNested()
   @Type(() => BroadcastAudienceDto)
   audience!: BroadcastAudienceDto;
-  @ApiProperty() @IsString() @Length(1, 4096) text!: string;
+  @ApiPropertyOptional()
+  @ValidateIf((value: CreateBroadcastDto) => !value.templateVersionId)
+  @IsString()
+  @Length(1, 4096)
+  text?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() templateVersionId?: string;
   @ApiPropertyOptional({ format: 'date-time' })
   @IsOptional()
   @IsDateString()
@@ -64,6 +70,7 @@ export class UpdateBroadcastDto {
   @Type(() => BroadcastAudienceDto)
   audience?: BroadcastAudienceDto;
   @ApiPropertyOptional() @IsOptional() @IsString() @Length(1, 4096) text?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() templateVersionId?: string;
   @ApiPropertyOptional({ format: 'date-time' })
   @IsOptional()
   @IsDateString()

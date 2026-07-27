@@ -22,6 +22,8 @@ import { SegmentsPage } from './pages/segments-page';
 import { BroadcastsPage } from './pages/broadcasts-page';
 import { BroadcastCreatePage } from './pages/broadcast-create-page';
 import { BroadcastDetailPage } from './pages/broadcast-detail-page';
+import { MediaAssetsPage } from './pages/media-assets-page';
+import { TemplatesPage } from './pages/templates-page';
 
 export function App() {
   return (
@@ -69,6 +71,12 @@ export function App() {
             <Route element={<ProjectPermissionRoute permission="broadcasts:create" />}>
               <Route element={<BroadcastCreatePage />} path="/projects/:projectId/broadcasts/new" />
             </Route>
+          </Route>
+          <Route element={<ProjectPermissionRoute permission="templates:read" />}>
+            <Route element={<TemplatesPage />} path="/projects/:projectId/templates" />
+          </Route>
+          <Route element={<ProjectPermissionRoute permission="media:read" />}>
+            <Route element={<MediaAssetsPage />} path="/projects/:projectId/media-assets" />
           </Route>
           <Route element={<UsersPage />} path="/users" />
           <Route element={<Navigate replace to="/projects" />} path="*" />

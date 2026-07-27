@@ -12,6 +12,7 @@ export interface TelegramTransport {
     parameters?: { retry_after?: number };
     description?: string;
   }>;
+  download?(token: string, filePath: string, maximumBytes: number): Promise<Uint8Array>;
 }
 export interface TelegramUpdate {
   update_id: number;
@@ -91,6 +92,16 @@ export class TelegramApiError extends Error {
 }
 
 export class TelegramHttpTransport implements TelegramTransport {
+  async download(token: string, filePath: string, maximumBytes: number): Promise<Uint8Array> {
+    const response = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+    if (!response.ok) throw new TelegramApiError(response.status, undefined);
+    const contentLength = Number(response.headers.get('content-length') ?? '0');
+    if (contentLength > maximumBytes) throw new Error('telegram_media_size_exceeded');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maximumBytes) throw new Error('telegram_media_size_exceeded');
+    return bytes;
+  }
+
   async request(
     token: string,
     method: string,
@@ -261,7 +272,7 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
   channel: 'telegram',
   version: 'bot-api-10.2',
   capabilities: {
-    broadcasts: false,
+    broadcasts: true,
     deliveryStatuses: false,
     incoming: {
       callbackQuery: true,
@@ -276,6 +287,8 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
       inlineKeyboard: true,
       replyToMessageId: true,
       text: true,
+      photo: true,
+      document: true,
     },
     readStatuses: false,
   },
@@ -328,6 +341,51 @@ export class TelegramAdapter {
     await this.assertOk(response);
     const result = response.result as { message_id?: number };
     if (!result.message_id) throw new Error('Telegram sendMessage result is invalid');
+    return { messageId: String(result.message_id) };
+  }
+  async downloadFile(
+    token: string,
+    fileId: string,
+    maximumBytes: number,
+  ): Promise<{ bytes: Uint8Array; filePath: string }> {
+    const response = await this.transport.request(token, 'getFile', { file_id: fileId });
+    await this.assertOk(response);
+    const result = response.result as { file_path?: unknown; file_size?: unknown };
+    if (typeof result.file_path !== 'string') throw new Error('Telegram getFile result is invalid');
+    if (typeof result.file_size === 'number' && result.file_size > maximumBytes)
+      throw new Error('telegram_media_size_exceeded');
+    if (!this.transport.download)
+      throw new Error('Telegram file download transport is unavailable');
+    return {
+      bytes: await this.transport.download(token, result.file_path, maximumBytes),
+      filePath: result.file_path,
+    };
+  }
+  async sendMedia(
+    token: string,
+    input: {
+      caption?: string;
+      chatId: string;
+      disableNotification?: boolean;
+      kind: 'DOCUMENT' | 'PHOTO';
+      media: string;
+      replyToMessageId?: string;
+    },
+  ): Promise<{ messageId: string }> {
+    const mediaField = input.kind === 'PHOTO' ? 'photo' : 'document';
+    const method = input.kind === 'PHOTO' ? 'sendPhoto' : 'sendDocument';
+    const response = await this.transport.request(token, method, {
+      caption: input.caption,
+      chat_id: input.chatId,
+      disable_notification: input.disableNotification,
+      [mediaField]: input.media,
+      ...(input.replyToMessageId
+        ? { reply_parameters: { message_id: Number(input.replyToMessageId) } }
+        : {}),
+    });
+    await this.assertOk(response);
+    const result = response.result as { message_id?: number };
+    if (!result.message_id) throw new Error(`Telegram ${method} result is invalid`);
     return { messageId: String(result.message_id) };
   }
   parseWebhook(update: TelegramUpdate): TelegramNormalizedEvent {

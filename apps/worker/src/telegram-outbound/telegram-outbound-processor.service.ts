@@ -18,6 +18,7 @@ import {
   type TelegramOutboundJob,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
+import { S3MediaStorage } from '@omnicus/media-core';
 import { Worker, type Job } from 'bullmq';
 import { DatabaseService } from '../database/database.service';
 import { redisConnectionFromUrl } from '../queue/redis-connection';
@@ -38,6 +39,13 @@ type Claimed = {
   payload: { messageId: string; channelIdentityId: string };
 };
 
+class TelegramOutboundPermanentError extends Error {
+  constructor(readonly code: string) {
+    super('Telegram outbound request cannot be retried');
+    this.name = 'TelegramOutboundPermanentError';
+  }
+}
+
 @Injectable()
 export class TelegramOutboundProcessorService
   implements OnApplicationBootstrap, OnApplicationShutdown
@@ -46,6 +54,7 @@ export class TelegramOutboundProcessorService
   private client: TelegramOutboundProcessorClient | undefined;
   private readonly workerId = `telegram-outbound-${process.pid}-${randomUUID()}`;
   private readonly secrets: ChannelSecretsService;
+  private readonly storage: S3MediaStorage | undefined;
   private readonly adapter = new TelegramAdapter(new TelegramHttpTransport());
   constructor(
     @Inject(ConfigService) config: ConfigService<WorkerEnvironment, true>,
@@ -57,6 +66,15 @@ export class TelegramOutboundProcessorService
     this.config = config;
     this.client = client;
     this.secrets = new ChannelSecretsService(config.get('CHANNEL_SECRETS_KEY', { infer: true }));
+    if (config.get('MEDIA_STORAGE_ENABLED', { infer: true }))
+      this.storage = new S3MediaStorage({
+        accessKeyId: config.get('MEDIA_BUCKET_ACCESS_KEY_ID', { infer: true })!,
+        bucket: config.get('MEDIA_BUCKET', { infer: true })!,
+        endpoint: config.get('MEDIA_BUCKET_ENDPOINT', { infer: true })!,
+        forcePathStyle: config.get('MEDIA_BUCKET_FORCE_PATH_STYLE', { infer: true }),
+        region: config.get('MEDIA_BUCKET_REGION', { infer: true }),
+        secretAccessKey: config.get('MEDIA_BUCKET_SECRET_ACCESS_KEY', { infer: true })!,
+      });
   }
   private readonly config: ConfigService<WorkerEnvironment, true>;
   async onApplicationBootstrap(): Promise<void> {
@@ -88,6 +106,7 @@ export class TelegramOutboundProcessorService
     try {
       const [message, connection, identity, recipient] = await Promise.all([
         this.database.client.message.findUnique({
+          include: { mediaAsset: true },
           where: { projectId_id: { projectId: claimed.projectId, id: claimed.payload.messageId } },
         }),
         this.database.client.channelConnection.findUnique({
@@ -130,13 +149,24 @@ export class TelegramOutboundProcessorService
         disableNotification?: boolean;
         replyToMessageId?: string;
       } | null;
-      const content = message.content as { text?: string };
-      const sent = await this.adapter.sendMessage(token, {
+      const content = message.content as { caption?: string; text?: string };
+      const sendOptions = {
         chatId: identity.externalUserId,
-        text: content.text ?? '',
         ...(metadata?.disableNotification ? { disableNotification: true } : {}),
         ...(metadata?.replyToMessageId ? { replyToMessageId: metadata.replyToMessageId } : {}),
-      });
+      };
+      const sent =
+        (message.type === 'PHOTO' || message.type === 'DOCUMENT') && message.mediaAsset
+          ? await this.adapter.sendMedia(token, {
+              ...sendOptions,
+              ...(content.caption ? { caption: content.caption } : {}),
+              kind: message.type,
+              media: await this.mediaReference(message.mediaAsset, claimed.connectionId),
+            })
+          : await this.adapter.sendMessage(token, {
+              ...sendOptions,
+              text: content.text ?? '',
+            });
       await this.database.client.$transaction(async (tx) => {
         const done = await tx.outboxRecord.updateMany({
           where: {
@@ -170,6 +200,29 @@ export class TelegramOutboundProcessorService
       await this.fail(claimed, error);
       if (this.retryable(error)) throw error;
     }
+  }
+  private async mediaReference(
+    asset: {
+      bucketKey: string | null;
+      connectionId: string | null;
+      providerMediaId: string | null;
+      status: string;
+    },
+    connectionId: string,
+  ): Promise<string> {
+    if (
+      asset.providerMediaId &&
+      asset.connectionId === connectionId &&
+      asset.status !== 'REJECTED' &&
+      asset.status !== 'UNAVAILABLE'
+    )
+      return asset.providerMediaId;
+    if (asset.status !== 'AVAILABLE' || !asset.bucketKey || !this.storage)
+      throw new TelegramOutboundPermanentError('telegram_outbound_media_unavailable');
+    return this.storage.signedDownloadUrl(
+      asset.bucketKey,
+      this.config.get('MEDIA_SIGNED_URL_TTL_SECONDS', { infer: true }),
+    );
   }
   private async claim(id: string): Promise<Claimed | undefined> {
     const now = new Date();
@@ -214,6 +267,7 @@ export class TelegramOutboundProcessorService
     };
   }
   private retryable(error: unknown): boolean {
+    if (error instanceof TelegramOutboundPermanentError) return false;
     return error instanceof TelegramApiError
       ? error.errorCode === 429 || (error.errorCode !== undefined && error.errorCode >= 500)
       : !(error instanceof Error && error.name === 'AbortError');
@@ -303,13 +357,15 @@ export class TelegramOutboundProcessorService
         : Math.min(300_000, 1_000 * 2 ** Math.min(claimed.attempts, 8));
     const code = unknown
       ? 'telegram_outbound_unknown'
-      : api?.errorCode === 401
-        ? 'telegram_outbound_invalid_token'
-        : api?.errorCode === 403 || api?.errorCode === 400
-          ? 'telegram_outbound_recipient_unavailable'
-          : retry
-            ? 'telegram_outbound_retryable'
-            : 'telegram_outbound_failed';
+      : error instanceof TelegramOutboundPermanentError
+        ? error.code
+        : api?.errorCode === 401
+          ? 'telegram_outbound_invalid_token'
+          : api?.errorCode === 403 || api?.errorCode === 400
+            ? 'telegram_outbound_recipient_unavailable'
+            : retry
+              ? 'telegram_outbound_retryable'
+              : 'telegram_outbound_failed';
     await this.database.client.$transaction(async (tx) => {
       await tx.outboxRecord.updateMany({
         where: {

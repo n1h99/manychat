@@ -6,7 +6,12 @@ const assetDirectory = resolve(distDirectory, 'assets');
 const forbiddenMarkers = [
   'APP_ENV',
   'CORS_ALLOWED_ORIGINS',
+  'CHANNEL_SECRETS_KEY',
+  'CRM_AUTH_TOKEN',
   'DATABASE_URL',
+  'MEDIA_BUCKET_ACCESS_KEY_ID',
+  'MEDIA_BUCKET_SECRET_ACCESS_KEY',
+  'MEDIA_BUCKET_ENDPOINT',
   'REDIS_URL',
   'TRUST_PROXY',
   'rootEnvironmentFilePath',

@@ -530,8 +530,9 @@ worker restarts are recovered from PostgreSQL.
 
 Only one active wait is permitted for `(projectId, conversationId, scenarioId)`.
 Reply and timeout perform a conditional state transition, so at most one wins.
-A Subflow always creates a child execution pinned to the target scenario's
-current published version. Awaited child completion resumes its parent through
+A Subflow always creates a child execution pinned to the concrete published
+version selected in the parent graph. A later subflow publication never changes
+an already published parent. Awaited child completion resumes its parent through
 an explicit persisted continuation; fire-and-forget does not block the parent.
 
 Guarded cycles are allowed only when their cycle contains Delay or Wait; every
@@ -555,3 +556,34 @@ reproducible technical result even if a Segment later changes. Pause and cancel
 stop future recipient preparation/queueing; an already claimed outbox retains
 its at-least-once outcome. A provider timeout remains `UNKNOWN` and is never
 blindly retried by the broadcast coordinator.
+
+## ADR-031: Private media assets and immutable template versions
+
+**Status:** Accepted, 2026-07-27.
+
+**Decision:** inbound Telegram media begins as a provider reference and is
+downloaded only on an explicit materialization request. User-uploaded template
+assets and materialized provider files are stored in a private S3-compatible
+Railway Bucket. The application validates size, detected MIME type and filename
+extension before upload, stores no presigned URL, and generates short-lived
+download URLs on demand. The cloud Bot API `getFile` download limit is 20 MB.
+The first complete media-template contract supports text, photo and PDF/ZIP
+document messages.
+
+Templates have mutable drafts and immutable published versions. Published
+scenario versions and broadcast snapshots pin a concrete published template
+version; later template changes cannot alter an already published graph or
+prepared broadcast.
+
+Superseded published versions remain executable for existing pins and continue
+to retain their media. New scenario/broadcast selections use the current
+published version. Template variables are rendered per contact at message
+creation; missing variables fail that recipient/execution with a safe code
+instead of silently coercing `null` or structured JSON values.
+
+**Consequences:** API and worker require explicit bucket configuration in
+staging/production. Bucket credentials and provider tokens never enter database
+content, URLs, audit payloads or frontend state. Railway Bucket is not treated
+as a private network and no server-side encryption, versioning, object lock or
+native lifecycle policy is promised. Retention and deletion are application
+jobs.

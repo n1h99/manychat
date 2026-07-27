@@ -92,6 +92,52 @@ describe('server environment validation', () => {
     ).toThrow();
   });
 
+  it.each(['production', 'staging'] as const)(
+    'requires private media storage configuration for %s',
+    (appEnvironment) => {
+      expect(() =>
+        validateApiEnvironment({
+          ...baseEnvironment,
+          APP_ENV: appEnvironment,
+          NODE_ENV: 'production',
+          TRUST_PROXY: 'loopback',
+        }),
+      ).toThrow('MEDIA_STORAGE_ENABLED');
+    },
+  );
+
+  it('accepts an explicitly configured S3-compatible media store', () => {
+    const environment = validateApiEnvironment({
+      ...baseEnvironment,
+      APP_ENV: 'production',
+      MEDIA_BUCKET: 'omnicus-media',
+      MEDIA_BUCKET_ACCESS_KEY_ID: 'test-access',
+      MEDIA_BUCKET_ENDPOINT: 'https://storage.example.test',
+      MEDIA_BUCKET_SECRET_ACCESS_KEY: 'test-secret',
+      MEDIA_STORAGE_ENABLED: 'true',
+      NODE_ENV: 'production',
+      TRUST_PROXY: 'loopback',
+    });
+
+    expect(environment.MEDIA_STORAGE_ENABLED).toBe(true);
+  });
+
+  it('rejects plaintext media storage transport in production', () => {
+    expect(() =>
+      validateApiEnvironment({
+        ...baseEnvironment,
+        APP_ENV: 'production',
+        MEDIA_BUCKET: 'omnicus-media',
+        MEDIA_BUCKET_ACCESS_KEY_ID: 'test-access',
+        MEDIA_BUCKET_ENDPOINT: 'http://storage.example.test',
+        MEDIA_BUCKET_SECRET_ACCESS_KEY: 'test-secret',
+        MEDIA_STORAGE_ENABLED: 'true',
+        NODE_ENV: 'production',
+        TRUST_PROXY: 'loopback',
+      }),
+    ).toThrow('MEDIA_BUCKET_ENDPOINT');
+  });
+
   it('requires an explicit CORS allowlist', () => {
     expect(() =>
       validateApiEnvironment({
