@@ -1100,17 +1100,28 @@ self-reference for awaited subflows. A child is pinned by its already immutable
 The worker scans due `DelayedAction` and expired `WaitState` records in bounded
 batches. Conditional database updates make concurrent worker replicas safe.
 
-## Broadcast future models
+## Telegram broadcasts
 
-`Broadcast` и `BroadcastRecipient` сохраняются в design backlog. При реализации
-каждая таблица получает `projectId`, а recipient uniqueness:
+Post-pilot Telegram broadcasts use two project-owned tables. `Broadcast` pins
+the selected Telegram connection, audience definition and immutable text at
+launch. `BroadcastRecipient` is a durable recipient snapshot, not a live
+segment query. It links the recipient to the eventual outbound `Message` and
+`OutboxRecord` through project-safe composite foreign keys.
 
 ```text
 UNIQUE(projectId, broadcastId, channelIdentityId)
 ```
 
-Audience фиксируется snapshot recipients при `PREPARING`, а не вычисляется заново
-во время отправки.
+Only active Telegram identities of non-merged, non-blocked and non-unsubscribed
+contacts enter the snapshot. A recipient is skipped rather than deleted if it
+becomes ineligible before its outbox is created. `BroadcastRecipient` owns no
+lease: the existing `OutboxRecord` owns delivery claim/retry/unknown state.
+
+The audience is fixed while the broadcast moves from `PREPARING` to `RUNNING`.
+Later changes to a saved Segment, tags or contacts never alter recipients.
+`Broadcast.preparationLockedAt` and `preparationLockedBy` provide a bounded
+lease for the worker-side scheduled/preparation claim, so several worker
+replicas cannot materialize the same audience concurrently.
 
 ## Audit
 

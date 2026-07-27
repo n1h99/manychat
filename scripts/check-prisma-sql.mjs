@@ -86,6 +86,8 @@ const expectedTables = new Set([
   'crm_project_configs',
   'wait_states',
   'delayed_actions',
+  'broadcasts',
+  'broadcast_recipients',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -402,6 +404,65 @@ if (!existsSync(contactsV2BackfillMigrationPath)) {
   )
 ) {
   failures.push('Contacts v2 custom-field projection backfill is malformed');
+}
+
+const broadcastsMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726234301_telegram_broadcasts/migration.sql',
+);
+const broadcastConnectionScopeMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726234411_broadcast_recipient_connection_scope/migration.sql',
+);
+const broadcastPreparationLeaseMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260726235509_broadcast_preparation_lease/migration.sql',
+);
+if (
+  !existsSync(broadcastsMigrationPath) ||
+  !existsSync(broadcastConnectionScopeMigrationPath) ||
+  !existsSync(broadcastPreparationLeaseMigrationPath)
+) {
+  failures.push('Telegram broadcast persistence migrations are missing');
+} else {
+  const broadcastsSql = readFileSync(broadcastsMigrationPath, 'utf8').replaceAll('\r\n', '\n');
+  const scopeSql = readFileSync(broadcastConnectionScopeMigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  const leaseSql = readFileSync(broadcastPreparationLeaseMigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  for (const fragment of [
+    'CREATE TYPE "BroadcastStatus"',
+    'CREATE TYPE "BroadcastRecipientStatus"',
+    'CREATE TABLE "broadcasts"',
+    'CREATE TABLE "broadcast_recipients"',
+    'CREATE UNIQUE INDEX "broadcast_recipients_projectId_broadcastId_channelIdentityI_key"',
+    'FOREIGN KEY ("projectId", "broadcastId") REFERENCES "broadcasts"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "channelIdentityId") REFERENCES "channel_identities"("projectId", "id")',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!broadcastsSql.includes(fragment))
+      failures.push(`Telegram broadcast migration is missing invariant: ${fragment}`);
+  }
+  if (
+    !scopeSql.includes(
+      'FOREIGN KEY ("projectId", "connectionId") REFERENCES "channel_connections"("projectId", "id")',
+    )
+  )
+    failures.push('Broadcast recipient connection lost its tenant boundary');
+  for (const pattern of [
+    /ADD COLUMN\s+"preparationLockedAt" TIMESTAMPTZ\(3\)/,
+    /ADD COLUMN\s+"preparationLockedBy" TEXT/,
+  ]) {
+    if (!pattern.test(leaseSql)) {
+      failures.push(
+        `Broadcast preparation lease migration is missing invariant: ${pattern.source}`,
+      );
+    }
+  }
 }
 
 if (!proposalSql.includes('CREATE TABLE "users"')) {

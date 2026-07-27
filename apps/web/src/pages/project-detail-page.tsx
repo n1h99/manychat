@@ -60,6 +60,9 @@ export function ProjectDetailPage() {
         {hasProjectPermission(access.data, 'channels:read') ? (
           <Link to={`/projects/${project.id}/channels`}>Channels</Link>
         ) : null}
+        {hasProjectPermission(access.data, 'broadcasts:read') ? (
+          <Link to={`/projects/${project.id}/broadcasts`}>Broadcasts</Link>
+        ) : null}
       </Space>
       <Typography.Title level={4}>Edit project</Typography.Title>
       <Form

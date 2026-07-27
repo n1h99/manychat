@@ -86,7 +86,7 @@ export class TelegramOutboundProcessorService
     const claimed = await this.claim(job.outboxRecordId);
     if (!claimed) return;
     try {
-      const [message, connection, identity] = await Promise.all([
+      const [message, connection, identity, recipient] = await Promise.all([
         this.database.client.message.findUnique({
           where: { projectId_id: { projectId: claimed.projectId, id: claimed.payload.messageId } },
         }),
@@ -95,6 +95,10 @@ export class TelegramOutboundProcessorService
         }),
         this.database.client.channelIdentity.findUnique({
           where: { id: claimed.payload.channelIdentityId },
+        }),
+        this.database.client.broadcastRecipient.findFirst({
+          where: { outboxRecordId: claimed.id, projectId: claimed.projectId },
+          include: { broadcast: { select: { status: true } } },
         }),
       ]);
       if (
@@ -105,7 +109,16 @@ export class TelegramOutboundProcessorService
         identity.connectionId !== claimed.connectionId
       )
         return await this.finish(claimed, 'FAILED', 'telegram_outbound_invalid_relation');
+      if (recipient?.broadcast.status === 'CANCELLED')
+        return await this.cancelBroadcastRecipient(claimed, recipient.id);
+      if (recipient?.broadcast.status === 'PAUSED')
+        return await this.deferBroadcastRecipient(claimed);
       if (message.status === 'SENT') return await this.finish(claimed, 'SUCCEEDED');
+      if (recipient)
+        await this.database.client.broadcastRecipient.updateMany({
+          where: { id: recipient.id, projectId: claimed.projectId, status: 'QUEUED' },
+          data: { status: 'PROCESSING' },
+        });
       const token = this.secrets.decryptSecret({
         projectId: connection.projectId,
         channelConnectionId: connection.id,
@@ -145,6 +158,13 @@ export class TelegramOutboundProcessorService
           where: { projectId_id: { projectId: claimed.projectId, id: message.id } },
           data: { status: 'SENT', sentAt: new Date(), externalMessageId: sent.messageId },
         });
+        if (recipient) {
+          await tx.broadcastRecipient.updateMany({
+            where: { id: recipient.id, projectId: claimed.projectId, status: 'PROCESSING' },
+            data: { status: 'SENT', completedAt: new Date(), lastError: null },
+          });
+          await this.completeBroadcastIfTerminal(tx, claimed.projectId, recipient.broadcastId);
+        }
       });
     } catch (error) {
       await this.fail(claimed, error);
@@ -219,6 +239,60 @@ export class TelegramOutboundProcessorService
       },
     });
   }
+  private async deferBroadcastRecipient(claimed: Claimed): Promise<void> {
+    await this.database.client.$transaction(async (tx) => {
+      await tx.outboxRecord.updateMany({
+        where: {
+          id: claimed.id,
+          projectId: claimed.projectId,
+          lockedBy: claimed.lease,
+          status: 'PROCESSING',
+        },
+        data: {
+          status: 'RETRY',
+          lockedAt: null,
+          lockedBy: null,
+          lastError: 'broadcast_paused',
+          nextAttemptAt: new Date(Date.now() + 30_000),
+        },
+      });
+      await tx.broadcastRecipient.updateMany({
+        where: { projectId: claimed.projectId, outboxRecordId: claimed.id, status: 'QUEUED' },
+        data: { lastError: 'broadcast_paused' },
+      });
+    });
+  }
+  private async cancelBroadcastRecipient(claimed: Claimed, recipientId: string): Promise<void> {
+    await this.database.client.$transaction(async (tx) => {
+      await tx.outboxRecord.updateMany({
+        where: {
+          id: claimed.id,
+          projectId: claimed.projectId,
+          lockedBy: claimed.lease,
+          status: 'PROCESSING',
+        },
+        data: {
+          status: 'FAILED',
+          completedAt: new Date(),
+          lockedAt: null,
+          lockedBy: null,
+          lastError: 'broadcast_cancelled',
+        },
+      });
+      await tx.message.updateMany({
+        where: { id: claimed.payload.messageId, projectId: claimed.projectId, status: 'QUEUED' },
+        data: { status: 'FAILED', failedAt: new Date() },
+      });
+      await tx.broadcastRecipient.updateMany({
+        where: {
+          id: recipientId,
+          projectId: claimed.projectId,
+          status: { in: ['QUEUED', 'PROCESSING'] },
+        },
+        data: { status: 'CANCELLED', completedAt: new Date(), lastError: 'broadcast_cancelled' },
+      });
+    });
+  }
   private async fail(claimed: Claimed, error: unknown): Promise<void> {
     const api = error instanceof TelegramApiError ? error : undefined;
     const unknown = error instanceof Error && error.name === 'AbortError';
@@ -271,6 +345,41 @@ export class TelegramOutboundProcessorService
           where: { id: claimed.payload.channelIdentityId, projectId: claimed.projectId },
           data: { status: 'BLOCKED' },
         });
+      const recipient = await tx.broadcastRecipient.findFirst({
+        where: { projectId: claimed.projectId, outboxRecordId: claimed.id },
+      });
+      if (recipient) {
+        await tx.broadcastRecipient.updateMany({
+          where: {
+            id: recipient.id,
+            projectId: claimed.projectId,
+            status: { in: ['QUEUED', 'PROCESSING'] },
+          },
+          data: {
+            status: unknown ? 'UNKNOWN' : retry ? 'QUEUED' : 'FAILED',
+            ...(retry ? { lastError: code } : { completedAt: new Date(), lastError: code }),
+          },
+        });
+        if (!retry)
+          await this.completeBroadcastIfTerminal(tx, claimed.projectId, recipient.broadcastId);
+      }
     });
+  }
+  private async completeBroadcastIfTerminal(
+    transaction: {
+      broadcast: { updateMany(args: unknown): Promise<unknown> };
+      broadcastRecipient: { count(args: unknown): Promise<number> };
+    },
+    projectId: string,
+    broadcastId: string,
+  ): Promise<void> {
+    const nonTerminal = await transaction.broadcastRecipient.count({
+      where: { projectId, broadcastId, status: { in: ['PENDING', 'QUEUED', 'PROCESSING'] } },
+    });
+    if (nonTerminal === 0)
+      await transaction.broadcast.updateMany({
+        where: { id: broadcastId, projectId, status: 'RUNNING' },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
   }
 }

@@ -25,6 +25,11 @@ describe('ProjectRolesService', () => {
           { code: 'channels:read', id: 'permission-channels-read' },
           { code: 'channels:manage', id: 'permission-channels-manage' },
           { code: 'channels:rotate_secrets', id: 'permission-channels-rotate' },
+          { code: 'broadcasts:read', id: 'permission-broadcasts-read' },
+          { code: 'broadcasts:create', id: 'permission-broadcasts-create' },
+          { code: 'broadcasts:launch', id: 'permission-broadcasts-launch' },
+          { code: 'broadcasts:pause', id: 'permission-broadcasts-pause' },
+          { code: 'broadcasts:cancel', id: 'permission-broadcasts-cancel' },
         ]),
       },
       projectRole: { upsert: vi.fn().mockResolvedValue({ id: 'project-admin-role' }) },
@@ -41,6 +46,8 @@ describe('ProjectRolesService', () => {
         'permission-channels-read',
         'permission-channels-manage',
         'permission-channels-rotate',
+        'permission-broadcasts-read',
+        'permission-broadcasts-launch',
       ]),
     );
   });

@@ -71,6 +71,7 @@ enum CustomFieldType {
   MULTI_SELECT
   JSON
 }
+
 enum ChannelConnectionStatus {
   DRAFT
   ACTIVE
@@ -155,6 +156,30 @@ enum MessageStatus {
   UNKNOWN
 }
 
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  PREPARING
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum BroadcastRecipientStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SKIPPED
+  CANCELLED
+  UNKNOWN
+}
+
 enum ScenarioStatus {
   DRAFT
   PUBLISHED
@@ -222,6 +247,7 @@ model User {
   projectInvitesSent  ProjectUserInviteToken[] @relation("ProjectInviteInvitedBy")
   auditLogs           AuditLog[]               @relation("AuditActor")
   segmentsCreated     Segment[]
+  broadcastsCreated   Broadcast[]
 
   @@map("users")
 }
@@ -475,42 +501,45 @@ model Project {
   delayedActions           DelayedAction[]
   crmConfig                CrmProjectConfig?
   crmOperations            CrmOperation[]
+  broadcasts               Broadcast[]
+  broadcastRecipients      BroadcastRecipient[]
 
   @@index([status, createdAt])
   @@map("projects")
 }
 
 model Contact {
-  id                 String         @id @default(uuid())
-  projectId          String
-  displayName        String
-  firstName          String?
-  lastName           String?
-  username           String?
-  phone              String?
-  email              String?
-  status             ContactStatus  @default(ACTIVE)
-  automationMode     AutomationMode @default(ENABLED)
-  crmLeadId          String?
-  crmContactId       String?
-  crmManagerId       String?
-  customFields       Json           @default("{}")
-  firstInteractionAt DateTime?      @db.Timestamptz(3)
-  lastInteractionAt  DateTime?      @db.Timestamptz(3)
-  archivedAt         DateTime?      @db.Timestamptz(3)
+  id                  String                    @id @default(uuid())
+  projectId           String
+  displayName         String
+  firstName           String?
+  lastName            String?
+  username            String?
+  phone               String?
+  email               String?
+  status              ContactStatus             @default(ACTIVE)
+  automationMode      AutomationMode            @default(ENABLED)
+  crmLeadId           String?
+  crmContactId        String?
+  crmManagerId        String?
+  customFields        Json                      @default("{}")
+  firstInteractionAt  DateTime?                 @db.Timestamptz(3)
+  lastInteractionAt   DateTime?                 @db.Timestamptz(3)
+  archivedAt          DateTime?                 @db.Timestamptz(3)
   mergedIntoContactId String?
-  createdAt          DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime       @updatedAt @db.Timestamptz(3)
-  project            Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  channelIdentities  ChannelIdentity[]
-  tags               ContactTag[]
-  conversations      Conversation[]
-  messages           Message[]
-  scenarioExecutions ScenarioExecution[]
-  crmOperations      CrmOperation[]
-  customFieldValues  ContactCustomFieldValue[]
-  mergedInto         Contact?       @relation("ContactMerge", fields: [projectId, mergedIntoContactId], references: [projectId, id], onDelete: Restrict)
-  mergedContacts     Contact[]      @relation("ContactMerge")
+  createdAt           DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                  @updatedAt @db.Timestamptz(3)
+  project             Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  channelIdentities   ChannelIdentity[]
+  tags                ContactTag[]
+  conversations       Conversation[]
+  messages            Message[]
+  scenarioExecutions  ScenarioExecution[]
+  crmOperations       CrmOperation[]
+  customFieldValues   ContactCustomFieldValue[]
+  broadcastRecipients BroadcastRecipient[]
+  mergedInto          Contact?                  @relation("ContactMerge", fields: [projectId, mergedIntoContactId], references: [projectId, id], onDelete: Restrict)
+  mergedContacts      Contact[]                 @relation("ContactMerge")
 
   @@unique([projectId, id])
   @@index([projectId, status, createdAt])
@@ -522,21 +551,22 @@ model Contact {
 }
 
 model ChannelIdentity {
-  id             String                @id @default(uuid())
-  projectId      String
-  contactId      String
-  connectionId   String
-  channel        ChannelType
-  externalUserId String
-  username       String?
-  displayName    String?
-  languageCode   String?
-  status         ChannelIdentityStatus @default(ACTIVE)
-  metadata       Json?
-  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
-  contact        Contact               @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
-  connection     ChannelConnection     @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  id                  String                @id @default(uuid())
+  projectId           String
+  contactId           String
+  connectionId        String
+  channel             ChannelType
+  externalUserId      String
+  username            String?
+  displayName         String?
+  languageCode        String?
+  status              ChannelIdentityStatus @default(ACTIVE)
+  metadata            Json?
+  createdAt           DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime              @updatedAt @db.Timestamptz(3)
+  contact             Contact               @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
+  connection          ChannelConnection     @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  broadcastRecipients BroadcastRecipient[]
 
   @@unique([projectId, id])
   @@unique([projectId, connectionId, externalUserId])
@@ -566,6 +596,8 @@ model ChannelConnection {
   conversations          Conversation[]
   messages               Message[]
   outboxRecords          OutboxRecord[]
+  broadcasts             Broadcast[]
+  broadcastRecipients    BroadcastRecipient[]
 
   @@unique([projectId, id])
   @@index([projectId, status])
@@ -621,18 +653,18 @@ model InboxRecord {
 }
 
 model NormalizedEvent {
-  id            String              @id @default(uuid())
-  projectId     String
-  connectionId  String
-  inboxRecordId String              @unique
-  type          NormalizedEventType
-  payload       Json
-  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
-  connection    ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  inboxRecord   InboxRecord         @relation(fields: [projectId, inboxRecordId], references: [projectId, id], onDelete: Restrict)
-  message       Message?
+  id                 String              @id @default(uuid())
+  projectId          String
+  connectionId       String
+  inboxRecordId      String              @unique
+  type               NormalizedEventType
+  payload            Json
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  connection         ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  inboxRecord        InboxRecord         @relation(fields: [projectId, inboxRecordId], references: [projectId, id], onDelete: Restrict)
+  message            Message?
   scenarioExecutions ScenarioExecution[]
-  crmOperations CrmOperation[]
+  crmOperations      CrmOperation[]
 
   @@unique([projectId, id])
   @@unique([projectId, inboxRecordId])
@@ -641,20 +673,20 @@ model NormalizedEvent {
 }
 
 model Scenario {
-  id              String         @id @default(uuid())
+  id              String              @id @default(uuid())
   projectId       String
   name            String
   description     String?
-  status          ScenarioStatus @default(DRAFT)
+  status          ScenarioStatus      @default(DRAFT)
   activeVersionId String?
   draftVersionId  String?
   createdById     String?
-  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
-  project         Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  versions        ScenarioVersion[] @relation("ScenarioVersions")
-  activeVersion   ScenarioVersion? @relation("ScenarioActiveVersion", fields: [projectId, id, activeVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
-  draftVersion    ScenarioVersion? @relation("ScenarioDraftVersion", fields: [projectId, id, draftVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(3)
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  versions        ScenarioVersion[]   @relation("ScenarioVersions")
+  activeVersion   ScenarioVersion?    @relation("ScenarioActiveVersion", fields: [projectId, id, activeVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
+  draftVersion    ScenarioVersion?    @relation("ScenarioDraftVersion", fields: [projectId, id, draftVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
   executions      ScenarioExecution[]
   waitStates      WaitState[]
   delayedActions  DelayedAction[]
@@ -729,7 +761,7 @@ model ScenarioExecution {
   waitStates              WaitState[]
   delayedActions          DelayedAction[]
   parentExecution         ScenarioExecution?      @relation("ScenarioExecutionSubflow", fields: [projectId, parentExecutionId], references: [projectId, id], onDelete: Restrict)
-  childExecutions         ScenarioExecution[]      @relation("ScenarioExecutionSubflow")
+  childExecutions         ScenarioExecution[]     @relation("ScenarioExecutionSubflow")
 
   @@unique([projectId, id])
   @@unique([projectId, scenarioId, triggerKey])
@@ -765,27 +797,27 @@ model NodeExecution {
 }
 
 model WaitState {
-  id                String          @id @default(uuid())
-  projectId         String
+  id                  String            @id @default(uuid())
+  projectId           String
   scenarioExecutionId String
-  scenarioId        String
-  scenarioVersionId String
-  conversationId    String
-  nodeId            String
-  status            WaitStateStatus @default(ACTIVE)
-  criteria          Json            @default("{}")
-  successNodeId     String?
-  timeoutNodeId     String?
-  resolvedByEventId String?
-  expiresAt         DateTime        @db.Timestamptz(3)
-  resolvedAt        DateTime?       @db.Timestamptz(3)
-  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
-  project           Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  execution         ScenarioExecution @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
-  scenario          Scenario        @relation(fields: [projectId, scenarioId], references: [projectId, id], onDelete: Restrict)
-  scenarioVersion   ScenarioVersion @relation(fields: [projectId, scenarioId, scenarioVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
-  conversation      Conversation    @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
+  scenarioId          String
+  scenarioVersionId   String
+  conversationId      String
+  nodeId              String
+  status              WaitStateStatus   @default(ACTIVE)
+  criteria            Json              @default("{}")
+  successNodeId       String?
+  timeoutNodeId       String?
+  resolvedByEventId   String?
+  expiresAt           DateTime          @db.Timestamptz(3)
+  resolvedAt          DateTime?         @db.Timestamptz(3)
+  createdAt           DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @db.Timestamptz(3)
+  project             Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  execution           ScenarioExecution @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
+  scenario            Scenario          @relation(fields: [projectId, scenarioId], references: [projectId, id], onDelete: Restrict)
+  scenarioVersion     ScenarioVersion   @relation(fields: [projectId, scenarioId, scenarioVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
+  conversation        Conversation      @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
 
   @@unique([projectId, id])
   @@unique([projectId, scenarioExecutionId, nodeId])
@@ -795,27 +827,27 @@ model WaitState {
 }
 
 model DelayedAction {
-  id                String              @id @default(uuid())
-  projectId         String
+  id                  String              @id @default(uuid())
+  projectId           String
   scenarioExecutionId String
-  scenarioId        String
-  scenarioVersionId String
-  nodeId            String
-  resumeNodeId      String?
-  status            DelayedActionStatus @default(PENDING)
-  attempts          Int                 @default(0)
-  maxAttempts       Int                 @default(8)
-  nextAttemptAt     DateTime            @db.Timestamptz(3)
-  lockedAt          DateTime?           @db.Timestamptz(3)
-  lockedBy          String?
-  lastError         String?
-  completedAt       DateTime?           @db.Timestamptz(3)
-  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
-  project           Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  execution         ScenarioExecution   @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
-  scenario          Scenario            @relation(fields: [projectId, scenarioId], references: [projectId, id], onDelete: Restrict)
-  scenarioVersion   ScenarioVersion     @relation(fields: [projectId, scenarioId, scenarioVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
+  scenarioId          String
+  scenarioVersionId   String
+  nodeId              String
+  resumeNodeId        String?
+  status              DelayedActionStatus @default(PENDING)
+  attempts            Int                 @default(0)
+  maxAttempts         Int                 @default(8)
+  nextAttemptAt       DateTime            @db.Timestamptz(3)
+  lockedAt            DateTime?           @db.Timestamptz(3)
+  lockedBy            String?
+  lastError           String?
+  completedAt         DateTime?           @db.Timestamptz(3)
+  createdAt           DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @db.Timestamptz(3)
+  project             Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  execution           ScenarioExecution   @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
+  scenario            Scenario            @relation(fields: [projectId, scenarioId], references: [projectId, id], onDelete: Restrict)
+  scenarioVersion     ScenarioVersion     @relation(fields: [projectId, scenarioId, scenarioVersionId], references: [projectId, scenarioId, id], onDelete: Restrict)
 
   @@unique([projectId, id])
   @@unique([projectId, scenarioExecutionId, nodeId])
@@ -825,22 +857,22 @@ model DelayedAction {
 }
 
 model Conversation {
-  id             String             @id @default(uuid())
-  projectId      String
-  connectionId   String
-  contactId      String
-  externalChatId String
-  status         ConversationStatus @default(ACTIVE)
+  id                     String              @id @default(uuid())
+  projectId              String
+  connectionId           String
+  contactId              String
+  externalChatId         String
+  status                 ConversationStatus  @default(ACTIVE)
   automationModeOverride AutomationMode?
-  lastMessageAt  DateTime?          @db.Timestamptz(3)
-  nextAutomationSequence BigInt     @default(0)
-  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
-  contact        Contact            @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
-  connection     ChannelConnection  @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  messages       Message[]
-  scenarioExecutions ScenarioExecution[]
-  waitStates         WaitState[]
+  lastMessageAt          DateTime?           @db.Timestamptz(3)
+  nextAutomationSequence BigInt              @default(0)
+  createdAt              DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
+  contact                Contact             @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  connection             ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  messages               Message[]
+  scenarioExecutions     ScenarioExecution[]
+  waitStates             WaitState[]
 
   @@unique([projectId, id])
   @@unique([projectId, connectionId, externalChatId])
@@ -850,26 +882,27 @@ model Conversation {
 }
 
 model Message {
-  id                String           @id @default(uuid())
-  projectId         String
-  connectionId      String
-  conversationId    String
-  contactId         String
-  normalizedEventId String?
-  direction         MessageDirection
-  type              MessageType
-  status            MessageStatus
-  externalMessageId String?
-  content           Json
-  metadata          Json?
-  sentAt            DateTime?        @db.Timestamptz(3)
-  failedAt          DateTime?        @db.Timestamptz(3)
-  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime         @updatedAt @db.Timestamptz(3)
-  contact           Contact          @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
-  connection        ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  conversation      Conversation     @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
-  normalizedEvent  NormalizedEvent?  @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+  id                 String              @id @default(uuid())
+  projectId          String
+  connectionId       String
+  conversationId     String
+  contactId          String
+  normalizedEventId  String?
+  direction          MessageDirection
+  type               MessageType
+  status             MessageStatus
+  externalMessageId  String?
+  content            Json
+  metadata           Json?
+  sentAt             DateTime?           @db.Timestamptz(3)
+  failedAt           DateTime?           @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  contact            Contact             @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  connection         ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  conversation       Conversation        @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
+  normalizedEvent    NormalizedEvent?    @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+  broadcastRecipient BroadcastRecipient? @relation("BroadcastRecipientMessage")
 
   @@unique([projectId, id])
   @@unique([projectId, normalizedEventId])
@@ -880,30 +913,97 @@ model Message {
 }
 
 model OutboxRecord {
-  id             String             @id @default(uuid())
-  projectId      String
-  connectionId   String?
-  kind           OutboxKind         @default(TELEGRAM)
-  idempotencyKey String
-  status         OutboxRecordStatus @default(PENDING)
-  payload        Json
-  attempts       Int                @default(0)
-  maxAttempts    Int                @default(8)
-  nextAttemptAt  DateTime?          @db.Timestamptz(3)
-  lockedAt       DateTime?          @db.Timestamptz(3)
-  lockedBy       String?
-  lastError      String?
-  completedAt    DateTime?          @db.Timestamptz(3)
-  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime           @updatedAt @db.Timestamptz(3)
-  connection     ChannelConnection? @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  crmOperation   CrmOperation?
+  id                 String              @id @default(uuid())
+  projectId          String
+  connectionId       String?
+  kind               OutboxKind          @default(TELEGRAM)
+  idempotencyKey     String
+  status             OutboxRecordStatus  @default(PENDING)
+  payload            Json
+  attempts           Int                 @default(0)
+  maxAttempts        Int                 @default(8)
+  nextAttemptAt      DateTime?           @db.Timestamptz(3)
+  lockedAt           DateTime?           @db.Timestamptz(3)
+  lockedBy           String?
+  lastError          String?
+  completedAt        DateTime?           @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  connection         ChannelConnection?  @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  crmOperation       CrmOperation?
+  broadcastRecipient BroadcastRecipient? @relation("BroadcastRecipientOutbox")
 
   @@unique([projectId, id])
   @@unique([projectId, idempotencyKey])
   @@index([status, nextAttemptAt])
   @@index([projectId, connectionId, status])
   @@map("outbox_records")
+}
+
+model Broadcast {
+  id                  String               @id @default(uuid())
+  projectId           String
+  connectionId        String
+  name                String
+  status              BroadcastStatus      @default(DRAFT)
+  audience            Json
+  content             Json
+  scheduledAt         DateTime?            @db.Timestamptz(3)
+  startedAt           DateTime?            @db.Timestamptz(3)
+  completedAt         DateTime?            @db.Timestamptz(3)
+  pausedAt            DateTime?            @db.Timestamptz(3)
+  cancelledAt         DateTime?            @db.Timestamptz(3)
+  failedAt            DateTime?            @db.Timestamptz(3)
+  errorCode           String?
+  preparationLockedAt DateTime?            @db.Timestamptz(3)
+  preparationLockedBy String?
+  createdById         String?
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+  project             Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection          ChannelConnection    @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  createdBy           User?                @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  recipients          BroadcastRecipient[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, name])
+  @@index([projectId, status, scheduledAt])
+  @@index([projectId, connectionId, status])
+  @@map("broadcasts")
+}
+
+model BroadcastRecipient {
+  id                String                   @id @default(uuid())
+  projectId         String
+  broadcastId       String
+  connectionId      String
+  contactId         String
+  channelIdentityId String
+  messageId         String?                  @unique
+  outboxRecordId    String?                  @unique
+  status            BroadcastRecipientStatus @default(PENDING)
+  eligibility       Json                     @default("{}")
+  queuedAt          DateTime?                @db.Timestamptz(3)
+  completedAt       DateTime?                @db.Timestamptz(3)
+  lastError         String?
+  createdAt         DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                 @updatedAt @db.Timestamptz(3)
+  broadcast         Broadcast                @relation(fields: [projectId, broadcastId], references: [projectId, id], onDelete: Restrict)
+  connection        ChannelConnection        @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  contact           Contact                  @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  channelIdentity   ChannelIdentity          @relation(fields: [projectId, channelIdentityId], references: [projectId, id], onDelete: Restrict)
+  message           Message?                 @relation("BroadcastRecipientMessage", fields: [projectId, messageId], references: [projectId, id], onDelete: Restrict)
+  outboxRecord      OutboxRecord?            @relation("BroadcastRecipientOutbox", fields: [projectId, outboxRecordId], references: [projectId, id], onDelete: Restrict)
+  project           Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, broadcastId, channelIdentityId])
+  @@unique([projectId, messageId])
+  @@unique([projectId, outboxRecordId])
+  @@index([projectId, broadcastId, status])
+  @@index([projectId, connectionId, status])
+  @@index([projectId, channelIdentityId])
+  @@map("broadcast_recipients")
 }
 
 model CrmProjectConfig {
@@ -948,11 +1048,11 @@ model CrmOperation {
 }
 
 model IdempotencyRecord {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   projectId String
   scope     String
   key       String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
   expiresAt DateTime? @db.Timestamptz(3)
 
   @@unique([projectId, scope, key])
@@ -994,17 +1094,17 @@ model ContactTag {
 }
 
 model CustomFieldDefinition {
-  id          String          @id @default(uuid())
+  id          String                    @id @default(uuid())
   projectId   String
   key         String
   name        String
   description String?
   type        CustomFieldType
   options     Json?
-  archivedAt  DateTime?       @db.Timestamptz(3)
-  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
-  project     Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  archivedAt  DateTime?                 @db.Timestamptz(3)
+  createdAt   DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime                  @updatedAt @db.Timestamptz(3)
+  project     Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   values      ContactCustomFieldValue[]
 
   @@unique([projectId, id])

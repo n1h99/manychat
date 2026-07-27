@@ -10,5 +10,6 @@ import { TelegramOutboundQueueService } from './telegram-outbound-queue.service'
   controllers: [ChannelsController],
   imports: [AccessModule, AuditModule, DatabaseModule, JwtModule.register({})],
   providers: [ChannelsService, TelegramOutboundQueueService],
+  exports: [TelegramOutboundQueueService],
 })
 export class ChannelsModule {}

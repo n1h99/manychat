@@ -1,4 +1,3 @@
-import type { ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ContactsService } from './contacts.service';

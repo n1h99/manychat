@@ -22,6 +22,11 @@ describe('seed project role backfill', () => {
         'channels:read',
         'channels:manage',
         'channels:rotate_secrets',
+        'broadcasts:read',
+        'broadcasts:create',
+        'broadcasts:launch',
+        'broadcasts:pause',
+        'broadcasts:cancel',
       ].map((code) => [code, `permission-${code}`]),
     );
     const upsertPermission = vi.fn().mockResolvedValue(undefined);
@@ -42,6 +47,9 @@ describe('seed project role backfill', () => {
         'permission-channels:manage',
         'permission-channels:rotate_secrets',
       ]),
+    );
+    expect(upsertPermission.mock.calls.map(([input]) => input.create.permissionId)).toEqual(
+      expect.arrayContaining(['permission-broadcasts:read', 'permission-broadcasts:launch']),
     );
     expect(upsertPermission).toHaveBeenCalledTimes(
       seedProjectRoles.reduce((total, [, , rolePermissions]) => total + rolePermissions.length, 0) *

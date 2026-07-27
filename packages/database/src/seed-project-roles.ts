@@ -21,6 +21,11 @@ export const seedProjectRoles = [
       'channels:read',
       'channels:manage',
       'channels:rotate_secrets',
+      'broadcasts:read',
+      'broadcasts:create',
+      'broadcasts:launch',
+      'broadcasts:pause',
+      'broadcasts:cancel',
     ],
   ],
   [

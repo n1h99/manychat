@@ -19,6 +19,9 @@ import { ScenarioEditorPage } from './pages/scenario-editor-page';
 import { ScenariosPage } from './pages/scenarios-page';
 import { CrmConfigPage } from './pages/crm-config-page';
 import { SegmentsPage } from './pages/segments-page';
+import { BroadcastsPage } from './pages/broadcasts-page';
+import { BroadcastCreatePage } from './pages/broadcast-create-page';
+import { BroadcastDetailPage } from './pages/broadcast-detail-page';
 
 export function App() {
   return (
@@ -55,6 +58,16 @@ export function App() {
             />
             <Route element={<ProjectPermissionRoute permission="channels:manage" />}>
               <Route element={<ChannelCreatePage />} path="/projects/:projectId/channels/new" />
+            </Route>
+          </Route>
+          <Route element={<ProjectPermissionRoute permission="broadcasts:read" />}>
+            <Route element={<BroadcastsPage />} path="/projects/:projectId/broadcasts" />
+            <Route
+              element={<BroadcastDetailPage />}
+              path="/projects/:projectId/broadcasts/:broadcastId"
+            />
+            <Route element={<ProjectPermissionRoute permission="broadcasts:create" />}>
+              <Route element={<BroadcastCreatePage />} path="/projects/:projectId/broadcasts/new" />
             </Route>
           </Route>
           <Route element={<UsersPage />} path="/users" />

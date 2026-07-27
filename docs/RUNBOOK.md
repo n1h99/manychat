@@ -96,6 +96,23 @@ the provider outcome before any manual resend, because a timeout can occur after
 Telegram accepted the request. Do not expose, log, or copy channel credentials
 while investigating a record.
 
+## Telegram broadcasts
+
+Telegram broadcasts persist an immutable recipient snapshot before they create
+individual outbound `Message` and `OutboxRecord` rows. The worker prepares due
+`SCHEDULED` broadcasts and leased `PREPARING` broadcasts in bounded batches;
+the preparation lease makes concurrent worker replicas safe. A Redis failure
+after the database commit does not lose recipients: the existing outbox
+recovery scan re-enqueues their stable jobs.
+
+Use the broadcast status and recipient status journal for investigation. Do
+not modify recipient rows directly. Pausing prevents a queued record from
+calling Telegram; cancelling cancels unsent recipients. A provider result that
+is `UNKNOWN` is not automatically resent, because Telegram may have accepted
+the message before a network timeout. Retry only an explicitly failed
+recipient through the audited broadcast operation after confirming the target
+is eligible.
+
 ## CRM mock outbox and reconciliation
 
 CRM mock operations use the same PostgreSQL-backed outbox principle. The worker

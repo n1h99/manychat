@@ -23,6 +23,11 @@ export const projectPermissions = [
   'channels:read',
   'channels:manage',
   'channels:rotate_secrets',
+  'broadcasts:read',
+  'broadcasts:create',
+  'broadcasts:launch',
+  'broadcasts:pause',
+  'broadcasts:cancel',
 ] as const;
 
 export const allPermissionCodes = [...globalPermissions, ...projectPermissions] as const;
@@ -50,6 +55,11 @@ export const systemProjectRoles = [
       'channels:read',
       'channels:manage',
       'channels:rotate_secrets',
+      'broadcasts:read',
+      'broadcasts:create',
+      'broadcasts:launch',
+      'broadcasts:pause',
+      'broadcasts:cancel',
     ],
   },
   {

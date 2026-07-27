@@ -16,7 +16,7 @@ describe('Stage 3 Telegram persistence schema', () => {
 
   it('defines stable idempotency boundaries for webhook processing', () => {
     expect(schema).toContain('@@unique([connectionId, externalUpdateId])');
-    expect(schema).toContain('inboxRecordId String              @unique');
+    expect(schema).toMatch(/inboxRecordId\s+String\s+@unique/);
     expect(schema).toContain('@@unique([projectId, connectionId, externalChatId])');
     expect(schema).toContain('@@unique([projectId, normalizedEventId])');
     expect(schema).toContain('@@unique([connectionId, direction, externalMessageId])');

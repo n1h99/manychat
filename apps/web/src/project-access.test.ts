@@ -27,4 +27,11 @@ describe('project channel access', () => {
     expect(hasProjectPermission(access, 'channels:manage')).toBe(true);
     expect(hasProjectPermission(access, 'channels:rotate_secrets')).toBe(false);
   });
+
+  it('keeps broadcast permissions separate from channel management', () => {
+    const access = { permissions: ['broadcasts:read'], projectRoleName: 'viewer' };
+
+    expect(hasProjectPermission(access, 'broadcasts:read')).toBe(true);
+    expect(hasProjectPermission(access, 'broadcasts:launch')).toBe(false);
+  });
 });

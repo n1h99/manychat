@@ -15,6 +15,7 @@ import { TelegramWebhookModule } from './telegram-webhook/telegram-webhook.modul
 import { ChannelsModule } from './channels/channels.module';
 import { AutomationModule } from './automation/automation.module';
 import { CrmModule } from './crm/crm.module';
+import { BroadcastsModule } from './broadcasts/broadcasts.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -41,6 +42,7 @@ const rootEnvFile =
     ChannelsModule,
     AutomationModule,
     CrmModule,
+    BroadcastsModule,
   ],
 })
 export class AppModule implements NestModule {

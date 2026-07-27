@@ -537,3 +537,21 @@ an explicit persisted continuation; fire-and-forget does not block the parent.
 Guarded cycles are allowed only when their cycle contains Delay or Wait; every
 execution also has a bounded step budget. A cycle without a durable boundary is
 rejected on publish.
+
+## ADR-030: Telegram broadcasts snapshot recipients and delegate delivery to outbox
+
+**Status:** Accepted.
+
+**Decision:** A Telegram broadcast stores a declarative audience only while it is
+a draft. Launch transitions it through `PREPARING`, resolves eligible Telegram
+identities in bounded chunks and persists `BroadcastRecipient` rows. Every
+queued recipient gets a transactionally-created outbound `Message` and
+`OutboxRecord`; its idempotency key is derived from the recipient ID. The
+existing Telegram outbound worker is the only component allowed to call the
+provider.
+
+**Consequences:** Recipient membership is immutable after launch, preserving a
+reproducible technical result even if a Segment later changes. Pause and cancel
+stop future recipient preparation/queueing; an already claimed outbox retains
+its at-least-once outcome. A provider timeout remains `UNKNOWN` and is never
+blindly retried by the broadcast coordinator.

@@ -380,6 +380,19 @@ The primary contact is selected by an operator; merge never starts from a fuzzy
 match. Segment membership is calculated at query time from project-scoped
 filters and is not stored as a mutable recipient list.
 
+## Telegram Broadcasts — approved post-pilot slice
+
+Telegram Broadcasts add project-scoped drafts, scheduled or immediate launch,
+an audience snapshot, recipient technical status and pause/resume/cancel
+controls. The snapshot creates one transactional `Message` plus `OutboxRecord`
+per eligible Telegram identity, with a stable broadcast-recipient idempotency
+key. Existing Telegram outbound retry, 429 handling and `UNKNOWN` delivery
+semantics remain authoritative; a broadcast never calls Telegram directly.
+
+This slice is Telegram text only. It excludes templates, WhatsApp, Instagram,
+advanced media, analytics funnels and consent workflows beyond the current
+blocked/unsubscribed eligibility guard.
+
 ## Pilot NFR
 
 | Requirement                  | Initial target                                                                            |
