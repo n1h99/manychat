@@ -8,6 +8,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '@omnicus/database';
+import {
+  type TelegramInlineKeyboard,
+  validateTelegramInlineKeyboard,
+} from '@omnicus/channel-telegram';
 import { renderTemplate, templateVariables } from '@omnicus/media-core';
 
 import { AuditService } from '../audit/audit.service';
@@ -22,7 +26,8 @@ import type {
 
 type TemplateInput = {
   caption?: string;
-  kind: 'DOCUMENT' | 'PHOTO' | 'TEXT';
+  inlineKeyboard?: TelegramInlineKeyboard;
+  kind: 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
   mediaAssetId?: string;
   text?: string;
 };
@@ -159,7 +164,11 @@ export class TemplatesService {
         code: 'MESSAGE_TEMPLATE_VERSION_REQUIRED',
         message: 'Template version is missing',
       });
-    const sourceContent = source.content as { caption?: string; text?: string };
+    const sourceContent = source.content as {
+      caption?: string;
+      inlineKeyboard?: TelegramInlineKeyboard;
+      text?: string;
+    };
     const input: TemplateInput = this.input({
       kind: dto.kind ?? source.kind,
       ...(dto.text !== undefined || sourceContent.text !== undefined
@@ -167,6 +176,11 @@ export class TemplatesService {
         : {}),
       ...(dto.caption !== undefined || sourceContent.caption !== undefined
         ? { caption: dto.caption ?? sourceContent.caption }
+        : {}),
+      ...(dto.inlineKeyboard !== undefined || sourceContent.inlineKeyboard !== undefined
+        ? {
+            inlineKeyboard: dto.inlineKeyboard ?? sourceContent.inlineKeyboard,
+          }
         : {}),
       ...(dto.mediaAssetId !== undefined
         ? { mediaAssetId: dto.mediaAssetId }
@@ -313,7 +327,12 @@ export class TemplatesService {
     return { kind: version.kind, mediaAssetId: version.mediaAssetId, ...rendered };
   }
 
-  private input(dto: TemplateInput & { name: string }): TemplateInput {
+  private input(
+    dto: Omit<TemplateInput, 'inlineKeyboard'> & {
+      inlineKeyboard?: unknown;
+      name: string;
+    },
+  ): TemplateInput {
     if (dto.kind === 'TEXT' && !dto.text)
       throw new BadRequestException({
         code: 'MESSAGE_TEMPLATE_TEXT_REQUIRED',
@@ -324,8 +343,24 @@ export class TemplatesService {
         code: 'MESSAGE_TEMPLATE_MEDIA_REQUIRED',
         message: 'Media template requires an asset',
       });
+    if (dto.kind === 'VIDEO_NOTE' && dto.caption)
+      throw new BadRequestException({
+        code: 'MESSAGE_TEMPLATE_VIDEO_NOTE_CAPTION_UNSUPPORTED',
+        message: 'Video note templates cannot have a caption',
+      });
+    let inlineKeyboard: TelegramInlineKeyboard | undefined;
+    if (dto.inlineKeyboard !== undefined)
+      try {
+        inlineKeyboard = validateTelegramInlineKeyboard(dto.inlineKeyboard);
+      } catch {
+        throw new BadRequestException({
+          code: 'MESSAGE_TEMPLATE_INLINE_KEYBOARD_INVALID',
+          message: 'Inline keyboard is invalid',
+        });
+      }
     return {
       kind: dto.kind,
+      ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }),
       ...(dto.kind === 'TEXT'
         ? { text: dto.text! }
         : {
@@ -358,9 +393,16 @@ export class TemplatesService {
   }
 
   private content(input: TemplateInput): Prisma.InputJsonValue {
-    return input.kind === 'TEXT'
-      ? { text: input.text! }
-      : { caption: input.caption ?? '', mediaAssetId: input.mediaAssetId! };
+    return (input.kind === 'TEXT'
+      ? {
+          text: input.text!,
+          ...(input.inlineKeyboard === undefined ? {} : { inlineKeyboard: input.inlineKeyboard }),
+        }
+      : {
+          caption: input.caption ?? '',
+          mediaAssetId: input.mediaAssetId!,
+          ...(input.inlineKeyboard === undefined ? {} : { inlineKeyboard: input.inlineKeyboard }),
+        }) as unknown as Prisma.InputJsonValue;
   }
 
   private hash(input: TemplateInput): string {

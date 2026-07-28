@@ -8,7 +8,7 @@ describe('MediaController', () => {
     const controller = new MediaController({ upload } as never);
 
     await expect(
-      controller.upload('project-a', 'VIDEO' as 'PHOTO', undefined, {
+      controller.upload('project-a', 'EXECUTABLE' as 'PHOTO', undefined, {
         auth: { userId: 'user-a' },
         headers: {},
         ip: '127.0.0.1',

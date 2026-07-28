@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   Inject,
@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { WorkerEnvironment } from '@omnicus/config/server';
+import { ChannelSecretsService, type EncryptedSecretEnvelope } from '@omnicus/channel-secrets';
+import { TelegramAdapter, TelegramHttpTransport } from '@omnicus/channel-telegram';
 import {
   CrmClientError,
   type CrmClient,
@@ -16,6 +18,7 @@ import {
   type CrmMediaInput,
 } from '@omnicus/crm-core';
 import type { Prisma } from '@omnicus/database';
+import { prepareMediaForTelegram, S3MediaStorage, type MediaKind } from '@omnicus/media-core';
 
 import { DatabaseService } from '../database/database.service';
 import { CRM_CLIENT } from './crm.tokens';
@@ -24,6 +27,12 @@ import { CRM_CLIENT } from './crm.tokens';
 export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(CrmOutboxService.name);
   private readonly workerId = `crm-outbox-${process.pid}-${randomUUID()}`;
+  private readonly maximumMediaBytes: number;
+  private readonly mediaRetentionDays: number;
+  private readonly signedUrlTtlSeconds: number;
+  private readonly secrets: ChannelSecretsService;
+  private readonly storage: S3MediaStorage | undefined;
+  private readonly telegram = new TelegramAdapter(new TelegramHttpTransport());
   private timer: NodeJS.Timeout | undefined;
   private scanning = false;
 
@@ -31,7 +40,21 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     @Inject(ConfigService) private readonly config: ConfigService<WorkerEnvironment, true>,
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(CRM_CLIENT) private readonly client: CrmClient,
-  ) {}
+  ) {
+    this.maximumMediaBytes = config.get('MEDIA_MAX_UPLOAD_BYTES', { infer: true });
+    this.mediaRetentionDays = config.get('MEDIA_RETENTION_DAYS', { infer: true });
+    this.signedUrlTtlSeconds = config.get('MEDIA_SIGNED_URL_TTL_SECONDS', { infer: true });
+    this.secrets = new ChannelSecretsService(config.get('CHANNEL_SECRETS_KEY', { infer: true }));
+    if (config.get('MEDIA_STORAGE_ENABLED', { infer: true }))
+      this.storage = new S3MediaStorage({
+        accessKeyId: config.get('MEDIA_BUCKET_ACCESS_KEY_ID', { infer: true })!,
+        bucket: config.get('MEDIA_BUCKET', { infer: true })!,
+        endpoint: config.get('MEDIA_BUCKET_ENDPOINT', { infer: true })!,
+        forcePathStyle: config.get('MEDIA_BUCKET_FORCE_PATH_STYLE', { infer: true }),
+        region: config.get('MEDIA_BUCKET_REGION', { infer: true }),
+        secretAccessKey: config.get('MEDIA_BUCKET_SECRET_ACCESS_KEY', { infer: true })!,
+      });
+  }
 
   onApplicationBootstrap(): void {
     if (!this.config.get('CRM_INTEGRATION_ENABLED', { infer: true })) return;
@@ -191,7 +214,11 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           : await this.client.forwardInboundMessage(context, {
               contactId: operation.contact.id,
               identity,
-              ...(this.media(operation.normalizedEvent?.message?.mediaAsset) ?? {}),
+              ...(await this.media(
+                operation.projectId,
+                connectionId,
+                operation.normalizedEvent?.message?.mediaAsset,
+              )),
               ...(operation.normalizedEvent?.message?.id
                 ? { messageId: operation.normalizedEvent.message.id }
                 : {}),
@@ -202,7 +229,13 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
               senderName: operation.contact.displayName,
               ...(inboundText === undefined ? {} : { text: inboundText }),
             });
-      await this.finishSuccess(operation, outboxRecordId, leaseToken, result);
+      await this.finishSuccess(
+        operation,
+        outboxRecordId,
+        leaseToken,
+        result,
+        operation.type === 'CREATE_OR_UPDATE_LEAD' && !operation.contact.crmLeadId,
+      );
     } catch (error) {
       const failure =
         error instanceof CrmClientError
@@ -256,6 +289,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     outboxRecordId: string,
     leaseToken: string,
     result: { mode: string; operationId: string; providerReference: string },
+    shouldBackfillHistory: boolean,
   ): Promise<void> {
     await this.database.client.$transaction(async (transaction) => {
       await transaction.crmOperation.update({
@@ -275,6 +309,17 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
             projectId_id: { id: operation.contactId, projectId: operation.projectId },
           },
         });
+      if (
+        shouldBackfillHistory &&
+        operation.type === 'CREATE_OR_UPDATE_LEAD' &&
+        operation.contactId
+      )
+        await this.queueInitialHistory(
+          transaction,
+          operation.projectId,
+          operation.contactId,
+          operation.id,
+        );
       await transaction.outboxRecord.updateMany({
         data: {
           completedAt: new Date(),
@@ -287,6 +332,67 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
         where: { id: outboxRecordId, lockedBy: leaseToken, status: 'PROCESSING' },
       });
     });
+  }
+
+  private async queueInitialHistory(
+    transaction: Prisma.TransactionClient,
+    projectId: string,
+    contactId: string,
+    sourceOperationId: string,
+  ): Promise<void> {
+    const messages = await transaction.message.findMany({
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+      where: {
+        contactId,
+        direction: 'INBOUND',
+        normalizedEventId: { not: null },
+        projectId,
+      },
+    });
+    for (const message of messages) {
+      if (!message.normalizedEventId) continue;
+      const alreadyQueued = await transaction.crmOperation.findFirst({
+        select: { id: true },
+        where: {
+          normalizedEventId: message.normalizedEventId,
+          projectId,
+          type: 'FORWARD_INBOUND_MESSAGE',
+        },
+      });
+      if (alreadyQueued) continue;
+      const idempotencyKey = `crm-history-${message.id}`;
+      await transaction.outboxRecord.createMany({
+        data: [
+          {
+            idempotencyKey,
+            kind: 'CRM',
+            payload: {},
+            projectId,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      const outbox = await transaction.outboxRecord.findUnique({
+        include: { crmOperation: { select: { id: true } } },
+        where: { projectId_idempotencyKey: { idempotencyKey, projectId } },
+      });
+      if (!outbox || outbox.crmOperation) continue;
+      const historyOperation = await transaction.crmOperation.create({
+        data: {
+          contactId,
+          inputSafe: { source: 'initial_history', sourceOperationId },
+          normalizedEventId: message.normalizedEventId,
+          outboxRecordId: outbox.id,
+          projectId,
+          type: 'FORWARD_INBOUND_MESSAGE',
+        },
+      });
+      await transaction.outboxRecord.update({
+        data: { payload: { crmOperationId: historyOperation.id } },
+        where: { projectId_id: { id: outbox.id, projectId } },
+      });
+    }
   }
 
   private async finish(
@@ -336,31 +442,149 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     return typeof record.caption === 'string' ? record.caption : undefined;
   }
 
-  private media(
+  private async media(
+    projectId: string,
+    connectionId: string | null | undefined,
     asset:
       | {
+          bucketKey: string | null;
+          connectionId: string | null;
           declaredMimeType: string | null;
+          detectedMimeType: string | null;
+          extension: string | null;
           id: string;
           kind: string;
           originalFilename: string | null;
+          providerMediaId: string | null;
+          providerMetadata: Prisma.JsonValue | null;
           sizeBytes: bigint | null;
+          status: string;
         }
       | null
       | undefined,
-  ): { media: CrmMediaInput } | undefined {
+  ): Promise<{ media: CrmMediaInput } | undefined> {
     if (!asset) return undefined;
+    let current = asset;
+    if (
+      current.status === 'PROVIDER_REFERENCE' &&
+      connectionId &&
+      current.connectionId === connectionId &&
+      current.providerMediaId
+    )
+      current = await this.materializeTelegramMedia(projectId, connectionId, current);
     const size =
-      asset.sizeBytes !== null && asset.sizeBytes <= BigInt(Number.MAX_SAFE_INTEGER)
-        ? Number(asset.sizeBytes)
+      current.sizeBytes !== null && current.sizeBytes <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? Number(current.sizeBytes)
         : undefined;
+    const download =
+      current.status === 'AVAILABLE' && current.bucketKey && this.storage
+        ? {
+            downloadUrl: await this.storage.signedDownloadUrl(
+              current.bucketKey,
+              this.signedUrlTtlSeconds,
+            ),
+            downloadUrlExpiresAt: new Date(
+              Date.now() + this.signedUrlTtlSeconds * 1_000,
+            ).toISOString(),
+          }
+        : {};
     return {
       media: {
-        assetId: asset.id,
-        ...(asset.originalFilename ? { fileName: asset.originalFilename } : {}),
-        ...(asset.declaredMimeType ? { mimeType: asset.declaredMimeType } : {}),
+        assetId: current.id,
+        ...download,
+        ...(current.originalFilename ? { fileName: current.originalFilename } : {}),
+        ...((current.detectedMimeType ?? current.declaredMimeType)
+          ? { mimeType: current.detectedMimeType ?? current.declaredMimeType! }
+          : {}),
         ...(size === undefined ? {} : { size }),
-        type: asset.kind === 'PHOTO' ? 'image' : 'file',
+        type:
+          current.kind === 'PHOTO'
+            ? 'image'
+            : ['AUDIO', 'VOICE'].includes(current.kind)
+              ? 'audio'
+              : ['ANIMATION', 'VIDEO', 'VIDEO_NOTE'].includes(current.kind)
+                ? 'video'
+                : 'file',
       },
     };
+  }
+
+  private async materializeTelegramMedia(
+    projectId: string,
+    connectionId: string,
+    asset: {
+      bucketKey: string | null;
+      connectionId: string | null;
+      declaredMimeType: string | null;
+      detectedMimeType: string | null;
+      extension: string | null;
+      id: string;
+      kind: string;
+      originalFilename: string | null;
+      providerMediaId: string | null;
+      providerMetadata: Prisma.JsonValue | null;
+      sizeBytes: bigint | null;
+      status: string;
+    },
+  ): Promise<typeof asset> {
+    if (!this.storage || !asset.providerMediaId) return asset;
+    try {
+      const connection = await this.database.client.channelConnection.findUnique({
+        where: { projectId_id: { id: connectionId, projectId } },
+      });
+      if (!connection) return asset;
+      const token = this.secrets.decryptSecret({
+        channelConnectionId: connection.id,
+        channelType: 'telegram',
+        envelope: connection.credentialsEncrypted as unknown as EncryptedSecretEnvelope,
+        field: 'botToken',
+        projectId,
+      });
+      const downloaded = await this.telegram.downloadFile(
+        token,
+        asset.providerMediaId,
+        this.maximumMediaBytes,
+      );
+      const prepared = await prepareMediaForTelegram({
+        bytes: downloaded.bytes,
+        ...(asset.declaredMimeType ? { declaredMimeType: asset.declaredMimeType } : {}),
+        ...(asset.originalFilename ? { filename: asset.originalFilename } : {}),
+        kind: asset.kind as MediaKind,
+        maximumBytes: this.maximumMediaBytes,
+      });
+      const bucketKey = `${projectId}/telegram/${asset.id}.${prepared.extension}`;
+      await this.storage.putObject(bucketKey, prepared.bytes, prepared.mimeType, {
+        assetId: asset.id,
+        projectId,
+      });
+      return await this.database.client.mediaAsset.update({
+        data: {
+          availableAt: new Date(),
+          bucketKey,
+          checksumSha256: createHash('sha256').update(prepared.bytes).digest('hex'),
+          detectedMimeType: prepared.mimeType,
+          extension: prepared.extension,
+          providerMetadata: {
+            ...(asset.providerMetadata &&
+            typeof asset.providerMetadata === 'object' &&
+            !Array.isArray(asset.providerMetadata)
+              ? asset.providerMetadata
+              : {}),
+            materializedFromTelegram: true,
+          },
+          retentionUntil: new Date(Date.now() + this.mediaRetentionDays * 86_400_000),
+          sizeBytes: BigInt(prepared.sizeBytes),
+          status: 'AVAILABLE',
+        },
+        where: { projectId_id: { id: asset.id, projectId } },
+      });
+    } catch {
+      this.logger.warn({
+        assetId: asset.id,
+        message: 'crm_media_materialization_unavailable',
+        projectId,
+      });
+      return asset;
+    }
   }
 }

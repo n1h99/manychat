@@ -24,6 +24,43 @@ const telegramUser = {
 };
 
 export const telegramInboundFixtures = {
+  animation: defineSafeFixture('telegram-animation', {
+    message: {
+      animation: {
+        duration: 3,
+        file_id: 'animation-file-id',
+        file_name: 'welcome.gif',
+        file_size: 2048,
+        file_unique_id: 'animation-unique-id',
+        height: 320,
+        mime_type: 'image/gif',
+        width: 320,
+      },
+      caption: 'welcome',
+      chat: { id: 1001, type: 'private' },
+      from: telegramUser,
+      message_id: 17,
+    },
+    update_id: 113,
+  }),
+  audio: defineSafeFixture('telegram-audio', {
+    message: {
+      audio: {
+        duration: 42,
+        file_id: 'audio-file-id',
+        file_name: 'track.mp3',
+        file_size: 4096,
+        file_unique_id: 'audio-unique-id',
+        mime_type: 'audio/mpeg',
+        performer: 'Omnicus',
+        title: 'Welcome',
+      },
+      chat: { id: 1001, type: 'private' },
+      from: telegramUser,
+      message_id: 14,
+    },
+    update_id: 110,
+  }),
   blocked: defineSafeFixture('telegram-blocked', {
     my_chat_member: {
       chat: { id: 1001, type: 'private' },
@@ -85,6 +122,55 @@ export const telegramInboundFixtures = {
       text: 'hello',
     },
     update_id: 101,
+  }),
+  video: defineSafeFixture('telegram-video', {
+    message: {
+      caption: 'demo',
+      chat: { id: 1001, type: 'private' },
+      from: telegramUser,
+      message_id: 13,
+      video: {
+        duration: 8,
+        file_id: 'video-file-id',
+        file_name: 'demo.mp4',
+        file_size: 8192,
+        file_unique_id: 'video-unique-id',
+        height: 720,
+        mime_type: 'video/mp4',
+        width: 1280,
+      },
+    },
+    update_id: 109,
+  }),
+  videoNote: defineSafeFixture('telegram-video-note', {
+    message: {
+      chat: { id: 1001, type: 'private' },
+      from: telegramUser,
+      message_id: 16,
+      video_note: {
+        duration: 10,
+        file_id: 'video-note-file-id',
+        file_size: 4096,
+        file_unique_id: 'video-note-unique-id',
+        length: 384,
+      },
+    },
+    update_id: 112,
+  }),
+  voice: defineSafeFixture('telegram-voice', {
+    message: {
+      chat: { id: 1001, type: 'private' },
+      from: telegramUser,
+      message_id: 15,
+      voice: {
+        duration: 7,
+        file_id: 'voice-file-id',
+        file_size: 1024,
+        file_unique_id: 'voice-unique-id',
+        mime_type: 'audio/ogg',
+      },
+    },
+    update_id: 111,
   }),
   unblocked: defineSafeFixture('telegram-unblocked', {
     my_chat_member: {

@@ -7,7 +7,8 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 
-export type MediaKind = 'DOCUMENT' | 'PHOTO';
+export type MediaKind =
+  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
 
 export interface MediaStorageConfiguration {
   accessKeyId: string;
@@ -214,18 +215,21 @@ function validateTelegramPhoto(bytes: Uint8Array, mimeType: string): ImageDimens
 const signatures = [
   {
     extension: 'jpg',
+    kinds: new Set<MediaKind>(['PHOTO']),
     mimeType: 'image/jpeg',
     matches: (bytes: Uint8Array) =>
       [0xff, 0xd8, 0xff].every((value, index) => bytes[index] === value),
   },
   {
     extension: 'png',
+    kinds: new Set<MediaKind>(['PHOTO']),
     mimeType: 'image/png',
     matches: (bytes: Uint8Array) =>
       [0x89, 0x50, 0x4e, 0x47].every((value, index) => bytes[index] === value),
   },
   {
     extension: 'webp',
+    kinds: new Set<MediaKind>(['PHOTO']),
     mimeType: 'image/webp',
     matches: (bytes: Uint8Array) =>
       [0x52, 0x49, 0x46, 0x46].every((value, index) => bytes[index] === value) &&
@@ -233,12 +237,14 @@ const signatures = [
   },
   {
     extension: 'pdf',
+    kinds: new Set<MediaKind>(['DOCUMENT']),
     mimeType: 'application/pdf',
     matches: (bytes: Uint8Array) =>
       [0x25, 0x50, 0x44, 0x46].every((value, index) => bytes[index] === value),
   },
   {
     extension: 'zip',
+    kinds: new Set<MediaKind>(['DOCUMENT']),
     mimeType: 'application/zip',
     matches: (bytes: Uint8Array) =>
       ([0x03, 0x05] as const).some(
@@ -249,12 +255,48 @@ const signatures = [
           bytes[3] === (recordType === 0x03 ? 0x04 : 0x06),
       ),
   },
+  {
+    extension: 'gif',
+    kinds: new Set<MediaKind>(['ANIMATION']),
+    mimeType: 'image/gif',
+    matches: (bytes: Uint8Array) =>
+      bytes.byteLength >= 6 &&
+      ['GIF87a', 'GIF89a'].includes(String.fromCharCode(...bytes.slice(0, 6))),
+  },
+  {
+    extension: 'mp4',
+    kinds: new Set<MediaKind>(['ANIMATION', 'VIDEO', 'VIDEO_NOTE']),
+    mimeType: 'video/mp4',
+    matches: (bytes: Uint8Array) =>
+      bytes.byteLength >= 12 &&
+      [0x66, 0x74, 0x79, 0x70].every((value, index) => bytes[index + 4] === value),
+  },
+  {
+    extension: 'm4a',
+    kinds: new Set<MediaKind>(['AUDIO', 'VOICE']),
+    mimeType: 'audio/mp4',
+    matches: (bytes: Uint8Array) =>
+      bytes.byteLength >= 12 &&
+      [0x66, 0x74, 0x79, 0x70].every((value, index) => bytes[index + 4] === value),
+  },
+  {
+    extension: 'mp3',
+    kinds: new Set<MediaKind>(['AUDIO', 'VOICE']),
+    mimeType: 'audio/mpeg',
+    matches: (bytes: Uint8Array) =>
+      bytes.byteLength >= 3 &&
+      ((bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) ||
+        (bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0)),
+  },
+  {
+    extension: 'ogg',
+    kinds: new Set<MediaKind>(['VOICE']),
+    mimeType: 'audio/ogg',
+    matches: (bytes: Uint8Array) =>
+      bytes.byteLength >= 4 &&
+      [0x4f, 0x67, 0x67, 0x53].every((value, index) => bytes[index] === value),
+  },
 ] as const;
-
-const allowedMimeTypes: Record<MediaKind, ReadonlySet<string>> = {
-  DOCUMENT: new Set(['application/pdf', 'application/zip']),
-  PHOTO: new Set(['image/jpeg', 'image/png', 'image/webp']),
-};
 
 export class MediaValidationError extends Error {
   constructor(readonly code: string) {
@@ -269,15 +311,19 @@ function validateMediaIdentity(input: MediaValidationInput): DetectedMedia {
   if (input.bytes.byteLength === 0) throw new MediaValidationError('media_empty');
   if (input.bytes.byteLength > input.maximumBytes)
     throw new MediaValidationError('media_size_exceeded');
-  const signature = signatures.find((candidate) => candidate.matches(input.bytes));
-  if (!signature || !allowedMimeTypes[input.kind].has(signature.mimeType))
-    throw new MediaValidationError('media_type_rejected');
+  const signature = signatures.find(
+    (candidate) => candidate.kinds.has(input.kind) && candidate.matches(input.bytes),
+  );
+  if (!signature) throw new MediaValidationError('media_type_rejected');
   if (input.declaredMimeType && input.declaredMimeType !== signature.mimeType)
     throw new MediaValidationError('media_mime_mismatch');
   const filenameExtension = input.filename?.split('.').pop()?.toLowerCase();
   if (
     filenameExtension &&
-    filenameExtension !== 'jpeg' &&
+    !(
+      (signature.extension === 'jpg' && filenameExtension === 'jpeg') ||
+      (signature.extension === 'm4a' && filenameExtension === 'mp4')
+    ) &&
     filenameExtension !== signature.extension
   )
     throw new MediaValidationError('media_extension_mismatch');
@@ -399,7 +445,7 @@ async function encodeTelegramPhoto(
 
 export async function prepareMediaForTelegram(input: MediaValidationInput): Promise<PreparedMedia> {
   validateMediaIdentity(input);
-  if (input.kind === 'DOCUMENT') {
+  if (input.kind !== 'PHOTO') {
     const validated = validateMedia(input);
     return { ...validated, bytes: input.bytes, transformed: false };
   }

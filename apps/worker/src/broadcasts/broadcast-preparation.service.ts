@@ -343,10 +343,16 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
     return typeof value === 'string' ? value : null;
   }
 
-  private messageType(content: unknown): 'DOCUMENT' | 'PHOTO' | 'TEXT' {
+  private messageType(
+    content: unknown,
+  ): 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE' {
     if (!content || typeof content !== 'object' || Array.isArray(content)) return 'TEXT';
     const kind = (content as Record<string, Prisma.JsonValue>).kind;
-    return kind === 'PHOTO' || kind === 'DOCUMENT' ? kind : 'TEXT';
+    return ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'].includes(
+      String(kind),
+    )
+      ? (kind as 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE')
+      : 'TEXT';
   }
 
   private async segmentWhere(

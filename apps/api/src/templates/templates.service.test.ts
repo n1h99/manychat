@@ -33,7 +33,12 @@ describe('TemplatesService', () => {
 
     await service.create(
       'project-a',
-      { kind: 'TEXT', name: 'Welcome', text: 'Hello {{contact.firstName}}' },
+      {
+        inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+        kind: 'TEXT',
+        name: 'Welcome',
+        text: 'Hello {{contact.firstName}}',
+      },
       actor,
       context,
     );
@@ -42,6 +47,9 @@ describe('TemplatesService', () => {
       data: expect.objectContaining({
         projectId: 'project-a',
         templateId: 'template-a',
+        content: expect.objectContaining({
+          inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+        }),
         variables: ['contact.firstName'],
         version: 1,
       }),

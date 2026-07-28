@@ -24,6 +24,8 @@ export interface CrmTagInput {
 
 export interface CrmMediaInput {
   assetId: string;
+  downloadUrl?: string;
+  downloadUrlExpiresAt?: string;
   fileName?: string;
   mimeType?: string;
   size?: number;

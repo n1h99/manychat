@@ -22,7 +22,11 @@ function database(options: { existing?: boolean; projectId?: string } = {}) {
     auditLog: { create: vi.fn() },
     conversation: { upsert: vi.fn().mockResolvedValue({ id: 'conversation-a' }) },
     idempotencyRecord: { create: vi.fn() },
-    message: { create: vi.fn().mockResolvedValue({ id: 'message-a' }) },
+    mediaAsset: { findFirst: vi.fn().mockResolvedValue({ id: 'asset-a', kind: 'VOICE' }) },
+    message: {
+      create: vi.fn().mockResolvedValue({ id: 'message-a' }),
+      findFirst: vi.fn().mockResolvedValue({ externalMessageId: 'telegram-message-42' }),
+    },
     outboxRecord: { create: vi.fn().mockResolvedValue({ id: 'outbox-a' }) },
   };
   return {
@@ -137,6 +141,44 @@ describe('CrmOutboundService', () => {
       status: 'QUEUED',
     });
     expect(db.transaction.outboxRecord.create).toHaveBeenCalled();
+  });
+
+  it('queues media, reply and inline keyboard without exposing provider credentials', async () => {
+    const db = database();
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+    await service.queue(
+      {
+        crmProjectId: dto.crmProjectId,
+        identity: dto.identity,
+        inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'До 1000' }]],
+        media: { kind: 'VOICE', mediaAssetId: 'asset-a' },
+        omnicusContactId: dto.omnicusContactId,
+        omnicusProjectId: dto.omnicusProjectId,
+        replyToMessageId: '11111111-1111-4111-8111-111111111111',
+      },
+      'crm-media-request-a',
+      'correlation-a',
+    );
+
+    expect(db.transaction.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          connectionId: 'connection-a',
+          projectId: 'project-a',
+        }),
+      }),
+    );
+    expect(db.transaction.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          mediaAssetId: 'asset-a',
+          metadata: expect.objectContaining({
+            replyToMessageId: 'telegram-message-42',
+          }),
+          type: 'VOICE',
+        }),
+      }),
+    );
   });
 
   it('reconciles a confirmed sent message without exposing outbox payload', async () => {

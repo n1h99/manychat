@@ -2,7 +2,7 @@ import { Button, Modal, Select, Space, Table, Tag, Typography, Upload, message }
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
-import { type MediaAsset, useMediaAssets, useMediaMutations } from '../media-api';
+import { type MediaAsset, type MediaKind, useMediaAssets, useMediaMutations } from '../media-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
 export function MediaAssetsPage() {
@@ -12,7 +12,7 @@ export function MediaAssetsPage() {
   const access = useProjectAccess(projectId);
   const canManage = hasProjectPermission(access.data, 'media:manage');
   const [file, setFile] = useState<File>();
-  const [kind, setKind] = useState<'DOCUMENT' | 'PHOTO'>('PHOTO');
+  const [kind, setKind] = useState<MediaKind>('PHOTO');
   const upload = async () => {
     if (!file) return;
     try {
@@ -42,11 +42,28 @@ export function MediaAssetsPage() {
             options={[
               { label: 'Photo (JPEG/PNG/WebP)', value: 'PHOTO' },
               { label: 'Document (PDF/ZIP)', value: 'DOCUMENT' },
+              { label: 'Video (MP4)', value: 'VIDEO' },
+              { label: 'Audio (MP3/M4A)', value: 'AUDIO' },
+              { label: 'Voice (OGG/MP3/M4A)', value: 'VOICE' },
+              { label: 'Video note (square MP4)', value: 'VIDEO_NOTE' },
+              { label: 'Animation (GIF/MP4)', value: 'ANIMATION' },
             ]}
             value={kind}
           />
           <Upload
-            accept={kind === 'PHOTO' ? '.jpg,.jpeg,.png,.webp' : '.pdf,.zip'}
+            accept={
+              kind === 'PHOTO'
+                ? '.jpg,.jpeg,.png,.webp'
+                : kind === 'DOCUMENT'
+                  ? '.pdf,.zip'
+                  : kind === 'VOICE'
+                    ? '.ogg,.mp3,.m4a,.mp4'
+                    : kind === 'AUDIO'
+                      ? '.mp3,.m4a,.mp4'
+                      : kind === 'ANIMATION'
+                        ? '.gif,.mp4'
+                        : '.mp4'
+            }
             beforeUpload={(next) => {
               setFile(next);
               return false;

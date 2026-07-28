@@ -1,6 +1,15 @@
-import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  ValidateNested,
+} from 'class-validator';
 
 export class CrmOutboundIdentityDto {
   @ApiProperty({ type: String })
@@ -16,6 +25,42 @@ export class CrmOutboundIdentityDto {
   @ApiProperty({ enum: ['telegram'] })
   @IsIn(['telegram'])
   channel!: 'telegram';
+}
+
+const crmOutboundMediaKinds = [
+  'PHOTO',
+  'DOCUMENT',
+  'VIDEO',
+  'AUDIO',
+  'VOICE',
+  'VIDEO_NOTE',
+  'ANIMATION',
+] as const;
+
+export class CrmOutboundMediaDto {
+  @ApiProperty({ enum: crmOutboundMediaKinds })
+  @IsIn(crmOutboundMediaKinds)
+  kind!: (typeof crmOutboundMediaKinds)[number];
+
+  @ApiProperty({ format: 'uuid', type: String })
+  @IsUUID()
+  mediaAssetId!: string;
+}
+
+export class CrmMediaUploadDto {
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  crmProjectId!: string;
+
+  @ApiProperty({ enum: crmOutboundMediaKinds })
+  @IsIn(crmOutboundMediaKinds)
+  kind!: (typeof crmOutboundMediaKinds)[number];
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  omnicusProjectId!: string;
 }
 
 export class CrmOutboundMessageDto {
@@ -45,20 +90,35 @@ export class CrmOutboundMessageDto {
   @ValidateNested()
   identity!: CrmOutboundIdentityDto;
 
-  @ApiProperty({ maxLength: 4096, type: String })
+  @ApiPropertyOptional({ maxLength: 4096, type: String })
+  @IsOptional()
   @IsString()
   @Length(1, 4096)
-  text!: string;
+  text?: string;
+
+  @ApiPropertyOptional({ type: CrmOutboundMediaDto })
+  @IsOptional()
+  @Type(() => CrmOutboundMediaDto)
+  @ValidateNested()
+  media?: CrmOutboundMediaDto;
+
+  @ApiPropertyOptional({
+    description: 'Rows of provider-independent Telegram inline keyboard buttons',
+    isArray: true,
+    type: 'array',
+  })
+  @IsOptional()
+  @IsArray()
+  inlineKeyboard?: unknown[];
 
   @ApiPropertyOptional({ type: Boolean })
   @IsOptional()
   @IsBoolean()
   disableNotification?: boolean;
 
-  @ApiPropertyOptional({ type: String })
+  @ApiPropertyOptional({ format: 'uuid', type: String })
   @IsOptional()
-  @IsString()
-  @Length(1, 128)
+  @IsUUID()
   replyToMessageId?: string;
 }
 

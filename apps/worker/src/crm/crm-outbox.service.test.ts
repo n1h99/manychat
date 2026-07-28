@@ -17,6 +17,7 @@ function createDatabase() {
       customFieldValues: [],
       displayName: 'Contact A',
       email: null,
+      crmLeadId: 'crm-lead-a',
       id: 'contact-a',
       phone: null,
       status: 'ACTIVE',
@@ -58,6 +59,11 @@ const config = {
       CRM_INTEGRATION_ENABLED: true,
       CRM_OUTBOX_INTERVAL_MS: 5_000,
       CRM_OUTBOX_LEASE_MS: 60_000,
+      CHANNEL_SECRETS_KEY: Buffer.alloc(32, 1).toString('base64'),
+      MEDIA_MAX_UPLOAD_BYTES: 20 * 1024 * 1024,
+      MEDIA_RETENTION_DAYS: 30,
+      MEDIA_SIGNED_URL_TTL_SECONDS: 300,
+      MEDIA_STORAGE_ENABLED: false,
     };
     return values[name];
   }),

@@ -45,6 +45,11 @@ describe('Telegram media adapter', () => {
   it.each([
     ['PHOTO', 'sendPhoto', 'photo'],
     ['DOCUMENT', 'sendDocument', 'document'],
+    ['VIDEO', 'sendVideo', 'video'],
+    ['AUDIO', 'sendAudio', 'audio'],
+    ['VOICE', 'sendVoice', 'voice'],
+    ['VIDEO_NOTE', 'sendVideoNote', 'video_note'],
+    ['ANIMATION', 'sendAnimation', 'animation'],
   ] as const)('sends %s using the matching Telegram method', async (kind, method, field) => {
     const mock = transport();
     mock.request.mockResolvedValue({ ok: true, result: { message_id: 42 } });
@@ -62,6 +67,42 @@ describe('Telegram media adapter', () => {
       method,
       expect.objectContaining({ [field]: 'provider-file-id', chat_id: '100' }),
     );
+  });
+
+  it('uses Telegram reply parameters and validates inline callback buttons', async () => {
+    const mock = transport();
+    mock.request.mockResolvedValue({ ok: true, result: { message_id: 44 } });
+
+    await new TelegramAdapter(mock).sendMessage('token', {
+      chatId: '100',
+      inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'До 1000' }]],
+      replyToMessageId: '42',
+      text: 'Выберите бюджет',
+    });
+
+    expect(mock.request).toHaveBeenCalledWith(
+      'token',
+      'sendMessage',
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [[{ callback_data: 'budget:1000', text: 'До 1000' }]],
+        },
+        reply_parameters: { message_id: 42 },
+      }),
+    );
+  });
+
+  it('acknowledges callback queries through the official method', async () => {
+    const mock = transport();
+    mock.request.mockResolvedValue({ ok: true, result: true });
+
+    await new TelegramAdapter(mock).answerCallbackQuery('token', {
+      callbackQueryId: 'callback-1',
+    });
+
+    expect(mock.request).toHaveBeenCalledWith('token', 'answerCallbackQuery', {
+      callback_query_id: 'callback-1',
+    });
   });
 
   it('uploads private bucket media directly instead of exposing a signed URL', async () => {

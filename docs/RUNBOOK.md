@@ -228,3 +228,28 @@ Staging and production require `MEDIA_STORAGE_ENABLED=true` plus
 must be HTTPS outside local development. Railway Bucket is authenticated object
 storage, not a private network; this runbook does not assume native lifecycle,
 versioning or server-side encryption features.
+
+### Telegram interactive media and CRM history
+
+CRM uploads outbound media to the authenticated Omnicus multipart endpoint and
+receives a project-bound `mediaAssetId`. It must use that ID in the outbound
+message request and must not provide an arbitrary remote URL. Replaying the same
+upload idempotency key with different bytes or a different media kind is a
+conflict.
+
+Inbound Telegram media is materialized only when CRM forwarding needs the
+bytes. Omnicus validates and stores the object, then generates a short-lived
+signed URL for immediate CRM ingestion. The URL must never be stored in CRM,
+logs or audit data. If materialization fails, the CRM operation follows normal
+retry/permanent classification while the original provider reference remains
+visible in PostgreSQL.
+
+Callback acknowledgement is a Telegram outbox action. If Redis is unavailable,
+the stable outbox record remains recoverable; webhook acknowledgement and
+automation processing do not wait for Telegram.
+
+After a lead is first created, the CRM worker schedules a bounded set of earlier
+inbound messages with `crm-history-<messageId>` keys. Repeated lead updates do
+not create duplicate history. Investigate history failures through the same CRM
+operation journal; never re-import messages manually without checking the
+stable message ID and provider result.

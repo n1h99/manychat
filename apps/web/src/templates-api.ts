@@ -3,11 +3,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { useAuth } from './auth';
 
-export type TemplateKind = 'DOCUMENT' | 'PHOTO' | 'TEXT';
+export type TemplateKind =
+  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+export interface TelegramInlineKeyboardButton {
+  callbackData?: string;
+  text: string;
+  url?: string;
+}
+export type TelegramInlineKeyboard = TelegramInlineKeyboardButton[][];
 export interface TemplateVersion {
-  content: { caption?: string; text?: string };
+  content: {
+    caption?: string;
+    inlineKeyboard?: TelegramInlineKeyboard;
+    text?: string;
+  };
   id: string;
   kind: TemplateKind;
+  inlineKeyboard?: TelegramInlineKeyboard;
   mediaAssetId: string | null;
   status: string;
   variables: string[];

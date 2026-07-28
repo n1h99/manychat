@@ -1222,3 +1222,33 @@ unique selector to a normal lookup index so identical historical content can be
 restored without manufacturing uniqueness. Tenant-safe version and asset
 constraints remain unique. `PUBLISHED` and `SUPERSEDED` template versions both
 retain referenced media because existing scenarios can pin either state.
+
+## Telegram interactive media extension
+
+Migration `20260729000100_telegram_interactive_media` extends the existing
+PostgreSQL enums without replacing tables or rewriting historical rows:
+
+- `NormalizedEventType` and `MessageType` add `VIDEO`, `AUDIO`, `VOICE`,
+  `VIDEO_NOTE` and `ANIMATION`;
+- `MessageTemplateKind` adds the same five media kinds;
+- existing `TEXT`, `PHOTO` and `DOCUMENT` values remain unchanged.
+
+`MediaAsset.kind` continues to share the immutable template/media kind enum, so
+an asset cannot be interpreted as a different Telegram method after
+publication. Outbound messages reference the asset through the existing
+tenant-safe `(projectId, mediaAssetId)` foreign key. Inline keyboard and reply
+configuration remains validated JSON in immutable template content/message
+metadata; credentials, signed URLs and raw provider responses are never stored.
+
+Callback acknowledgement uses an `OutboxRecord` with `kind=TELEGRAM` and an
+action-discriminated JSON payload containing only the internal connection and
+Telegram callback query identifier. The stable
+`callback-answer-<normalizedEventId>` idempotency key prevents duplicate
+acknowledgements. Normal message outboxes retain their internal `messageId` and
+`channelIdentityId` payload.
+
+CRM history synchronization creates no history snapshot table. It uses existing
+`CrmOperation` and `OutboxRecord` rows with stable
+`crm-history-<messageId>` keys. Only bounded, earlier inbound messages with a
+normalized event are eligible. This makes repeated lead upserts and concurrent
+worker replicas harmless while retaining the normal CRM retry/unknown journal.

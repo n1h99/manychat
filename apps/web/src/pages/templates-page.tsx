@@ -6,10 +6,15 @@ import { useMediaAssets } from '../media-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import {
   type MessageTemplate,
+  type TelegramInlineKeyboardButton,
   type TemplateInput,
   useTemplateMutations,
   useTemplates,
 } from '../templates-api';
+
+type TemplateFormInput = Omit<TemplateInput, 'inlineKeyboard'> & {
+  buttonRows?: Array<{ buttons?: TelegramInlineKeyboardButton[] }>;
+};
 
 export function TemplatesPage() {
   const { projectId } = useParams();
@@ -27,7 +32,7 @@ export function TemplatesPage() {
     missing: string[];
     output: string;
   }>();
-  const [form] = Form.useForm<TemplateInput>();
+  const [form] = Form.useForm<TemplateFormInput>();
   const kind = Form.useWatch('kind', form) ?? 'TEXT';
 
   const open = (template?: MessageTemplate) => {
@@ -39,14 +44,32 @@ export function TemplatesPage() {
       ...(template?.description ? { description: template.description } : {}),
       ...(version?.mediaAssetId ? { mediaAssetId: version.mediaAssetId } : {}),
       ...(version?.content.caption !== undefined ? { caption: version.content.caption } : {}),
+      ...(version?.content.inlineKeyboard
+        ? {
+            buttonRows: version.content.inlineKeyboard.map((buttons) => ({
+              buttons,
+            })),
+          }
+        : {}),
       ...(version?.content.text !== undefined ? { text: version.content.text } : {}),
     });
   };
 
-  const save = async (values: TemplateInput) => {
+  const save = async (values: TemplateFormInput) => {
     try {
-      if (editing === 'new') await mutations.create.mutateAsync(values);
-      else if (editing) await mutations.update.mutateAsync({ id: editing.id, ...values });
+      const input: TemplateInput = {
+        ...values,
+        ...(values.buttonRows?.length
+          ? {
+              inlineKeyboard: values.buttonRows
+                .map((row) => row.buttons ?? [])
+                .filter((row) => row.length > 0),
+            }
+          : {}),
+      };
+      delete (input as TemplateInput & { buttonRows?: unknown }).buttonRows;
+      if (editing === 'new') await mutations.create.mutateAsync(input);
+      else if (editing) await mutations.update.mutateAsync({ id: editing.id, ...input });
       setEditing(undefined);
       form.resetFields();
       void message.success('Template draft saved.');
@@ -147,6 +170,11 @@ export function TemplatesPage() {
                 { label: 'Text', value: 'TEXT' },
                 { label: 'Photo', value: 'PHOTO' },
                 { label: 'Document', value: 'DOCUMENT' },
+                { label: 'Video', value: 'VIDEO' },
+                { label: 'Audio', value: 'AUDIO' },
+                { label: 'Voice message', value: 'VOICE' },
+                { label: 'Video note', value: 'VIDEO_NOTE' },
+                { label: 'Animation', value: 'ANIMATION' },
               ]}
             />
           </Form.Item>
@@ -166,11 +194,78 @@ export function TemplatesPage() {
                     }))}
                 />
               </Form.Item>
-              <Form.Item label="Caption" name="caption">
-                <Input.TextArea maxLength={1024} rows={4} />
-              </Form.Item>
+              {kind === 'VIDEO_NOTE' ? null : (
+                <Form.Item label="Caption" name="caption">
+                  <Input.TextArea maxLength={1024} rows={4} />
+                </Form.Item>
+              )}
             </>
           )}
+          <Form.List name="buttonRows">
+            {(rows, { add: addRow, remove: removeRow }) => (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Typography.Text strong>Inline buttons</Typography.Text>
+                {rows.map((row, rowIndex) => (
+                  <Space
+                    align="start"
+                    direction="vertical"
+                    key={row.key}
+                    style={{ border: '1px solid #d9d9d9', padding: 12, width: '100%' }}
+                  >
+                    <Space>
+                      <Typography.Text>Row {rowIndex + 1}</Typography.Text>
+                      <Button danger onClick={() => removeRow(row.name)} size="small">
+                        Remove row
+                      </Button>
+                    </Space>
+                    <Form.List name={[row.name, 'buttons']}>
+                      {(buttons, { add: addButton, remove: removeButton }) => (
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          {buttons.map((button) => (
+                            <Space align="start" key={button.key} wrap>
+                              <Form.Item
+                                label="Label"
+                                name={[button.name, 'text']}
+                                rules={[{ required: true }]}
+                              >
+                                <Input maxLength={64} placeholder="Up to 1 000" />
+                              </Form.Item>
+                              <Form.Item label="Callback data" name={[button.name, 'callbackData']}>
+                                <Input maxLength={64} placeholder="budget:under_1000" />
+                              </Form.Item>
+                              <Form.Item label="URL" name={[button.name, 'url']}>
+                                <Input placeholder="https://…" />
+                              </Form.Item>
+                              <Button danger onClick={() => removeButton(button.name)}>
+                                Remove
+                              </Button>
+                            </Space>
+                          ))}
+                          <Button
+                            disabled={buttons.length >= 8}
+                            onClick={() => addButton({ callbackData: '', text: '' })}
+                            size="small"
+                          >
+                            Add button
+                          </Button>
+                        </Space>
+                      )}
+                    </Form.List>
+                  </Space>
+                ))}
+                <Button
+                  disabled={rows.length >= 8}
+                  onClick={() => addRow({ buttons: [{ callbackData: '', text: '' }] })}
+                >
+                  Add button row
+                </Button>
+                <Typography.Text type="secondary">
+                  Set exactly one action per button: callback data for automation, or an HTTP(S)
+                  URL.
+                </Typography.Text>
+              </Space>
+            )}
+          </Form.List>
           <Typography.Paragraph type="secondary">
             Variables use paths such as {'{{contact.firstName}}'} and are checked during preview or
             execution.

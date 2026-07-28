@@ -613,7 +613,12 @@ export class AutomationRuntimeService {
         })
       : undefined;
     const templateContent = templateVersion?.content as
-      { caption?: string; text?: string } | undefined;
+      | {
+          caption?: string;
+          inlineKeyboard?: Array<Array<{ callbackData?: string; text: string; url?: string }>>;
+          text?: string;
+        }
+      | undefined;
     const sourceText =
       templateVersion?.kind === 'TEXT'
         ? templateContent?.text
@@ -657,6 +662,9 @@ export class AutomationRuntimeService {
         mediaAssetId: templateVersion?.mediaAssetId ?? null,
         metadata: {
           source: 'automation',
+          ...(templateContent?.inlineKeyboard
+            ? { inlineKeyboard: templateContent.inlineKeyboard }
+            : {}),
           ...(templateVersion
             ? {
                 templateId: templateVersion.templateId,
@@ -713,6 +721,7 @@ export class AutomationRuntimeService {
   ): unknown {
     const content = this.object(payload).content;
     if (field === 'message.text') return this.object(content ?? null).text ?? null;
+    if (field === 'callback.data') return this.object(content ?? null).data ?? null;
     if (field?.startsWith('contact.customFields.'))
       return this.object(customFields)[field.slice(21)];
     return undefined;

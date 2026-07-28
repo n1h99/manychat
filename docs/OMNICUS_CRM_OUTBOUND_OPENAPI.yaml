@@ -1,11 +1,59 @@
 openapi: 3.1.0
 info:
   title: Omnicus API for Cyber Pulse CRM
-  version: 1.0.0
-  description: Project-scoped CRM to Omnicus Telegram outbound contract.
+  version: 2.0.0
+  description: Project-scoped CRM to Omnicus Telegram text, media, reply and inline-button contract.
 security:
   - serviceBearer: []
 paths:
+  /integrations/v1/crm/media:
+    post:
+      operationId: uploadCrmOutboundMedia
+      summary: Validate and durably store media before sending it
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - crmProjectId
+                - omnicusProjectId
+                - kind
+                - file
+              properties:
+                crmProjectId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                omnicusProjectId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                kind:
+                  $ref: '#/components/schemas/MediaKind'
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Validated media asset available for a subsequent outbound request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadedMedia'
+        '400':
+          $ref: '#/components/responses/SafeError'
+        '401':
+          $ref: '#/components/responses/SafeError'
+        '409':
+          $ref: '#/components/responses/SafeError'
+        '503':
+          $ref: '#/components/responses/SafeError'
   /integrations/v1/crm/messages/outbound:
     post:
       operationId: queueCrmOutboundMessage
@@ -126,7 +174,6 @@ components:
         - omnicusProjectId
         - omnicusContactId
         - identity
-        - text
       properties:
         crmProjectId:
           type: string
@@ -150,12 +197,96 @@ components:
           type: string
           minLength: 1
           maxLength: 4096
+        media:
+          $ref: '#/components/schemas/OutboundMedia'
+        inlineKeyboard:
+          $ref: '#/components/schemas/InlineKeyboard'
         disableNotification:
           type: boolean
         replyToMessageId:
           type: string
+          format: uuid
+          description: Omnicus UUID of an existing message in the same project, connection and conversation.
+      oneOf:
+        - required:
+            - text
+        - required:
+            - media
+    MediaKind:
+      type: string
+      enum:
+        - PHOTO
+        - DOCUMENT
+        - VIDEO
+        - AUDIO
+        - VOICE
+        - VIDEO_NOTE
+        - ANIMATION
+    OutboundMedia:
+      type: object
+      additionalProperties: false
+      required:
+        - mediaAssetId
+        - kind
+      properties:
+        mediaAssetId:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/MediaKind'
+    InlineKeyboard:
+      type: array
+      maxItems: 8
+      items:
+        type: array
+        minItems: 1
+        maxItems: 8
+        items:
+          $ref: '#/components/schemas/InlineKeyboardButton'
+    InlineKeyboardButton:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
           minLength: 1
-          maxLength: 128
+          maxLength: 64
+        callbackData:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: UTF-8 encoded value must not exceed 64 bytes.
+        url:
+          type: string
+          format: uri
+      oneOf:
+        - required:
+            - callbackData
+        - required:
+            - url
+    UploadedMedia:
+      type: object
+      additionalProperties: false
+      required:
+        - mediaAssetId
+        - kind
+        - status
+        - sizeBytes
+      properties:
+        mediaAssetId:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/MediaKind'
+        status:
+          type: string
+          enum:
+            - AVAILABLE
+        sizeBytes:
+          type: string
+          pattern: '^[0-9]+$'
     QueuedOperation:
       type: object
       additionalProperties: false

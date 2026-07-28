@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -84,6 +85,52 @@ export class MediaService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ) {
+    const stored = await this.store(projectId, kind, file);
+    await this.audit.record({
+      action: 'media.uploaded',
+      actorUserId: actor.userId,
+      afterSafeJson: { kind, sizeBytes: stored.sizeBytes },
+      correlationId: context.correlationId,
+      entityId: stored.asset.id,
+      entityType: 'MediaAsset',
+      projectId,
+    });
+    return this.safe(stored.asset);
+  }
+
+  async uploadFromService(
+    projectId: string,
+    kind: MediaKind,
+    file: UploadedFile | undefined,
+    idempotencyKey: string,
+    correlationId: string,
+  ) {
+    const digest = createHash('sha256')
+      .update(`${projectId}:crm-media:${idempotencyKey}`)
+      .digest('hex');
+    const id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(
+      13,
+      16,
+    )}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+    const stored = await this.store(projectId, kind, file, id);
+    await this.audit.record({
+      action: 'crm.media_uploaded',
+      actorType: 'SERVICE',
+      afterSafeJson: { kind, sizeBytes: stored.sizeBytes },
+      correlationId,
+      entityId: stored.asset.id,
+      entityType: 'MediaAsset',
+      projectId,
+    });
+    return this.safe(stored.asset);
+  }
+
+  private async store(
+    projectId: string,
+    kind: MediaKind,
+    file: UploadedFile | undefined,
+    requestedId?: string,
+  ) {
     if (!file)
       throw new BadRequestException({ code: 'MEDIA_FILE_REQUIRED', message: 'A file is required' });
     const storage = this.requireStorage();
@@ -101,25 +148,49 @@ export class MediaService {
         throw new BadRequestException({ code: error.code, message: 'Media file was rejected' });
       throw error;
     }
-    const id = randomUUID();
+    const id = requestedId ?? randomUUID();
     const bucketKey = `${projectId}/assets/${id}.${validated.extension}`;
     const checksumSha256 = createHash('sha256').update(validated.bytes).digest('hex');
-    const pending = await this.database.client.mediaAsset.create({
-      data: {
-        bucketKey,
-        checksumSha256,
-        declaredMimeType: file.mimetype,
-        detectedMimeType: validated.mimeType,
-        extension: validated.extension,
-        id,
-        kind,
-        originalFilename: file.originalname,
-        projectId,
-        sizeBytes: BigInt(validated.sizeBytes),
-        source: 'USER_UPLOAD',
-        status: 'PENDING_UPLOAD',
-      },
+    const existing = await this.database.client.mediaAsset.findUnique({
+      where: { projectId_id: { id, projectId } },
     });
+    if (existing && (existing.kind !== kind || existing.checksumSha256 !== checksumSha256))
+      throw new ConflictException({
+        code: 'MEDIA_IDEMPOTENCY_CONFLICT',
+        message: 'The media idempotency key was already used for different content',
+      });
+    if (existing?.status === 'AVAILABLE')
+      return { asset: existing, sizeBytes: validated.sizeBytes };
+    const pending = existing
+      ? await this.database.client.mediaAsset.update({
+          data: {
+            bucketKey,
+            checksumSha256,
+            declaredMimeType: file.mimetype,
+            detectedMimeType: validated.mimeType,
+            extension: validated.extension,
+            originalFilename: file.originalname,
+            sizeBytes: BigInt(validated.sizeBytes),
+            status: 'PENDING_UPLOAD',
+          },
+          where: { projectId_id: { id, projectId } },
+        })
+      : await this.database.client.mediaAsset.create({
+          data: {
+            bucketKey,
+            checksumSha256,
+            declaredMimeType: file.mimetype,
+            detectedMimeType: validated.mimeType,
+            extension: validated.extension,
+            id,
+            kind,
+            originalFilename: file.originalname,
+            projectId,
+            sizeBytes: BigInt(validated.sizeBytes),
+            source: 'USER_UPLOAD',
+            status: 'PENDING_UPLOAD',
+          },
+        });
     try {
       await storage.putObject(bucketKey, validated.bytes, validated.mimeType, {
         assetId: id,
@@ -139,16 +210,7 @@ export class MediaService {
       data: { availableAt: new Date(), status: 'AVAILABLE' },
       where: { projectId_id: { id: pending.id, projectId } },
     });
-    await this.audit.record({
-      action: 'media.uploaded',
-      actorUserId: actor.userId,
-      afterSafeJson: { kind, sizeBytes: validated.sizeBytes },
-      correlationId: context.correlationId,
-      entityId: asset.id,
-      entityType: 'MediaAsset',
-      projectId,
-    });
-    return this.safe(asset);
+    return { asset, sizeBytes: validated.sizeBytes };
   }
 
   async materialize(

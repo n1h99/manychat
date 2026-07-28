@@ -249,6 +249,37 @@ describe('media validation', () => {
     });
   });
 
+  it.each([
+    ['ANIMATION', 'welcome.gif', 'image/gif', new TextEncoder().encode('GIF89a-content')],
+    [
+      'VIDEO',
+      'demo.mp4',
+      'video/mp4',
+      Uint8Array.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0]),
+    ],
+    [
+      'VIDEO_NOTE',
+      'note.mp4',
+      'video/mp4',
+      Uint8Array.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0]),
+    ],
+    ['AUDIO', 'track.mp3', 'audio/mpeg', Uint8Array.from([0x49, 0x44, 0x33, 1])],
+    ['VOICE', 'voice.ogg', 'audio/ogg', new TextEncoder().encode('OggS-content')],
+  ] as const)(
+    'accepts validated %s payloads without transcoding',
+    async (kind, filename, mime, bytes) => {
+      await expect(
+        prepareMediaForTelegram({
+          bytes,
+          declaredMimeType: mime,
+          filename,
+          kind,
+          maximumBytes: 1_000,
+        }),
+      ).resolves.toMatchObject({ mimeType: mime, transformed: false });
+    },
+  );
+
   it('rejects truncated PDF and ZIP documents', () => {
     expect(() =>
       validateMedia({

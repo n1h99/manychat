@@ -81,6 +81,7 @@ function createHarness(options: HarnessOptions = {}) {
     mediaAsset: { upsert: mediaAssetUpsert },
     message: { update: messageUpdate, upsert: messageUpsert },
     normalizedEvent: { upsert: normalizedUpsert },
+    outboxRecord: { upsert: vi.fn().mockResolvedValue({ id: 'callback-outbox-a' }) },
   };
   const inboxUpdateMany = vi
     .fn()

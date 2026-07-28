@@ -73,7 +73,17 @@ function contactProfile(event: TelegramInboundEvent): {
 
 function messageTypeFor(
   event: TelegramInboundEvent,
-): 'CALLBACK_QUERY' | 'COMMAND' | 'DOCUMENT' | 'PHOTO' | 'TEXT' {
+):
+  | 'ANIMATION'
+  | 'AUDIO'
+  | 'CALLBACK_QUERY'
+  | 'COMMAND'
+  | 'DOCUMENT'
+  | 'PHOTO'
+  | 'TEXT'
+  | 'VIDEO'
+  | 'VIDEO_NOTE'
+  | 'VOICE' {
   switch (event.type) {
     case 'MESSAGE':
       return 'TEXT';
@@ -81,6 +91,11 @@ function messageTypeFor(
     case 'DOCUMENT':
     case 'PHOTO':
     case 'CALLBACK_QUERY':
+    case 'VIDEO':
+    case 'AUDIO':
+    case 'VOICE':
+    case 'VIDEO_NOTE':
+    case 'ANIMATION':
       return event.type;
     default:
       throw new Error('Telegram event does not have an inbound message representation');
@@ -225,6 +240,28 @@ export class TelegramInboundProcessorService
         },
       });
 
+      if (event.type === 'CALLBACK_QUERY' && typeof event.content.id === 'string')
+        await transaction.outboxRecord.upsert({
+          create: {
+            connectionId: claimed.connectionId,
+            idempotencyKey: `callback-answer-${normalized.id}`,
+            kind: 'TELEGRAM',
+            nextAttemptAt: new Date(),
+            payload: {
+              action: 'ANSWER_CALLBACK',
+              callbackQueryId: event.content.id,
+            },
+            projectId: claimed.projectId,
+          },
+          update: {},
+          where: {
+            projectId_idempotencyKey: {
+              idempotencyKey: `callback-answer-${normalized.id}`,
+              projectId: claimed.projectId,
+            },
+          },
+        });
+
       const contact = event.externalUserId
         ? await this.resolveContact(transaction, claimed, event, eventAt)
         : undefined;
@@ -233,7 +270,18 @@ export class TelegramInboundProcessorService
       if (
         contact &&
         event.chatId &&
-        ['MESSAGE', 'COMMAND', 'PHOTO', 'DOCUMENT', 'CALLBACK_QUERY'].includes(event.type)
+        [
+          'MESSAGE',
+          'COMMAND',
+          'PHOTO',
+          'DOCUMENT',
+          'VIDEO',
+          'AUDIO',
+          'VOICE',
+          'VIDEO_NOTE',
+          'ANIMATION',
+          'CALLBACK_QUERY',
+        ].includes(event.type)
       ) {
         const conversation = await transaction.conversation.upsert({
           create: {
@@ -276,7 +324,11 @@ export class TelegramInboundProcessorService
             },
           },
         });
-        if (event.type === 'PHOTO' || event.type === 'DOCUMENT') {
+        if (
+          ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'].includes(
+            event.type,
+          )
+        ) {
           const providerMediaId =
             typeof event.content.fileId === 'string' ? event.content.fileId : undefined;
           if (providerMediaId) {
@@ -285,7 +337,8 @@ export class TelegramInboundProcessorService
                 connectionId: claimed.connectionId,
                 declaredMimeType:
                   typeof event.content.mimeType === 'string' ? event.content.mimeType : null,
-                kind: event.type,
+                kind: event.type as
+                  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE',
                 originalFilename:
                   typeof event.content.fileName === 'string' ? event.content.fileName : null,
                 projectId: claimed.projectId,

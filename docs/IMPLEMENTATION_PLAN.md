@@ -459,3 +459,22 @@ outbox ID. The worker claims records with a lease, records retryable failures as
 `RETRY`, preserves uncertain timeout outcomes as `UNKNOWN`, and periodically
 re-enqueues pending/retry and stale-lease records. Frontend channel screens and
 all non-Telegram providers remain outside this sub-stage.
+
+## Telegram Messaging & Interactive Flows
+
+This accepted post-deployment slice completes the relevant Telegram Bot API
+surface for the existing product:
+
+- reply to an Omnicus message;
+- inline keyboard authoring and callback-data condition branches;
+- durable `answerCallbackQuery`;
+- video, audio, voice, video note and animation metadata, assets, templates and
+  outbound delivery;
+- CRM multipart media upload followed by asset-referenced outbound delivery;
+- materialized inbound media URLs for immediate CRM ingestion;
+- bounded idempotent history synchronization after initial CRM lead creation.
+
+It does not add WhatsApp, Instagram, arbitrary URL fetching, user-account
+Telegram behavior, secret-chat access, an FFmpeg runtime dependency or
+unbounded Telegram history retrieval. Every provider call continues through
+PostgreSQL inbox/outbox state and existing retry/unknown rules.

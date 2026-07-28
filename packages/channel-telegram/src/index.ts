@@ -36,6 +36,58 @@ export interface TelegramMediaUpload {
   contentType: string;
   filename: string;
 }
+export type TelegramMediaKind =
+  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+
+export interface TelegramInlineKeyboardButton {
+  callbackData?: string;
+  text: string;
+  url?: string;
+}
+
+export type TelegramInlineKeyboard = TelegramInlineKeyboardButton[][];
+
+export function validateTelegramInlineKeyboard(input: unknown): TelegramInlineKeyboard {
+  if (!Array.isArray(input) || input.length < 1 || input.length > 8)
+    throw new Error('telegram_inline_keyboard_rows_invalid');
+  return input.map((row) => {
+    if (!Array.isArray(row) || row.length < 1 || row.length > 8)
+      throw new Error('telegram_inline_keyboard_buttons_invalid');
+    return row.map((candidate) => {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+        throw new Error('telegram_inline_keyboard_button_invalid');
+      const button = candidate as Record<string, unknown>;
+      if (typeof button.text !== 'string' || button.text.length < 1 || button.text.length > 64)
+        throw new Error('telegram_inline_keyboard_text_invalid');
+      const callbackData =
+        typeof button.callbackData === 'string' ? button.callbackData : undefined;
+      const url = typeof button.url === 'string' ? button.url : undefined;
+      if ((callbackData ? 1 : 0) + (url ? 1 : 0) !== 1)
+        throw new Error('telegram_inline_keyboard_action_invalid');
+      if (
+        callbackData !== undefined &&
+        (Buffer.byteLength(callbackData, 'utf8') < 1 ||
+          Buffer.byteLength(callbackData, 'utf8') > 64)
+      )
+        throw new Error('telegram_inline_keyboard_callback_invalid');
+      if (url !== undefined) {
+        let parsed: URL;
+        try {
+          parsed = new URL(url);
+        } catch {
+          throw new Error('telegram_inline_keyboard_url_invalid');
+        }
+        if (!['http:', 'https:', 'tg:'].includes(parsed.protocol))
+          throw new Error('telegram_inline_keyboard_url_invalid');
+      }
+      return {
+        ...(callbackData === undefined ? {} : { callbackData }),
+        text: button.text,
+        ...(url === undefined ? {} : { url }),
+      };
+    });
+  });
+}
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
@@ -75,6 +127,36 @@ export interface TelegramMessage {
     file_unique_id: string;
     mime_type?: string;
   };
+  animation?: TelegramFileMedia & {
+    duration: number;
+    height: number;
+    width: number;
+  };
+  audio?: TelegramFileMedia & {
+    duration: number;
+    performer?: string;
+    title?: string;
+  };
+  video?: TelegramFileMedia & {
+    duration: number;
+    height: number;
+    width: number;
+  };
+  video_note?: TelegramFileMedia & {
+    duration: number;
+    length: number;
+  };
+  voice?: TelegramFileMedia & {
+    duration: number;
+  };
+}
+
+interface TelegramFileMedia {
+  file_id: string;
+  file_name?: string;
+  file_size?: number;
+  file_unique_id: string;
+  mime_type?: string;
 }
 export interface TelegramNormalizedEvent {
   externalUserId?: string;
@@ -208,7 +290,18 @@ export class TelegramHttpTransport implements TelegramTransport {
 }
 
 export type TelegramInboundEventType =
-  'CALLBACK_QUERY' | 'CHAT_MEMBER' | 'COMMAND' | 'DOCUMENT' | 'MESSAGE' | 'PHOTO' | 'UNSUPPORTED';
+  | 'ANIMATION'
+  | 'AUDIO'
+  | 'CALLBACK_QUERY'
+  | 'CHAT_MEMBER'
+  | 'COMMAND'
+  | 'DOCUMENT'
+  | 'MESSAGE'
+  | 'PHOTO'
+  | 'UNSUPPORTED'
+  | 'VIDEO'
+  | 'VIDEO_NOTE'
+  | 'VOICE';
 
 export interface TelegramInboundEvent {
   chatId?: string;
@@ -287,6 +380,37 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
       type: 'DOCUMENT',
     };
   }
+  const media = (
+    [
+      ['video', 'VIDEO'],
+      ['audio', 'AUDIO'],
+      ['voice', 'VOICE'],
+      ['video_note', 'VIDEO_NOTE'],
+      ['animation', 'ANIMATION'],
+    ] as const
+  ).find(([field]) => message[field] !== undefined);
+  if (media) {
+    const [field, type] = media;
+    const value = message[field]!;
+    return {
+      ...base,
+      content: {
+        caption: message.caption ?? null,
+        duration: value.duration,
+        fileId: value.file_id,
+        fileName: value.file_name ?? null,
+        fileSize: value.file_size ?? null,
+        fileUniqueId: value.file_unique_id,
+        mimeType: value.mime_type ?? null,
+        ...('height' in value ? { height: value.height } : {}),
+        ...('length' in value ? { length: value.length } : {}),
+        ...('performer' in value ? { performer: value.performer ?? null } : {}),
+        ...('title' in value ? { title: value.title ?? null } : {}),
+        ...('width' in value ? { width: value.width } : {}),
+      },
+      type,
+    };
+  }
   return { ...base, content: {}, type: 'UNSUPPORTED' };
 }
 
@@ -339,20 +463,30 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
     broadcasts: true,
     deliveryStatuses: false,
     incoming: {
+      animationMetadata: true,
+      audioMetadata: true,
       callbackQuery: true,
       documentMetadata: true,
       myChatMember: true,
       photoMetadata: true,
       text: true,
       unsupported: true,
+      videoMetadata: true,
+      videoNoteMetadata: true,
+      voiceMetadata: true,
     },
     outgoing: {
+      animation: true,
+      audio: true,
       disableNotification: true,
       inlineKeyboard: true,
       replyToMessageId: true,
       text: true,
       photo: true,
       document: true,
+      video: true,
+      videoNote: true,
+      voice: true,
     },
     readStatuses: false,
   },
@@ -388,7 +522,7 @@ export class TelegramAdapter {
     input: {
       chatId: string;
       disableNotification?: boolean;
-      inlineKeyboard?: unknown;
+      inlineKeyboard?: TelegramInlineKeyboard;
       replyToMessageId?: string;
       text: string;
     },
@@ -396,7 +530,9 @@ export class TelegramAdapter {
     const response = await this.transport.request(token, 'sendMessage', {
       chat_id: input.chatId,
       disable_notification: input.disableNotification,
-      ...(input.inlineKeyboard ? { reply_markup: { inline_keyboard: input.inlineKeyboard } } : {}),
+      ...(input.inlineKeyboard
+        ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
+        : {}),
       ...(input.replyToMessageId
         ? { reply_parameters: { message_id: Number(input.replyToMessageId) } }
         : {}),
@@ -431,32 +567,58 @@ export class TelegramAdapter {
       caption?: string;
       chatId: string;
       disableNotification?: boolean;
-      kind: 'DOCUMENT' | 'PHOTO';
+      inlineKeyboard?: TelegramInlineKeyboard;
+      kind: TelegramMediaKind;
       media: string | TelegramMediaUpload;
       replyToMessageId?: string;
     },
   ): Promise<{ messageId: string }> {
-    const mediaField = input.kind === 'PHOTO' ? 'photo' : 'document';
-    const method = input.kind === 'PHOTO' ? 'sendPhoto' : 'sendDocument';
+    const mediaMethods: Record<TelegramMediaKind, { field: string; method: string }> = {
+      ANIMATION: { field: 'animation', method: 'sendAnimation' },
+      AUDIO: { field: 'audio', method: 'sendAudio' },
+      DOCUMENT: { field: 'document', method: 'sendDocument' },
+      PHOTO: { field: 'photo', method: 'sendPhoto' },
+      VIDEO: { field: 'video', method: 'sendVideo' },
+      VIDEO_NOTE: { field: 'video_note', method: 'sendVideoNote' },
+      VOICE: { field: 'voice', method: 'sendVoice' },
+    };
+    const selected = mediaMethods[input.kind];
     const fields = {
-      caption: input.caption,
       chat_id: input.chatId,
       disable_notification: input.disableNotification,
+      ...(input.kind === 'VIDEO_NOTE' || input.caption === undefined
+        ? {}
+        : { caption: input.caption }),
+      ...(input.inlineKeyboard
+        ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
+        : {}),
       ...(input.replyToMessageId
         ? { reply_parameters: { message_id: Number(input.replyToMessageId) } }
         : {}),
     };
     const response =
       typeof input.media === 'string'
-        ? await this.transport.request(token, method, {
+        ? await this.transport.request(token, selected.method, {
             ...fields,
-            [mediaField]: input.media,
+            [selected.field]: input.media,
           })
-        : await this.uploadMedia(token, method, mediaField, fields, input.media);
+        : await this.uploadMedia(token, selected.method, selected.field, fields, input.media);
     await this.assertOk(response);
     const result = response.result as { message_id?: number };
-    if (!result.message_id) throw new Error(`Telegram ${method} result is invalid`);
+    if (!result.message_id) throw new Error(`Telegram ${selected.method} result is invalid`);
     return { messageId: String(result.message_id) };
+  }
+  async answerCallbackQuery(
+    token: string,
+    input: { callbackQueryId: string; showAlert?: boolean; text?: string },
+  ): Promise<void> {
+    await this.assertOk(
+      await this.transport.request(token, 'answerCallbackQuery', {
+        callback_query_id: input.callbackQueryId,
+        ...(input.showAlert === undefined ? {} : { show_alert: input.showAlert }),
+        ...(input.text === undefined ? {} : { text: input.text }),
+      }),
+    );
   }
   private async uploadMedia(
     token: string,
@@ -470,6 +632,15 @@ export class TelegramAdapter {
       ...media,
       field: mediaField,
     });
+  }
+  private telegramKeyboard(keyboard: TelegramInlineKeyboard) {
+    return validateTelegramInlineKeyboard(keyboard).map((row) =>
+      row.map((button) => ({
+        ...(button.callbackData === undefined ? {} : { callback_data: button.callbackData }),
+        text: button.text,
+        ...(button.url === undefined ? {} : { url: button.url }),
+      })),
+    );
   }
   parseWebhook(update: TelegramUpdate): TelegramNormalizedEvent {
     if (update.message)

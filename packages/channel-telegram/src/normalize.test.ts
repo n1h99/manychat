@@ -34,6 +34,26 @@ describe('normalizeTelegramUpdate', () => {
       },
       type: 'DOCUMENT',
     });
+    expect(normalizeTelegramUpdate(telegramInboundFixtures.video.payload)).toMatchObject({
+      content: { fileId: 'video-file-id', height: 720, width: 1280 },
+      type: 'VIDEO',
+    });
+    expect(normalizeTelegramUpdate(telegramInboundFixtures.audio.payload)).toMatchObject({
+      content: { fileId: 'audio-file-id', performer: 'Omnicus', title: 'Welcome' },
+      type: 'AUDIO',
+    });
+    expect(normalizeTelegramUpdate(telegramInboundFixtures.voice.payload)).toMatchObject({
+      content: { fileId: 'voice-file-id', mimeType: 'audio/ogg' },
+      type: 'VOICE',
+    });
+    expect(normalizeTelegramUpdate(telegramInboundFixtures.videoNote.payload)).toMatchObject({
+      content: { fileId: 'video-note-file-id', length: 384 },
+      type: 'VIDEO_NOTE',
+    });
+    expect(normalizeTelegramUpdate(telegramInboundFixtures.animation.payload)).toMatchObject({
+      content: { fileId: 'animation-file-id', fileName: 'welcome.gif' },
+      type: 'ANIMATION',
+    });
   });
 
   it('normalizes callbacks, member availability, and unknown updates without throwing', () => {

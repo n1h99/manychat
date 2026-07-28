@@ -702,3 +702,52 @@ payloads and no longer sends customer messages directly through ManyChat or
 Telegram. Redis outages cannot discard committed intents. Live staging E2E and
 separate secret installation remain required before production acceptance or
 legacy CRM cleanup.
+
+## ADR-036: Telegram interactive media uses typed assets and durable callback acknowledgement
+
+**Status:** Accepted, 2026-07-29.
+
+**Context:** The product needs Telegram replies, inline choices, audio, voice,
+video, video notes and animations in automation, broadcasts and the Cyber Pulse
+conversation bridge. Passing arbitrary URLs to Telegram or acknowledging a
+callback directly inside the inbound transaction would bypass the existing
+media validation and transactional outbox guarantees.
+
+**Decision:** `Message`, `MediaAsset` and immutable template versions use typed
+Telegram media kinds: text, photo, document, video, audio, voice, video note and
+animation. Files uploaded by users or CRM are validated, stored in the private
+bucket and referenced by `mediaAssetId`; CRM cannot instruct Omnicus to fetch an
+arbitrary URL. Provider `file_id` references remain scoped to the connection
+that created them.
+
+Inline keyboards are stored as a validated, provider-independent structure.
+The Telegram adapter maps that structure to `InlineKeyboardMarkup`. Incoming
+`callback_query` data is normalized and may be used by deterministic condition
+branches. `answerCallbackQuery` is an external side effect and therefore uses
+its own stable Telegram outbox intent rather than running inside webhook
+processing.
+
+Replies received from CRM identify an Omnicus message. The API resolves that
+message to a Telegram provider message ID inside the same project, connection
+and conversation; callers cannot inject an arbitrary cross-conversation
+provider ID.
+
+Initial CRM history synchronization is bounded and idempotent. After the first
+successful lead upsert, Omnicus schedules earlier inbound messages using stable
+per-message outbox keys and original timestamps. The current event remains the
+responsibility of its normal `Forward to CRM` node. PostgreSQL remains the
+source of truth for both live and backfilled delivery.
+
+Telegram video notes use `sendVideoNote`. Pilot uploads must already be a valid
+square MPEG-4 video of no more than one minute. Omnicus does not silently invoke
+a heavyweight transcoder or distort/crop video; optional video transcoding is a
+separate future deployment decision. Reusable Telegram `file_id` values avoid
+re-uploading a published greeting when the asset originated from the same bot.
+
+**Consequences:** CRM first uploads outbound files through the authenticated
+multipart media endpoint, then references the returned asset from the JSON
+message request. A successful HTTP response still means `QUEUED`, not `SENT`.
+Short-lived inbound download URLs are generated only after materialization and
+must be fetched immediately by CRM, never persisted. Unsupported Telegram
+features remain explicit capability-matrix entries instead of silently falling
+back to a different message type.

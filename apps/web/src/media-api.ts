@@ -5,7 +5,7 @@ import { useAuth } from './auth';
 
 export interface MediaAsset {
   id: string;
-  kind: 'DOCUMENT' | 'PHOTO';
+  kind: MediaKind;
   source: 'TELEGRAM' | 'USER_UPLOAD';
   status: string;
   originalFilename: string | null;
@@ -13,6 +13,9 @@ export interface MediaAsset {
   sizeBytes: string | null;
   createdAt: string;
 }
+
+export type MediaKind =
+  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
 
 export function useMediaAssets(projectId?: string) {
   const { accessToken } = useAuth();
@@ -56,7 +59,7 @@ export function useMediaMutations(projectId?: string) {
         ),
     }),
     upload: useMutation({
-      mutationFn: ({ file, kind }: { file: File; kind: 'DOCUMENT' | 'PHOTO' }) => {
+      mutationFn: ({ file, kind }: { file: File; kind: MediaKind }) => {
         const body = new FormData();
         body.set('file', file);
         return apiRequest<MediaAsset>(

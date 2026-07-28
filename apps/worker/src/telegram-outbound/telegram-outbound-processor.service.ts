@@ -15,6 +15,8 @@ import {
   TelegramHttpTransport,
   TELEGRAM_OUTBOUND_JOB_NAME,
   TELEGRAM_OUTBOUND_QUEUE_NAME,
+  type TelegramInlineKeyboard,
+  type TelegramMediaKind,
   type TelegramOutboundJob,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
@@ -36,7 +38,16 @@ type Claimed = {
   attempts: number;
   maxAttempts: number;
   lease: string;
-  payload: { messageId: string; channelIdentityId: string };
+  payload:
+    | {
+        action: 'ANSWER_CALLBACK';
+        callbackQueryId: string;
+      }
+    | {
+        action?: 'SEND_MESSAGE';
+        messageId: string;
+        channelIdentityId: string;
+      };
 };
 
 class TelegramOutboundPermanentError extends Error {
@@ -106,13 +117,35 @@ export class TelegramOutboundProcessorService
     const claimed = await this.claim(job.outboxRecordId);
     if (!claimed) return;
     try {
-      const [message, connection, identity, recipient] = await Promise.all([
+      const connection = await this.database.client.channelConnection.findUnique({
+        where: {
+          projectId_id: {
+            projectId: claimed.projectId,
+            id: claimed.connectionId,
+          },
+        },
+      });
+      if (!connection)
+        return await this.finish(claimed, 'FAILED', 'telegram_outbound_connection_missing');
+      const token = this.secrets.decryptSecret({
+        projectId: connection.projectId,
+        channelConnectionId: connection.id,
+        channelType: 'telegram',
+        field: 'botToken',
+        envelope: connection.credentialsEncrypted as unknown as EncryptedSecretEnvelope,
+      });
+      if (claimed.payload.action === 'ANSWER_CALLBACK') {
+        await this.adapter.answerCallbackQuery(token, {
+          callbackQueryId: claimed.payload.callbackQueryId,
+        });
+        await this.finish(claimed, 'SUCCEEDED');
+        return;
+      }
+
+      const [message, identity, recipient] = await Promise.all([
         this.database.client.message.findUnique({
           include: { mediaAsset: true },
           where: { projectId_id: { projectId: claimed.projectId, id: claimed.payload.messageId } },
-        }),
-        this.database.client.channelConnection.findUnique({
-          where: { projectId_id: { projectId: claimed.projectId, id: claimed.connectionId } },
         }),
         this.database.client.channelIdentity.findUnique({
           where: { id: claimed.payload.channelIdentityId },
@@ -140,34 +173,40 @@ export class TelegramOutboundProcessorService
           where: { id: recipient.id, projectId: claimed.projectId, status: 'QUEUED' },
           data: { status: 'PROCESSING' },
         });
-      const token = this.secrets.decryptSecret({
-        projectId: connection.projectId,
-        channelConnectionId: connection.id,
-        channelType: 'telegram',
-        field: 'botToken',
-        envelope: connection.credentialsEncrypted as unknown as EncryptedSecretEnvelope,
-      });
       const metadata = message.metadata as {
         disableNotification?: boolean;
+        inlineKeyboard?: TelegramInlineKeyboard;
         replyToMessageId?: string;
       } | null;
-      const content = message.content as { caption?: string; text?: string };
+      const content = message.content as {
+        caption?: string;
+        inlineKeyboard?: TelegramInlineKeyboard;
+        text?: string;
+      };
       const sendOptions = {
         chatId: identity.externalUserId,
         ...(metadata?.disableNotification ? { disableNotification: true } : {}),
+        ...((metadata?.inlineKeyboard ?? content.inlineKeyboard)
+          ? { inlineKeyboard: metadata?.inlineKeyboard ?? content.inlineKeyboard }
+          : {}),
         ...(metadata?.replyToMessageId ? { replyToMessageId: metadata.replyToMessageId } : {}),
       };
       let sent: { messageId: string };
-      if ((message.type === 'PHOTO' || message.type === 'DOCUMENT') && message.mediaAsset) {
+      if (
+        ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'].includes(
+          message.type,
+        ) &&
+        message.mediaAsset
+      ) {
         try {
           sent = await this.adapter.sendMedia(token, {
             ...sendOptions,
             ...(content.caption ? { caption: content.caption } : {}),
-            kind: message.type,
+            kind: message.type as TelegramMediaKind,
             media: await this.mediaReference(
               message.mediaAsset,
               claimed.connectionId,
-              message.type,
+              message.type as MediaKind,
             ),
           });
         } catch (error) {
@@ -308,7 +347,7 @@ export class TelegramOutboundProcessorService
       attempts: row.attempts + 1,
       maxAttempts: row.maxAttempts,
       lease,
-      payload: row.payload as { messageId: string; channelIdentityId: string },
+      payload: row.payload as Claimed['payload'],
     };
   }
   private retryable(error: unknown): boolean {
@@ -378,10 +417,15 @@ export class TelegramOutboundProcessorService
           lastError: 'broadcast_cancelled',
         },
       });
-      await tx.message.updateMany({
-        where: { id: claimed.payload.messageId, projectId: claimed.projectId, status: 'QUEUED' },
-        data: { status: 'FAILED', failedAt: new Date() },
-      });
+      if (claimed.payload.action !== 'ANSWER_CALLBACK')
+        await tx.message.updateMany({
+          where: {
+            id: claimed.payload.messageId,
+            projectId: claimed.projectId,
+            status: 'QUEUED',
+          },
+          data: { status: 'FAILED', failedAt: new Date() },
+        });
       await tx.broadcastRecipient.updateMany({
         where: {
           id: recipientId,
@@ -429,19 +473,23 @@ export class TelegramOutboundProcessorService
             : { completedAt: new Date(), nextAttemptAt: null }),
         },
       });
-      await tx.message.updateMany({
-        where: { id: claimed.payload.messageId, projectId: claimed.projectId },
-        data: {
-          status: unknown ? 'UNKNOWN' : retry ? 'QUEUED' : 'FAILED',
-          ...(retry ? {} : { failedAt: new Date() }),
-        },
-      });
+      if (claimed.payload.action !== 'ANSWER_CALLBACK')
+        await tx.message.updateMany({
+          where: {
+            id: claimed.payload.messageId,
+            projectId: claimed.projectId,
+          },
+          data: {
+            status: unknown ? 'UNKNOWN' : retry ? 'QUEUED' : 'FAILED',
+            ...(retry ? {} : { failedAt: new Date() }),
+          },
+        });
       if (api?.errorCode === 401)
         await tx.channelConnection.updateMany({
           where: { id: claimed.connectionId, projectId: claimed.projectId },
           data: { status: 'ERROR', lastErrorAt: new Date() },
         });
-      if (api?.errorCode === 403)
+      if (api?.errorCode === 403 && claimed.payload.action !== 'ANSWER_CALLBACK')
         await tx.channelIdentity.updateMany({
           where: { id: claimed.payload.channelIdentityId, projectId: claimed.projectId },
           data: { status: 'BLOCKED' },

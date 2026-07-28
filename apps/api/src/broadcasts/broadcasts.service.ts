@@ -712,7 +712,7 @@ export class BroadcastsService {
   private templateSnapshot(version: {
     content: Prisma.JsonValue;
     id: string;
-    kind: 'DOCUMENT' | 'PHOTO' | 'TEXT';
+    kind: 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
     mediaAssetId: string | null;
     templateId: string;
   }): Prisma.InputJsonValue {
@@ -731,10 +731,16 @@ export class BroadcastsService {
     return typeof value === 'string' ? value : null;
   }
 
-  private messageType(content: unknown): 'DOCUMENT' | 'PHOTO' | 'TEXT' {
+  private messageType(
+    content: unknown,
+  ): 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE' {
     if (!content || typeof content !== 'object' || Array.isArray(content)) return 'TEXT';
     const kind = (content as Record<string, Prisma.JsonValue>).kind;
-    return kind === 'PHOTO' || kind === 'DOCUMENT' ? kind : 'TEXT';
+    return ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'].includes(
+      String(kind),
+    )
+      ? (kind as 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE')
+      : 'TEXT';
   }
 
   private text(value: Prisma.JsonValue): string {

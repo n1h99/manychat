@@ -1,4 +1,8 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  type TelegramInlineKeyboard,
+  validateTelegramInlineKeyboard,
+} from '@omnicus/channel-telegram';
 import { Prisma } from '@omnicus/database';
 
 import { DatabaseService } from '../database/database.service';
@@ -28,6 +32,23 @@ export class CrmOutboundService {
     @Inject(TelegramOutboundQueueService)
     private readonly outboundQueue: TelegramOutboundQueueService,
   ) {}
+
+  async assertProjectRoute(crmProjectId: string, omnicusProjectId: string): Promise<void> {
+    const project = await this.database.client.project.findUnique({
+      include: { crmConfig: true },
+      where: { id: omnicusProjectId },
+    });
+    if (
+      !project ||
+      project.status !== 'ACTIVE' ||
+      !project.crmConfig?.enabled ||
+      project.crmConfig.crmProjectId !== crmProjectId
+    )
+      throw new NotFoundException({
+        code: 'CRM_PROJECT_ROUTE_NOT_FOUND',
+        message: 'CRM project route was not found',
+      });
+  }
 
   async queue(
     dto: CrmOutboundMessageDto,
@@ -118,21 +139,81 @@ export class CrmOutboundService {
             },
           },
         });
+        const mediaAsset = dto.media
+          ? await transaction.mediaAsset.findFirst({
+              select: { id: true, kind: true },
+              where: {
+                id: dto.media.mediaAssetId,
+                kind: dto.media.kind,
+                projectId: dto.omnicusProjectId,
+                status: 'AVAILABLE',
+              },
+            })
+          : undefined;
+        if (dto.media && !mediaAsset)
+          throw new NotFoundException({
+            code: 'CRM_MEDIA_ASSET_NOT_FOUND',
+            message: 'CRM media asset was not found',
+          });
+        if (!dto.text && !mediaAsset)
+          throw new ConflictException({
+            code: 'CRM_OUTBOUND_CONTENT_REQUIRED',
+            message: 'Text or media is required',
+          });
+        let inlineKeyboard: TelegramInlineKeyboard | undefined;
+        if (dto.inlineKeyboard !== undefined)
+          try {
+            inlineKeyboard = validateTelegramInlineKeyboard(dto.inlineKeyboard);
+          } catch {
+            throw new ConflictException({
+              code: 'CRM_INLINE_KEYBOARD_INVALID',
+              message: 'Inline keyboard is invalid',
+            });
+          }
+        let providerReplyMessageId: string | undefined;
+        if (dto.replyToMessageId) {
+          const reply = await transaction.message.findFirst({
+            select: { externalMessageId: true },
+            where: {
+              connectionId: identity.connectionId,
+              conversationId: conversation.id,
+              externalMessageId: { not: null },
+              id: dto.replyToMessageId,
+              projectId: dto.omnicusProjectId,
+            },
+          });
+          if (!reply?.externalMessageId)
+            throw new NotFoundException({
+              code: 'CRM_REPLY_MESSAGE_NOT_FOUND',
+              message: 'Reply target was not found',
+            });
+          providerReplyMessageId = reply.externalMessageId;
+        }
         const message = await transaction.message.create({
           data: {
             connectionId: identity.connectionId,
             contactId: identity.contactId,
-            content: { text: dto.text },
+            content: (mediaAsset
+              ? {
+                  caption: dto.media?.kind === 'VIDEO_NOTE' ? '' : (dto.text ?? ''),
+                  ...(inlineKeyboard ? { inlineKeyboard } : {}),
+                }
+              : {
+                  text: dto.text!,
+                  ...(inlineKeyboard ? { inlineKeyboard } : {}),
+                }) as unknown as Prisma.InputJsonValue,
             conversationId: conversation.id,
             direction: 'OUTBOUND',
+            mediaAssetId: mediaAsset?.id ?? null,
             metadata: {
               disableNotification: dto.disableNotification ?? false,
-              replyToMessageId: dto.replyToMessageId ?? null,
+              ...(inlineKeyboard ? { inlineKeyboard } : {}),
+              replyToMessageId: providerReplyMessageId ?? null,
               source: 'crm',
-            },
+            } as unknown as Prisma.InputJsonValue,
             projectId: dto.omnicusProjectId,
             status: 'QUEUED',
-            type: 'TEXT',
+            type: dto.media?.kind ?? 'TEXT',
           },
         });
         const outbox = await transaction.outboxRecord.create({

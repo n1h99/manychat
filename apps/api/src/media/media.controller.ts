@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import type { MediaKind } from '@omnicus/media-core';
 
 import { RequireProjectPermission } from '../access/access.decorators';
 import { PermissionGuard } from '../access/permission.guard';
@@ -53,12 +54,12 @@ export class MediaController {
   })
   async upload(
     @Param('projectId') projectId: string,
-    @Param('kind') kind: 'DOCUMENT' | 'PHOTO',
+    @Param('kind') kind: MediaKind,
     @UploadedFile()
     file: { buffer: Buffer; mimetype: string; originalname: string; size: number } | undefined,
     @Req() request: AuthenticatedRequest,
   ) {
-    if (kind !== 'DOCUMENT' && kind !== 'PHOTO')
+    if (!['ANIMATION', 'AUDIO', 'DOCUMENT', 'PHOTO', 'VIDEO', 'VIDEO_NOTE', 'VOICE'].includes(kind))
       throw new BadRequestException({
         code: 'MEDIA_KIND_INVALID',
         message: 'Media kind is invalid',
