@@ -1,4 +1,4 @@
-import { Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
@@ -110,6 +110,13 @@ export function ContactsPage() {
           value={segmentId}
         />
       </Space>
+      {contacts.isError ? (
+        <Alert
+          message="Не удалось загрузить контакты. Обновите страницу или повторите позже."
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Table<ContactRow>
         columns={[
           {

@@ -12,7 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
 import { PermissionGuard } from '../access/permission.guard';
@@ -23,13 +23,15 @@ import {
   CreateCustomFieldDto,
   CreateSegmentDto,
   CreateTagDto,
+  ContactsQueryDto,
   MergeContactsDto,
+  AddTagDto,
+  BulkTagsDto,
   UpdateContactDto,
   UpdateCustomFieldDto,
   UpdateSegmentDto,
   UpdateTagDto,
 } from './dto';
-import type { AddTagDto, BulkTagsDto, ContactsQueryDto } from './dto';
 import { ContactsService } from './contacts.service';
 
 @ApiTags('contacts')
@@ -41,6 +43,7 @@ export class ContactsController {
 
   @Get('contacts')
   @RequireProjectPermission('contacts:read')
+  @ApiQuery({ type: ContactsQueryDto })
   async list(@Param('projectId') projectId: string, @Query() query: ContactsQueryDto) {
     return { data: await this.contacts.list(projectId, query), meta: {} };
   }
@@ -178,6 +181,7 @@ export class ContactsController {
   @Post('contacts/:contactId/tags')
   @RequireProjectPermission('tags:manage')
   @HttpCode(204)
+  @ApiBody({ type: AddTagDto })
   async addTag(
     @Param('projectId') projectId: string,
     @Param('contactId') contactId: string,
@@ -202,6 +206,7 @@ export class ContactsController {
   @Post('contacts/bulk-tags')
   @RequireProjectPermission('tags:manage')
   @HttpCode(204)
+  @ApiBody({ type: BulkTagsDto })
   async bulkTags(
     @Param('projectId') projectId: string,
     @Body() body: BulkTagsDto,

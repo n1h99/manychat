@@ -29,8 +29,8 @@ export class ContactsQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsIn(['ACTIVE', 'ARCHIVED'])
-  status?: 'ACTIVE' | 'ARCHIVED';
+  @IsIn(['ACTIVE', 'BLOCKED', 'UNSUBSCRIBED', 'ARCHIVED', 'MERGED'])
+  status?: 'ACTIVE' | 'BLOCKED' | 'UNSUBSCRIBED' | 'ARCHIVED' | 'MERGED';
 
   @IsOptional()
   @IsString()
