@@ -55,6 +55,8 @@ import { useTemplates } from '../templates-api';
 const palette = [
   ['INCOMING_MESSAGE', 'Incoming message'],
   ['CONDITION', 'Condition'],
+  ['CREATE_OR_UPDATE_LEAD', 'Create/update CRM lead'],
+  ['FORWARD_TO_CRM', 'Forward message to CRM'],
   ['SEND_MESSAGE', 'Send message'],
   ['SEND_TEMPLATE', 'Send template'],
   ['ADD_TAG', 'Add tag'],

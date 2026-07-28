@@ -49,7 +49,7 @@ export function CrmConfigPage() {
         showIcon
         type="info"
         message="Cyber Pulse CRM"
-        description="Здесь задаётся только project routing и mapping. Production CRM API не подключён до получения подтверждённого контракта."
+        description="Здесь настраиваются project routing и mapping для подключённой Cyber Pulse CRM."
       />
       <Form
         initialValues={initialValues}
