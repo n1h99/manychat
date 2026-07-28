@@ -587,3 +587,26 @@ content, URLs, audit payloads or frontend state. Railway Bucket is not treated
 as a private network and no server-side encryption, versioning, object lock or
 native lifecycle policy is promised. Retention and deletion are application
 jobs.
+
+## ADR-032: Production administrator uses an explicit one-time bootstrap
+
+**Status:** Accepted, 2026-07-28.
+
+**Decision:** The development/test seed remains unavailable inside Railway.
+The first production or staging `Super Admin` is created by a dedicated
+one-time database command after migrations. The command requires an explicit
+opt-in, exact Railway project and database-name confirmations, and administrator
+inputs supplied as temporary platform variables. It uses a PostgreSQL advisory
+transaction lock and creates permissions, the system role, user, assignment and
+audit record atomically.
+
+The bootstrap refuses to elevate an existing unassigned user. A retry for the
+single already initialized administrator is a no-op and never resets their
+password. Immediately after success, all bootstrap inputs and the opt-in are
+removed and the permanent API pre-deploy command returns to migration-only.
+Bootstrap code is stripped from API and worker runtime artifacts.
+
+**Consequences:** First-user creation does not weaken seed guards or add a
+public registration endpoint. Production bootstrap credentials exist only
+during the controlled release step and are not committed, logged or retained
+as normal service configuration.

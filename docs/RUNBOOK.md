@@ -1,5 +1,40 @@
 # Operations runbook — Stage 3B.3b
 
+## One-time production administrator bootstrap
+
+The development/test seed remains blocked inside Railway and must never be
+enabled by changing `APP_ENV` on a production database. A new empty Railway
+database is initialized through the dedicated `pnpm db:bootstrap:admin`
+command after migrations have succeeded.
+
+The command requires all of the following API service variables:
+
+- `ALLOW_PRODUCTION_ADMIN_BOOTSTRAP=true`;
+- `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`,
+  `BOOTSTRAP_ADMIN_FIRST_NAME`, and `BOOTSTRAP_ADMIN_LAST_NAME`;
+- `BOOTSTRAP_DATABASE_NAME_CONFIRMATION`, exactly matching the database name in
+  `DATABASE_URL`;
+- `BOOTSTRAP_RAILWAY_PROJECT_NAME_CONFIRMATION`, exactly matching Railway's
+  `RAILWAY_PROJECT_NAME`.
+
+The password must contain at least 16 characters. The command is restricted to
+an identified Railway service, takes a PostgreSQL advisory transaction lock,
+refuses to elevate an existing unassigned user, creates the permissions,
+system `Super Admin` role, user, assignment, and audit record atomically, and
+does not reset the password when an already initialized matching administrator
+is encountered.
+
+For the one bootstrap deployment only, set the API pre-deploy command to:
+
+```text
+pnpm db:migrate:deploy && pnpm db:bootstrap:admin
+```
+
+After the successful deployment, immediately remove every `BOOTSTRAP_*`
+variable and `ALLOW_PRODUCTION_ADMIN_BOOTSTRAP`, then restore the permanent
+pre-deploy command to `pnpm db:migrate:deploy`. The administrative bootstrap
+files are stripped from API and worker runtime artifacts.
+
 ## Automation continuations
 
 Inspect `wait_states` with `status = 'ACTIVE'` and `delayed_actions` with

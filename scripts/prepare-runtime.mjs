@@ -201,6 +201,10 @@ function stripDatabaseAdministrativeFiles(target) {
     resolve(databasePackage, 'dist/seed.d.ts'),
     resolve(databasePackage, 'dist/seed-guard.js'),
     resolve(databasePackage, 'dist/seed-guard.d.ts'),
+    resolve(databasePackage, 'dist/production-admin-bootstrap.js'),
+    resolve(databasePackage, 'dist/production-admin-bootstrap.d.ts'),
+    resolve(databasePackage, 'dist/production-admin-bootstrap-guard.js'),
+    resolve(databasePackage, 'dist/production-admin-bootstrap-guard.d.ts'),
   ];
 
   for (const removablePath of removablePaths) {
@@ -216,6 +220,7 @@ function assertRuntime(service) {
   const forbiddenPaths = [
     'node_modules/@playwright',
     'node_modules/@omnicus/database/dist/seed.js',
+    'node_modules/@omnicus/database/dist/production-admin-bootstrap.js',
     'node_modules/@omnicus/database/prisma',
     'node_modules/prisma',
     'node_modules/typescript',

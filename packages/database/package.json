@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "build": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts && node ../../scripts/clean-output.mjs packages/database/dist && tsc -p tsconfig.build.json",
+    "db:bootstrap:admin": "node dist/production-admin-bootstrap.js",
     "db:generate": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts",
     "db:seed": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts && node ../../scripts/pnpm.mjs --filter @omnicus/database build && node dist/seed.js",
     "db:sync-system-roles": "node ../../scripts/run-prisma.mjs generate --config prisma.config.ts && node ../../scripts/pnpm.mjs --filter @omnicus/database build && node dist/backfill-system-project-roles.js",

@@ -18,6 +18,7 @@
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
     "db:format": "node scripts/run-prisma.mjs format --schema prisma/schema.prisma",
     "db:generate": "node scripts/run-prisma.mjs generate --config prisma.config.ts",
+    "db:bootstrap:admin": "node scripts/pnpm.mjs --filter @omnicus/database db:bootstrap:admin",
     "db:diff:check": "node scripts/check-prisma-sql.mjs",
     "db:migrate:dev": "node scripts/run-prisma.mjs migrate dev --config prisma.config.ts",
     "db:migrate:deploy": "node scripts/run-prisma.mjs migrate deploy --config prisma.config.ts",
