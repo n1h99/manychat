@@ -85,8 +85,123 @@ export interface MediaValidationInput {
 
 export interface ValidatedMedia {
   extension: string;
+  height?: number;
   mimeType: string;
   sizeBytes: number;
+  width?: number;
+}
+
+interface ImageDimensions {
+  height: number;
+  width: number;
+}
+
+const TELEGRAM_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const TELEGRAM_PHOTO_MAX_DIMENSION_SUM = 10_000;
+const TELEGRAM_PHOTO_MAX_ASPECT_RATIO = 20;
+
+function readBigEndian16(bytes: Uint8Array, offset: number): number {
+  return bytes[offset]! * 256 + bytes[offset + 1]!;
+}
+
+function readLittleEndian16(bytes: Uint8Array, offset: number): number {
+  return bytes[offset]! + bytes[offset + 1]! * 256;
+}
+
+function readLittleEndian24(bytes: Uint8Array, offset: number): number {
+  return bytes[offset]! + bytes[offset + 1]! * 256 + bytes[offset + 2]! * 65_536;
+}
+
+function pngDimensions(bytes: Uint8Array): ImageDimensions | undefined {
+  if (
+    bytes.byteLength < 24 ||
+    bytes[12] !== 0x49 ||
+    bytes[13] !== 0x48 ||
+    bytes[14] !== 0x44 ||
+    bytes[15] !== 0x52
+  )
+    return undefined;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { height: view.getUint32(20), width: view.getUint32(16) };
+}
+
+const jpegStartOfFrameMarkers = new Set([
+  0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+]);
+
+function jpegDimensions(bytes: Uint8Array): ImageDimensions | undefined {
+  if (bytes.byteLength < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+  let offset = 2;
+  while (offset < bytes.byteLength) {
+    while (offset < bytes.byteLength && bytes[offset] !== 0xff) offset += 1;
+    while (offset < bytes.byteLength && bytes[offset] === 0xff) offset += 1;
+    if (offset >= bytes.byteLength) return undefined;
+    const marker = bytes[offset]!;
+    offset += 1;
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7))
+      continue;
+    if (offset + 1 >= bytes.byteLength) return undefined;
+    const segmentLength = readBigEndian16(bytes, offset);
+    if (segmentLength < 2 || offset + segmentLength > bytes.byteLength) return undefined;
+    if (jpegStartOfFrameMarkers.has(marker)) {
+      if (segmentLength < 7) return undefined;
+      return {
+        height: readBigEndian16(bytes, offset + 3),
+        width: readBigEndian16(bytes, offset + 5),
+      };
+    }
+    offset += segmentLength;
+  }
+  return undefined;
+}
+
+function webpDimensions(bytes: Uint8Array): ImageDimensions | undefined {
+  if (bytes.byteLength < 30) return undefined;
+  const chunk = String.fromCharCode(bytes[12]!, bytes[13]!, bytes[14]!, bytes[15]!);
+  if (chunk === 'VP8X')
+    return {
+      height: readLittleEndian24(bytes, 27) + 1,
+      width: readLittleEndian24(bytes, 24) + 1,
+    };
+  if (chunk === 'VP8 ') {
+    if (bytes.byteLength < 30 || bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a)
+      return undefined;
+    return {
+      height: readLittleEndian16(bytes, 28) & 0x3fff,
+      width: readLittleEndian16(bytes, 26) & 0x3fff,
+    };
+  }
+  if (chunk === 'VP8L') {
+    if (bytes.byteLength < 25 || bytes[20] !== 0x2f) return undefined;
+    return {
+      height: 1 + ((bytes[22]! >> 6) | (bytes[23]! << 2) | ((bytes[24]! & 0x0f) << 10)),
+      width: 1 + bytes[21]! + ((bytes[22]! & 0x3f) << 8),
+    };
+  }
+  return undefined;
+}
+
+function imageDimensions(bytes: Uint8Array, mimeType: string): ImageDimensions | undefined {
+  if (mimeType === 'image/png') return pngDimensions(bytes);
+  if (mimeType === 'image/jpeg') return jpegDimensions(bytes);
+  if (mimeType === 'image/webp') return webpDimensions(bytes);
+  return undefined;
+}
+
+function validateTelegramPhoto(bytes: Uint8Array, mimeType: string): ImageDimensions {
+  if (bytes.byteLength > TELEGRAM_PHOTO_MAX_BYTES)
+    throw new MediaValidationError('media_photo_size_exceeded');
+  const dimensions = imageDimensions(bytes, mimeType);
+  if (!dimensions || dimensions.width === 0 || dimensions.height === 0)
+    throw new MediaValidationError('media_photo_dimensions_unreadable');
+  const aspectRatio =
+    Math.max(dimensions.width, dimensions.height) / Math.min(dimensions.width, dimensions.height);
+  if (
+    dimensions.width + dimensions.height > TELEGRAM_PHOTO_MAX_DIMENSION_SUM ||
+    aspectRatio > TELEGRAM_PHOTO_MAX_ASPECT_RATIO
+  )
+    throw new MediaValidationError('media_photo_dimensions_rejected');
+  return dimensions;
 }
 
 const signatures = [
@@ -151,10 +266,14 @@ export function validateMedia(input: MediaValidationInput): ValidatedMedia {
     filenameExtension !== signature.extension
   )
     throw new MediaValidationError('media_extension_mismatch');
+  const dimensions =
+    input.kind === 'PHOTO' ? validateTelegramPhoto(input.bytes, signature.mimeType) : undefined;
   return {
     extension: signature.extension,
+    ...(dimensions ? { height: dimensions.height } : {}),
     mimeType: signature.mimeType,
     sizeBytes: input.bytes.byteLength,
+    ...(dimensions ? { width: dimensions.width } : {}),
   };
 }
 
