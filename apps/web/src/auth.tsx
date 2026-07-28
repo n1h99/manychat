@@ -28,6 +28,7 @@ export interface Identity {
 interface LoginResponse {
   accessToken: string;
   csrfToken: string;
+  csrfTokenMaxAgeSeconds: number;
   user: Identity;
 }
 
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const refreshAccessToken = useCallback(async (): Promise<string | undefined> => {
     try {
       const response = await apiRequest<LoginResponse>('/api/v1/auth/refresh', { method: 'POST' });
-      persistCsrfToken(response.csrfToken);
+      persistCsrfToken(response.csrfToken, response.csrfTokenMaxAgeSeconds);
       setAccessToken(response.accessToken);
       setIdentity(response.user);
       return response.accessToken;
@@ -83,7 +84,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           body: JSON.stringify({ email, password }),
           method: 'POST',
         });
-        persistCsrfToken(response.csrfToken);
+        persistCsrfToken(response.csrfToken, response.csrfTokenMaxAgeSeconds);
         setAccessToken(response.accessToken);
         setIdentity(response.user);
       },

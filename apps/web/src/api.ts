@@ -38,9 +38,9 @@ async function refreshAccessToken(): Promise<string | undefined> {
   return pendingAccessTokenRefresh;
 }
 
-export function persistCsrfToken(token: string): void {
+export function persistCsrfToken(token: string, maxAgeSeconds: number): void {
   const secure = globalThis.location.protocol === 'https:' ? '; Secure' : '';
-  document.cookie = `${csrfCookieName}=${encodeURIComponent(token)}; Path=/; SameSite=Strict${secure}`;
+  document.cookie = `${csrfCookieName}=${encodeURIComponent(token)}; Path=/; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure}`;
 }
 
 export function clearPersistedCsrfToken(): void {

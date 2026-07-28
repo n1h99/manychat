@@ -11,7 +11,9 @@ describe('AuthController session cookies', () => {
           tokens: { accessToken: 'access', csrfToken: 'csrf', refreshToken: 'refresh' },
         }),
       } as never,
-      { get: vi.fn().mockReturnValue('development') } as never,
+      {
+        get: vi.fn((key: string) => (key === 'REFRESH_TOKEN_TTL_DAYS' ? 30 : 'development')),
+      } as never,
     );
     const response = { clearCookie: vi.fn(), cookie: vi.fn() };
 
@@ -24,6 +26,7 @@ describe('AuthController session cookies', () => {
     expect(result.data).toEqual({
       accessToken: 'access',
       csrfToken: 'csrf',
+      csrfTokenMaxAgeSeconds: 2_592_000,
       user: { email: 'admin@example.test' },
     });
     expect(response.clearCookie).toHaveBeenCalledWith('omnicus_csrf', {

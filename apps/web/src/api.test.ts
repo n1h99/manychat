@@ -25,8 +25,10 @@ describe('authenticated API requests', () => {
     vi.stubGlobal('document', documentStub);
     vi.stubGlobal('location', { protocol: 'https:' });
 
-    persistCsrfToken('csrf-value');
-    expect(documentStub.cookie).toBe('omnicus_csrf=csrf-value; Path=/; SameSite=Strict; Secure');
+    persistCsrfToken('csrf-value', 2_592_000);
+    expect(documentStub.cookie).toBe(
+      'omnicus_csrf=csrf-value; Path=/; SameSite=Strict; Max-Age=2592000; Secure',
+    );
 
     clearPersistedCsrfToken();
     expect(documentStub.cookie).toBe('omnicus_csrf=; Path=/; SameSite=Strict; Max-Age=0; Secure');

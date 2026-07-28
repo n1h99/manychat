@@ -66,6 +66,7 @@ export class AuthController {
       data: {
         accessToken: result.tokens.accessToken,
         csrfToken: result.tokens.csrfToken,
+        csrfTokenMaxAgeSeconds: this.refreshTokenMaxAgeMilliseconds() / 1_000,
         user: result.identity,
       },
       meta: {},
@@ -90,6 +91,7 @@ export class AuthController {
       data: {
         accessToken: result.tokens.accessToken,
         csrfToken: result.tokens.csrfToken,
+        csrfTokenMaxAgeSeconds: this.refreshTokenMaxAgeMilliseconds() / 1_000,
         user: result.identity,
       },
       meta: {},
@@ -148,7 +150,7 @@ export class AuthController {
     response.clearCookie(csrfCookieName, { path: '/', sameSite: 'strict' });
     response.cookie(refreshCookieName, tokens.refreshToken, {
       httpOnly: true,
-      maxAge: this.config.get('REFRESH_TOKEN_TTL_DAYS', { infer: true }) * 24 * 60 * 60 * 1_000,
+      maxAge: this.refreshTokenMaxAgeMilliseconds(),
       path: '/api/v1/auth',
       sameSite,
       secure,
@@ -197,5 +199,9 @@ export class AuthController {
       this.config.get('APP_ENV', { infer: true }) !== 'development' &&
       this.config.get('APP_ENV', { infer: true }) !== 'test'
     );
+  }
+
+  private refreshTokenMaxAgeMilliseconds(): number {
+    return this.config.get('REFRESH_TOKEN_TTL_DAYS', { infer: true }) * 24 * 60 * 60 * 1_000;
   }
 }

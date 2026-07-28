@@ -38,6 +38,7 @@ test('opens the versioned template and visual automation workspace with mocked A
         body: envelope({
           accessToken: 'browser-smoke-token',
           csrfToken: 'browser-smoke-csrf',
+          csrfTokenMaxAgeSeconds: 2_592_000,
           user: {
             email: 'admin@example.test',
             firstName: 'Admin',
