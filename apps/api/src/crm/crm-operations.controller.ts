@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RetryCrmOperationDto } from './dto';
 import { CrmService } from './crm.service';
 
-@ApiTags('crm mock')
+@ApiTags('crm')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('api/v1/projects/:projectId/crm-operations')

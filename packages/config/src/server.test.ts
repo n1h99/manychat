@@ -225,6 +225,34 @@ describe('server environment validation', () => {
     expect(environment.TELEGRAM_INBOUND_LEASE_MS).toBe(60_000);
     expect(environment.TELEGRAM_INBOUND_RECOVERY_INTERVAL_MS).toBe(10_000);
     expect(environment.TELEGRAM_INBOUND_RECOVERY_BATCH_SIZE).toBe(100);
+    expect(environment.CRM_INTEGRATION_ENABLED).toBe(false);
+  });
+
+  it('requires CRM worker credentials only when the integration is enabled', () => {
+    expect(() =>
+      validateWorkerEnvironment({
+        ...baseEnvironment,
+        CRM_INTEGRATION_ENABLED: 'true',
+      }),
+    ).toThrow('CRM_BASE_URL');
+
+    expect(
+      validateWorkerEnvironment({
+        ...baseEnvironment,
+        CRM_AUTH_TOKEN: 'test-crm-token-that-is-at-least-32-characters',
+        CRM_BASE_URL: 'http://localhost:4010',
+        CRM_INTEGRATION_ENABLED: 'true',
+      }).CRM_INTEGRATION_ENABLED,
+    ).toBe(true);
+  });
+
+  it('requires a separate inbound CRM token when the API is enabled', () => {
+    expect(() =>
+      validateApiEnvironment({
+        ...baseEnvironment,
+        CRM_INBOUND_ENABLED: 'true',
+      }),
+    ).toThrow('CRM_INBOUND_AUTH_TOKEN');
   });
 
   it.each(['production', 'staging'] as const)('rejects demo jobs in %s', (appEnvironment) => {

@@ -312,6 +312,17 @@ explicit operator confirmation because the external side effect may already have
 occurred. This is not a production CRM integration and remains gated by
 `docs/CRM_CONTRACT_REQUIRED.md`.
 
+### Cyber Pulse production adapter (2026-07-29)
+
+The authoritative Cyber Pulse staging contract is now available. The worker
+uses the real authenticated HTTP `CrmClient`, PostgreSQL CRM outbox, safe
+retry/unknown classification and reconciliation by idempotency key. The API
+also exposes the independently authenticated CRM-to-Omnicus Telegram queue and
+delivery reconciliation contract. See `docs/CRM_INTEGRATION.md`.
+
+Live staging E2E and Railway credential installation remain external acceptance
+gates; the legacy CRM cleanup must not run before those checks pass.
+
 ### Key tests
 
 - CRM mock success;

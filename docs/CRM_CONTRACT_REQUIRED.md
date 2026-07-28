@@ -1,5 +1,17 @@
 # CRM contract required
 
+## Resolution (2026-07-29)
+
+The external gate is satisfied for Cyber Pulse staging by backend commit
+`48c0d6b98aef09bd051a340e091078963014558b` and its versioned
+`docs/omnicus-openapi.yaml`. The reviewed implementation contract and the
+independent reverse-direction contract are recorded in
+`docs/CRM_INTEGRATION.md` and `docs/OMNICUS_CRM_OUTBOUND_OPENAPI.yaml`.
+
+The original checklist below remains as the historical safety gate. Live
+staging E2E and secret installation are still required before production
+acceptance or legacy CRM cleanup.
+
 ## Статус
 
 Production CRM adapter заблокирован до предоставления и анализа реального

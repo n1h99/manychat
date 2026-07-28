@@ -55,7 +55,7 @@ export function ProjectDetailPage() {
           <Link to={`/projects/${project.id}/scenarios`}>Automation</Link>
         ) : null}
         {hasProjectPermission(access.data, 'integrations:manage') ? (
-          <Link to={`/projects/${project.id}/crm-config`}>CRM mock</Link>
+          <Link to={`/projects/${project.id}/crm-config`}>CRM</Link>
         ) : null}
         {hasProjectPermission(access.data, 'channels:read') ? (
           <Link to={`/projects/${project.id}/channels`}>Channels</Link>

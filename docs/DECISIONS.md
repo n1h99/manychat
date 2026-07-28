@@ -675,3 +675,30 @@ first-party cookies. This intentionally accepts the higher XSS exposure of
 browser-readable bearer storage; CSP, dependency controls and avoiding unsafe
 HTML become critical. Tokens must never enter query keys, analytics, logs,
 URLs, screenshots or support payloads.
+
+## ADR-035: Cyber Pulse uses asymmetric service contracts and durable outboxes
+
+**Status:** Accepted, 2026-07-29.
+
+**Context:** Cyber Pulse previously called ManyChat and customer Telegram
+transports directly. Its staging replacement now exposes an authoritative,
+versioned Omnicus contract. Both systems can create external side effects, and
+a timeout cannot prove whether the receiving system committed an operation.
+
+**Decision:** Omnicus-to-Cyber-Pulse calls use the reviewed Cyber Pulse OpenAPI
+at backend commit `48c0d6b98aef09bd051a340e091078963014558b`.
+Cyber-Pulse-to-Omnicus calls use
+`docs/OMNICUS_CRM_OUTBOUND_OPENAPI.yaml`. Each direction has a different
+opaque Bearer credential and independent rotation.
+
+Both directions require project routing, correlation and stable idempotency.
+Omnicus PostgreSQL remains the source of truth for CRM and Telegram outbox
+intents. Network timeouts are reconciled by idempotency key; unresolved
+outcomes become `UNKNOWN` and are never retried blindly. CRM outbound returns
+`QUEUED`, while a separate read endpoint reports confirmed delivery state.
+
+**Consequences:** CRM never receives Telegram credentials or raw provider
+payloads and no longer sends customer messages directly through ManyChat or
+Telegram. Redis outages cannot discard committed intents. Live staging E2E and
+separate secret installation remain required before production acceptance or
+legacy CRM cleanup.

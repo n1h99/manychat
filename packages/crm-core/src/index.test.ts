@@ -1,31 +1,142 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { MockCrmClient } from './index';
+import {
+  HttpCrmClient,
+  MockCrmClient,
+  type CrmClientError,
+  type CreateOrUpdateLeadInput,
+} from './index';
 
 const context = {
   correlationId: 'correlation-a',
-  crmProjectId: 'mock-project-a',
+  crmProjectId: 'cyber-pulse-staging',
   idempotencyKey: 'operation-a',
   projectId: 'project-a',
+};
+
+const leadInput: CreateOrUpdateLeadInput = {
+  contactId: 'contact-a',
+  customFields: { interests: ['cars', { source: 'telegram' }] },
+  displayName: 'Test',
+  identity: {
+    channel: 'telegram',
+    channelIdentityId: 'identity-a',
+    connectionId: 'connection-a',
+    externalUserId: '123',
+  },
+  tags: [{ id: 'tag-a', name: 'Qualified' }],
 };
 
 describe('MockCrmClient', () => {
   it('is deterministic and idempotent by operation key', async () => {
     const client = new MockCrmClient();
-    const input = { contactId: 'contact-a', displayName: 'Test', fields: {} };
-    await expect(client.createOrUpdateLead(context, input)).resolves.toEqual(
-      await client.createOrUpdateLead(context, input),
+    await expect(client.createOrUpdateLead(context, leadInput)).resolves.toEqual(
+      await client.createOrUpdateLead(context, leadInput),
     );
   });
 
-  it('exposes scripted safe failure classes without a provider contract', async () => {
+  it('exposes scripted safe failure classes without provider details', async () => {
     const client = new MockCrmClient(() => 'RETRYABLE_FAILURE');
-    await expect(
-      client.createOrUpdateLead(context, {
-        contactId: 'contact-a',
-        displayName: 'Test',
-        fields: {},
+    await expect(client.createOrUpdateLead(context, leadInput)).rejects.toMatchObject({
+      outcome: 'RETRYABLE_FAILURE',
+      safeCode: 'crm_mock_retryable_failure',
+    });
+  });
+});
+
+describe('HttpCrmClient', () => {
+  it('sends the approved lead contract with service headers', async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      Response.json({
+        crmLeadId: 'crm-lead-a',
+        mode: 'created',
+        operationId: 'operation-provider-a',
       }),
-    ).rejects.toMatchObject({ outcome: 'RETRYABLE_FAILURE' });
+    );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test/',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await expect(client.createOrUpdateLead(context, leadInput)).resolves.toEqual({
+      mode: 'created',
+      operationId: 'operation-provider-a',
+      providerReference: 'crm-lead-a',
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      'https://crm.example.test/integrations/v1/omnicus/leads/upsert',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer secret-service-token',
+          'Idempotency-Key': 'operation-a',
+          'X-Correlation-Id': 'correlation-a',
+        }),
+        method: 'POST',
+      }),
+    );
+    const request = fetchImplementation.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      crmProjectId: 'cyber-pulse-staging',
+      customFields: leadInput.customFields,
+      omnicusContactId: 'contact-a',
+      omnicusProjectId: 'project-a',
+    });
+  });
+
+  it('reconciles an unknown transport result before returning success', async () => {
+    const fetchImplementation = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('socket closed after request'))
+      .mockResolvedValueOnce(
+        Response.json({
+          operationId: 'operation-provider-a',
+          result: {
+            crmLeadId: 'crm-lead-a',
+            mode: 'updated',
+            operationId: 'operation-provider-a',
+          },
+          status: 'SUCCEEDED',
+        }),
+      );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await expect(client.createOrUpdateLead(context, leadInput)).resolves.toMatchObject({
+      mode: 'updated',
+      providerReference: 'crm-lead-a',
+    });
+    expect(String(fetchImplementation.mock.calls[1]?.[0])).toContain('idempotencyKey=operation-a');
+  });
+
+  it('classifies rate limits without exposing the provider response', async () => {
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json(
+          { error: { code: 'CRM_RATE_LIMITED', retryable: true } },
+          { headers: { 'Retry-After': '2' }, status: 429 },
+        ),
+      );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await expect(client.createOrUpdateLead(context, leadInput)).rejects.toEqual(
+      expect.objectContaining<Partial<CrmClientError>>({
+        outcome: 'RETRYABLE_FAILURE',
+        retryAfterMs: 2_000,
+        safeCode: 'CRM_RATE_LIMITED',
+      }),
+    );
   });
 });

@@ -59,6 +59,18 @@ Worker:
   bounded defaults.
 - `DEMO_JOB_ENABLED` must remain false in staging/production; validation rejects
   an enabled value there.
+- `CRM_INTEGRATION_ENABLED=true`, `CRM_BASE_URL`, and `CRM_AUTH_TOKEN` enable
+  Omnicus-to-Cyber-Pulse delivery. `CRM_BASE_URL` must use HTTPS in
+  staging/production.
+- `CRM_REQUEST_TIMEOUT_MS`, `CRM_OUTBOX_INTERVAL_MS`, and
+  `CRM_OUTBOX_LEASE_MS` have bounded defaults.
+
+API:
+
+- `CRM_INBOUND_ENABLED=true` and `CRM_INBOUND_AUTH_TOKEN` enable the independent
+  Cyber-Pulse-to-Omnicus service API.
+- `CRM_INBOUND_AUTH_TOKEN` must not equal `CRM_AUTH_TOKEN`; the credentials have
+  opposite trust directions and rotate independently.
 
 Never commit real CRM credentials, database credentials, Redis credentials, or
 Railway-generated values. `.railway/` is ignored.

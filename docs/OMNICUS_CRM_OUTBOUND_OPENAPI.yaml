@@ -1,0 +1,232 @@
+openapi: 3.1.0
+info:
+  title: Omnicus API for Cyber Pulse CRM
+  version: 1.0.0
+  description: Project-scoped CRM to Omnicus Telegram outbound contract.
+security:
+  - serviceBearer: []
+paths:
+  /integrations/v1/crm/messages/outbound:
+    post:
+      operationId: queueCrmOutboundMessage
+      summary: Durably queue a Telegram message from CRM
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutboundMessage'
+      responses:
+        '200':
+          description: The intent is durably queued, not necessarily sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueuedOperation'
+        '400':
+          $ref: '#/components/responses/SafeError'
+        '401':
+          $ref: '#/components/responses/SafeError'
+        '404':
+          $ref: '#/components/responses/SafeError'
+        '409':
+          $ref: '#/components/responses/SafeError'
+        '503':
+          $ref: '#/components/responses/SafeError'
+  /integrations/v1/crm/operations/{operationId}:
+    get:
+      operationId: getCrmOutboundOperation
+      summary: Reconcile Telegram delivery state
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: crmProjectId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: omnicusProjectId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        '200':
+          description: Current durable operation state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStatus'
+        '401':
+          $ref: '#/components/responses/SafeError'
+        '404':
+          $ref: '#/components/responses/SafeError'
+        '503':
+          $ref: '#/components/responses/SafeError'
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-token
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  schemas:
+    Identity:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - channelIdentityId
+        - connectionId
+      properties:
+        channel:
+          type: string
+          enum:
+            - telegram
+        channelIdentityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        connectionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    OutboundMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - text
+      properties:
+        crmProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusContactId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        crmLeadId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        identity:
+          $ref: '#/components/schemas/Identity'
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        disableNotification:
+          type: boolean
+        replyToMessageId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    QueuedOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - messageId
+        - status
+        - replayed
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        messageId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - QUEUED
+        replayed:
+          type: boolean
+    OperationStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - messageId
+        - status
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        messageId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - PROCESSING
+            - SENT
+            - FAILED
+            - UNKNOWN
+        errorCode:
+          type: string
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - correlationId
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlationId:
+              type: string
+            details:
+              type:
+                - object
+                - 'null'
+  responses:
+    SafeError:
+      description: Safe structured error without provider payload or credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

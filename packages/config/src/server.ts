@@ -201,6 +201,8 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
     JWT_BROWSER_SESSION_TTL_SECONDS: positiveIntegerSchema.max(2_592_000).default(604_800),
     LOGIN_RATE_LIMIT_MAX_ATTEMPTS: positiveIntegerSchema.max(100).default(10),
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerSchema.max(3_600).default(900),
+    CRM_INBOUND_AUTH_TOKEN: z.string().min(32).optional(),
+    CRM_INBOUND_ENABLED: booleanEnvironmentSchema.default(false),
     REFRESH_TOKEN_TTL_DAYS: positiveIntegerSchema.max(90).default(30),
     SWAGGER_ENABLED: booleanEnvironmentSchema.default(false),
     TRUST_PROXY: trustProxySchema,
@@ -271,6 +273,14 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
         path: ['CORS_ALLOWED_ORIGINS'],
       });
     }
+
+    if (environment.CRM_INBOUND_ENABLED && environment.CRM_INBOUND_AUTH_TOKEN === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'CRM_INBOUND_AUTH_TOKEN is required when CRM inbound API is enabled',
+        path: ['CRM_INBOUND_AUTH_TOKEN'],
+      });
+    }
   })
   .transform((environment) => ({
     ...environment,
@@ -282,6 +292,12 @@ export const workerEnvironmentSchema = serviceEnvironmentSchema
   .extend({
     BULLMQ_READY_TIMEOUT_MS: durationSchema.default(5_000),
     CHANNEL_SECRETS_KEY: channelSecretsKeySchema,
+    CRM_AUTH_TOKEN: z.string().min(32).optional(),
+    CRM_BASE_URL: urlWithProtocol(['https:', 'http:'], 'CRM_BASE_URL').optional(),
+    CRM_INTEGRATION_ENABLED: booleanEnvironmentSchema.default(false),
+    CRM_OUTBOX_INTERVAL_MS: durationSchema.default(5_000),
+    CRM_OUTBOX_LEASE_MS: durationSchema.default(60_000),
+    CRM_REQUEST_TIMEOUT_MS: durationSchema.default(10_000),
     AUTOMATION_CONTINUATION_BATCH_SIZE: positiveIntegerSchema.max(1_000).default(100),
     AUTOMATION_CONTINUATION_INTERVAL_MS: durationSchema.default(10_000),
     DEMO_JOB_ENABLED: booleanEnvironmentSchema.default(false),
@@ -320,6 +336,35 @@ export const workerEnvironmentSchema = serviceEnvironmentSchema
         code: 'custom',
         message: 'Demo jobs are allowed only in development or test',
         path: ['DEMO_JOB_ENABLED'],
+      });
+    }
+
+    if (environment.CRM_INTEGRATION_ENABLED) {
+      if (environment.CRM_BASE_URL === undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: 'CRM_BASE_URL is required when CRM integration is enabled',
+          path: ['CRM_BASE_URL'],
+        });
+      }
+      if (environment.CRM_AUTH_TOKEN === undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: 'CRM_AUTH_TOKEN is required when CRM integration is enabled',
+          path: ['CRM_AUTH_TOKEN'],
+        });
+      }
+    }
+
+    if (
+      environment.CRM_BASE_URL !== undefined &&
+      (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
+      new URL(environment.CRM_BASE_URL).protocol !== 'https:'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'CRM_BASE_URL must use HTTPS outside local development',
+        path: ['CRM_BASE_URL'],
       });
     }
   });

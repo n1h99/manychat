@@ -171,12 +171,28 @@ the message before a network timeout. Retry only an explicitly failed
 recipient through the audited broadcast operation after confirming the target
 is eligible.
 
-## CRM mock outbox and reconciliation
+## CRM outbox and reconciliation
 
-CRM mock operations use the same PostgreSQL-backed outbox principle. The worker
+The production Cyber Pulse adapter supersedes the mock when
+`CRM_INTEGRATION_ENABLED=true`. Required variables and the reviewed endpoint
+contract are in `docs/CRM_INTEGRATION.md`. With the flag disabled the worker
+does not scan CRM outbox rows and no external call is attempted.
+
+For a CRM operation in `UNKNOWN`, query Cyber Pulse reconciliation by the same
+idempotency key before any manual retry. Never infer failure from a timeout.
+The operator journal requires explicit confirmation before requeuing an
+unknown operation.
+
+CRM-to-Omnicus requests create the Telegram message and outbox intent in one
+PostgreSQL transaction. A Redis outage may prevent immediate enqueue but does
+not lose the intent; Telegram outbound recovery picks it up. A `200 QUEUED`
+response is not evidence of Telegram delivery. Cyber Pulse must poll
+`GET /integrations/v1/crm/operations/{operationId}` until a terminal state.
+
+CRM operations use the same PostgreSQL-backed outbox principle. The worker
 polls bounded due CRM records in `PENDING` or `RETRY`; a Redis outage cannot
 discard a committed CRM intent because the record stays eligible for the next
-worker scan. The mock adapter never receives or stores a real CRM credential.
+worker scan. The real service credential remains environment-only.
 
 Inspect the project CRM operation journal for `SUCCEEDED`, `RETRY`, `FAILED`,
 or `UNKNOWN` state and safe error codes only. A failed operation may be retried

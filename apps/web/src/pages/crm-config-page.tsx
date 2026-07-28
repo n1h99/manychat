@@ -44,11 +44,11 @@ export function CrmConfigPage() {
     : { enabled: true, fieldMapping: '{}' };
   return (
     <section>
-      <Typography.Title level={2}>CRM mock</Typography.Title>
+      <Typography.Title level={2}>CRM integration</Typography.Title>
       <Alert
         showIcon
         type="info"
-        message="Pilot mock adapter"
+        message="Cyber Pulse CRM"
         description="Здесь задаётся только project routing и mapping. Production CRM API не подключён до получения подтверждённого контракта."
       />
       <Form
@@ -72,7 +72,7 @@ export function CrmConfigPage() {
               enabled: values.enabled,
               fieldMapping,
             });
-            void message.success('CRM mock configuration сохранена.');
+            void message.success('CRM configuration сохранена.');
           } catch {
             void message.error('Не удалось сохранить конфигурацию. Проверьте JSON mapping.');
           }
@@ -90,7 +90,7 @@ export function CrmConfigPage() {
         <Form.Item label="Field mapping (JSON)" name="fieldMapping" normalize={(value) => value}>
           <Input.TextArea autoSize={{ minRows: 5 }} />
         </Form.Item>
-        <Form.Item label="Enable mock CRM" name="enabled" valuePropName="checked">
+        <Form.Item label="Enable CRM integration" name="enabled" valuePropName="checked">
           <Switch />
         </Form.Item>
         <Button htmlType="submit" loading={save.isPending} type="primary">
@@ -133,7 +133,7 @@ export function CrmConfigPage() {
                   description={
                     record.status === 'UNKNOWN'
                       ? 'The CRM may already have applied this operation. Continue only after reconciliation.'
-                      : 'Requeue this failed mock CRM operation?'
+                      : 'Requeue this failed CRM operation?'
                   }
                   okText="Retry"
                   onConfirm={async () => {

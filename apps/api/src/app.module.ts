@@ -18,6 +18,7 @@ import { CrmModule } from './crm/crm.module';
 import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { MediaModule } from './media/media.module';
 import { TemplatesModule } from './templates/templates.module';
+import { CrmIntegrationModule } from './crm-integration/crm-integration.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -44,6 +45,7 @@ const rootEnvFile =
     ChannelsModule,
     AutomationModule,
     CrmModule,
+    CrmIntegrationModule,
     BroadcastsModule,
     MediaModule,
     TemplatesModule,
