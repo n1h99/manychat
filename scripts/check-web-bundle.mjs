@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 
 const distDirectory = resolve(import.meta.dirname, '../apps/web/dist');
 const assetDirectory = resolve(distDirectory, 'assets');
+const maximumEntryBytes = 250 * 1024;
 const forbiddenMarkers = [
   'APP_ENV',
   'CORS_ALLOWED_ORIGINS',
@@ -20,6 +21,20 @@ const forbiddenMarkers = [
   'postgresql://',
 ];
 const failures = [];
+const indexHtml = readFileSync(resolve(distDirectory, 'index.html'), 'utf8');
+const entryAsset = indexHtml.match(/<script[^>]+src="\/assets\/([^"]+\.js)"/)?.[1];
+let entryBytes = 0;
+
+if (!entryAsset) {
+  failures.push('Production HTML does not reference a JavaScript entry asset');
+} else {
+  entryBytes = statSync(resolve(assetDirectory, entryAsset)).size;
+  if (entryBytes > maximumEntryBytes) {
+    failures.push(
+      `Production entry asset is ${entryBytes} bytes; maximum is ${maximumEntryBytes} bytes`,
+    );
+  }
+}
 
 for (const entry of readdirSync(distDirectory, { recursive: true })) {
   if (extname(entry) === '.map') {
@@ -47,4 +62,11 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-process.stdout.write(`${JSON.stringify({ check: 'web-bundle-boundary', status: 'passed' })}\n`);
+process.stdout.write(
+  `${JSON.stringify({
+    check: 'web-bundle-boundary',
+    entryBytes,
+    maximumEntryBytes,
+    status: 'passed',
+  })}\n`,
+);

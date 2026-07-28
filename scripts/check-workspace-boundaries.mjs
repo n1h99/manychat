@@ -16,6 +16,31 @@ const manifests = new Map(
 );
 const graph = new Map();
 const failures = [];
+const ignoredDirectoryNames = new Set([
+  '.git',
+  '.runtime',
+  '.turbo',
+  'coverage',
+  'dist',
+  'node_modules',
+  'test-results',
+]);
+const sourceExtensions = new Set(['.cjs', '.js', '.mjs', '.ts', '.tsx']);
+
+function* sourceFiles(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const file = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (!ignoredDirectoryNames.has(entry.name)) {
+        yield* sourceFiles(file);
+      }
+      continue;
+    }
+    if (entry.isFile() && sourceExtensions.has(extname(entry.name))) {
+      yield file;
+    }
+  }
+}
 
 for (const [name, { manifest }] of manifests) {
   const dependencyNames = new Set(
@@ -53,18 +78,8 @@ for (const name of graph.keys()) {
   visit(name);
 }
 
-const sourceExtensions = new Set(['.cjs', '.js', '.mjs', '.ts', '.tsx']);
 for (const { directory } of manifests.values()) {
-  for (const entry of readdirSync(directory, { recursive: true })) {
-    const file = resolve(directory, entry);
-    if (
-      !sourceExtensions.has(extname(file)) ||
-      file.includes(`${resolve(directory, 'dist')}`) ||
-      file.includes('node_modules')
-    ) {
-      continue;
-    }
-
+  for (const file of sourceFiles(directory)) {
     const content = readFileSync(file, 'utf8');
     if (
       /@omnicus\/[^/'"]+\/src(?:\/|['"])/.test(content) ||
@@ -76,11 +91,7 @@ for (const { directory } of manifests.values()) {
 }
 
 const webDirectory = resolve(repositoryRoot, 'apps/web');
-for (const entry of readdirSync(webDirectory, { recursive: true })) {
-  const file = resolve(webDirectory, entry);
-  if (!sourceExtensions.has(extname(file)) || file.includes('dist')) {
-    continue;
-  }
+for (const file of sourceFiles(webDirectory)) {
   const content = readFileSync(file, 'utf8');
   if (content.includes('@omnicus/config/server')) {
     failures.push(`Web imports the server configuration entry point: ${file}`);
