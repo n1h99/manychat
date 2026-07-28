@@ -155,18 +155,26 @@ export class TelegramOutboundProcessorService
         ...(metadata?.disableNotification ? { disableNotification: true } : {}),
         ...(metadata?.replyToMessageId ? { replyToMessageId: metadata.replyToMessageId } : {}),
       };
-      const sent =
-        (message.type === 'PHOTO' || message.type === 'DOCUMENT') && message.mediaAsset
-          ? await this.adapter.sendMedia(token, {
-              ...sendOptions,
-              ...(content.caption ? { caption: content.caption } : {}),
-              kind: message.type,
-              media: await this.mediaReference(message.mediaAsset, claimed.connectionId),
-            })
-          : await this.adapter.sendMessage(token, {
-              ...sendOptions,
-              text: content.text ?? '',
-            });
+      let sent: { messageId: string };
+      if ((message.type === 'PHOTO' || message.type === 'DOCUMENT') && message.mediaAsset) {
+        try {
+          sent = await this.adapter.sendMedia(token, {
+            ...sendOptions,
+            ...(content.caption ? { caption: content.caption } : {}),
+            kind: message.type,
+            media: await this.mediaReference(message.mediaAsset, claimed.connectionId),
+          });
+        } catch (error) {
+          if (error instanceof TelegramApiError && error.errorCode === 400)
+            throw new TelegramOutboundPermanentError('telegram_outbound_media_rejected');
+          throw error;
+        }
+      } else {
+        sent = await this.adapter.sendMessage(token, {
+          ...sendOptions,
+          text: content.text ?? '',
+        });
+      }
       await this.database.client.$transaction(async (tx) => {
         const done = await tx.outboxRecord.updateMany({
           where: {
@@ -205,11 +213,20 @@ export class TelegramOutboundProcessorService
     asset: {
       bucketKey: string | null;
       connectionId: string | null;
+      detectedMimeType: string | null;
+      originalFilename: string | null;
       providerMediaId: string | null;
       status: string;
     },
     connectionId: string,
-  ): Promise<string> {
+  ): Promise<
+    | string
+    | {
+        bytes: Uint8Array;
+        contentType: string;
+        filename: string;
+      }
+  > {
     if (
       asset.providerMediaId &&
       asset.connectionId === connectionId &&
@@ -219,10 +236,12 @@ export class TelegramOutboundProcessorService
       return asset.providerMediaId;
     if (asset.status !== 'AVAILABLE' || !asset.bucketKey || !this.storage)
       throw new TelegramOutboundPermanentError('telegram_outbound_media_unavailable');
-    return this.storage.signedDownloadUrl(
-      asset.bucketKey,
-      this.config.get('MEDIA_SIGNED_URL_TTL_SECONDS', { infer: true }),
-    );
+    const object = await this.storage.getObject(asset.bucketKey);
+    return {
+      bytes: object.bytes,
+      contentType: asset.detectedMimeType ?? object.contentType ?? 'application/octet-stream',
+      filename: asset.originalFilename ?? 'telegram-media',
+    };
   }
   private async claim(id: string): Promise<Claimed | undefined> {
     const now = new Date();
@@ -399,7 +418,7 @@ export class TelegramOutboundProcessorService
           where: { id: claimed.connectionId, projectId: claimed.projectId },
           data: { status: 'ERROR', lastErrorAt: new Date() },
         });
-      if (api?.errorCode === 403 || api?.errorCode === 400)
+      if (api?.errorCode === 403)
         await tx.channelIdentity.updateMany({
           where: { id: claimed.payload.channelIdentityId, projectId: claimed.projectId },
           data: { status: 'BLOCKED' },

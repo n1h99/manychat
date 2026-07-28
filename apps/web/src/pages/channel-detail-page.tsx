@@ -253,7 +253,13 @@ export function ChannelDetailPage() {
                   const username = identity.username ? `@${identity.username}` : null;
                   return {
                     disabled: identity.status !== 'ACTIVE',
-                    label: [identity.contact.displayName, username].filter(Boolean).join(' · '),
+                    label: [
+                      identity.contact.displayName,
+                      username,
+                      identity.status === 'ACTIVE' ? null : `[${identity.status}]`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · '),
                     value: identity.id,
                   };
                 })}

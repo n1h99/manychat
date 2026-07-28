@@ -179,13 +179,18 @@ describe('TelegramInboundProcessorService', () => {
   });
 
   it('uses the existing contact and does not decrease last interaction time on a later retry', async () => {
-    const { contactCreate, contactUpdateMany, service } = createHarness({
+    const { contactCreate, contactUpdateMany, identityUpdate, service } = createHarness({
       existingContactId: 'contact-existing',
     });
 
     await service.process({ inboxRecordId: 'inbox-a' });
 
     expect(contactCreate).not.toHaveBeenCalled();
+    expect(identityUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'ACTIVE' }),
+      }),
+    );
     expect(contactUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

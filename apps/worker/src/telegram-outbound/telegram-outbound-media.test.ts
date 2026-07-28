@@ -27,6 +27,8 @@ describe('Telegram outbound media references', () => {
         asset: {
           bucketKey: string | null;
           connectionId: string | null;
+          detectedMimeType: string | null;
+          originalFilename: string | null;
           providerMediaId: string | null;
           status: string;
         },
@@ -39,6 +41,8 @@ describe('Telegram outbound media references', () => {
         {
           bucketKey: null,
           connectionId: 'connection-a',
+          detectedMimeType: null,
+          originalFilename: null,
           providerMediaId: 'telegram-file-id',
           status: 'PROVIDER_REFERENCE',
         },
@@ -50,11 +54,56 @@ describe('Telegram outbound media references', () => {
         {
           bucketKey: null,
           connectionId: 'connection-a',
+          detectedMimeType: null,
+          originalFilename: null,
           providerMediaId: 'telegram-file-id',
           status: 'PROVIDER_REFERENCE',
         },
         'connection-b',
       ),
     ).rejects.toMatchObject({ code: 'telegram_outbound_media_unavailable' });
+  });
+
+  it('loads private bucket media for direct multipart upload', async () => {
+    const internals = service() as unknown as {
+      storage: {
+        getObject(key: string): Promise<{ bytes: Uint8Array; contentType?: string }>;
+      };
+      mediaReference(
+        asset: {
+          bucketKey: string | null;
+          connectionId: string | null;
+          detectedMimeType: string | null;
+          originalFilename: string | null;
+          providerMediaId: string | null;
+          status: string;
+        },
+        connectionId: string,
+      ): Promise<unknown>;
+    };
+    internals.storage = {
+      getObject: vi.fn().mockResolvedValue({
+        bytes: Uint8Array.from([0xff, 0xd8, 0xff]),
+        contentType: 'image/jpeg',
+      }),
+    };
+
+    await expect(
+      internals.mediaReference(
+        {
+          bucketKey: 'project/photo.jpg',
+          connectionId: null,
+          detectedMimeType: 'image/jpeg',
+          originalFilename: 'photo.jpg',
+          providerMediaId: null,
+          status: 'AVAILABLE',
+        },
+        'connection-a',
+      ),
+    ).resolves.toEqual({
+      bytes: Uint8Array.from([0xff, 0xd8, 0xff]),
+      contentType: 'image/jpeg',
+      filename: 'photo.jpg',
+    });
   });
 });

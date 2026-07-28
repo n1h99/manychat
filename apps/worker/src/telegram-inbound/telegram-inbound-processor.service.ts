@@ -428,7 +428,7 @@ export class TelegramInboundProcessorService
       data: {
         displayName: profile.displayName,
         ...(profile.languageCode ? { languageCode: profile.languageCode } : {}),
-        ...(event.identityStatus ? { status: event.identityStatus } : {}),
+        status: event.identityStatus ?? 'ACTIVE',
         ...(profile.username ? { username: profile.username } : {}),
       },
       where: {

@@ -6,6 +6,7 @@ function transport() {
   return {
     download: vi.fn(async () => Uint8Array.from([1, 2, 3])),
     request: vi.fn(),
+    upload: vi.fn(),
   } satisfies TelegramTransport;
 }
 
@@ -61,5 +62,34 @@ describe('Telegram media adapter', () => {
       method,
       expect.objectContaining({ [field]: 'provider-file-id', chat_id: '100' }),
     );
+  });
+
+  it('uploads private bucket media directly instead of exposing a signed URL', async () => {
+    const mock = transport();
+    mock.upload.mockResolvedValue({ ok: true, result: { message_id: 43 } });
+
+    await expect(
+      new TelegramAdapter(mock).sendMedia('token', {
+        caption: 'Private photo',
+        chatId: '100',
+        kind: 'PHOTO',
+        media: {
+          bytes: Uint8Array.from([0xff, 0xd8, 0xff]),
+          contentType: 'image/jpeg',
+          filename: 'photo.jpg',
+        },
+      }),
+    ).resolves.toEqual({ messageId: '43' });
+    expect(mock.upload).toHaveBeenCalledWith(
+      'token',
+      'sendPhoto',
+      expect.objectContaining({ caption: 'Private photo', chat_id: '100' }),
+      expect.objectContaining({
+        contentType: 'image/jpeg',
+        field: 'photo',
+        filename: 'photo.jpg',
+      }),
+    );
+    expect(mock.request).not.toHaveBeenCalled();
   });
 });

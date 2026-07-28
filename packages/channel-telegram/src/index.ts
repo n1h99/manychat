@@ -13,6 +13,28 @@ export interface TelegramTransport {
     description?: string;
   }>;
   download?(token: string, filePath: string, maximumBytes: number): Promise<Uint8Array>;
+  upload?(
+    token: string,
+    method: string,
+    fields: Record<string, unknown>,
+    file: {
+      bytes: Uint8Array;
+      contentType: string;
+      field: string;
+      filename: string;
+    },
+  ): Promise<{
+    ok: boolean;
+    result?: unknown;
+    errorCode?: number;
+    parameters?: { retry_after?: number };
+    description?: string;
+  }>;
+}
+export interface TelegramMediaUpload {
+  bytes: Uint8Array;
+  contentType: string;
+  filename: string;
 }
 export interface TelegramUpdate {
   update_id: number;
@@ -122,6 +144,48 @@ export class TelegramHttpTransport implements TelegramTransport {
             method: 'POST',
           }),
     });
+    return this.response(response);
+  }
+
+  async upload(
+    token: string,
+    method: string,
+    fields: Record<string, unknown>,
+    file: {
+      bytes: Uint8Array;
+      contentType: string;
+      field: string;
+      filename: string;
+    },
+  ): Promise<{
+    ok: boolean;
+    result?: unknown;
+    errorCode?: number;
+    parameters?: { retry_after?: number };
+    description?: string;
+  }> {
+    const form = new FormData();
+    for (const [name, value] of Object.entries(fields)) {
+      if (value === undefined) continue;
+      form.append(name, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+    const bytes = new Uint8Array(file.bytes);
+    form.append(file.field, new Blob([bytes.buffer], { type: file.contentType }), file.filename);
+    return this.response(
+      await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        body: form,
+        method: 'POST',
+      }),
+    );
+  }
+
+  private async response(response: Response): Promise<{
+    ok: boolean;
+    result?: unknown;
+    errorCode?: number;
+    parameters?: { retry_after?: number };
+    description?: string;
+  }> {
     const payload: unknown = await response.json().catch(() => ({}));
     if (typeof payload !== 'object' || payload === null) return { ok: false };
     const result = payload as {
@@ -368,25 +432,44 @@ export class TelegramAdapter {
       chatId: string;
       disableNotification?: boolean;
       kind: 'DOCUMENT' | 'PHOTO';
-      media: string;
+      media: string | TelegramMediaUpload;
       replyToMessageId?: string;
     },
   ): Promise<{ messageId: string }> {
     const mediaField = input.kind === 'PHOTO' ? 'photo' : 'document';
     const method = input.kind === 'PHOTO' ? 'sendPhoto' : 'sendDocument';
-    const response = await this.transport.request(token, method, {
+    const fields = {
       caption: input.caption,
       chat_id: input.chatId,
       disable_notification: input.disableNotification,
-      [mediaField]: input.media,
       ...(input.replyToMessageId
         ? { reply_parameters: { message_id: Number(input.replyToMessageId) } }
         : {}),
-    });
+    };
+    const response =
+      typeof input.media === 'string'
+        ? await this.transport.request(token, method, {
+            ...fields,
+            [mediaField]: input.media,
+          })
+        : await this.uploadMedia(token, method, mediaField, fields, input.media);
     await this.assertOk(response);
     const result = response.result as { message_id?: number };
     if (!result.message_id) throw new Error(`Telegram ${method} result is invalid`);
     return { messageId: String(result.message_id) };
+  }
+  private async uploadMedia(
+    token: string,
+    method: string,
+    mediaField: string,
+    fields: Record<string, unknown>,
+    media: TelegramMediaUpload,
+  ) {
+    if (!this.transport.upload) throw new Error('Telegram media upload transport is unavailable');
+    return this.transport.upload(token, method, fields, {
+      ...media,
+      field: mediaField,
+    });
   }
   parseWebhook(update: TelegramUpdate): TelegramNormalizedEvent {
     if (update.message)
