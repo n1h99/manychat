@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
 
 import {
   MediaValidationError,
+  prepareMediaForTelegram,
   renderMessageTemplateContent,
   renderTemplate,
   validateMedia,
@@ -133,6 +135,74 @@ describe('media validation', () => {
     ).toThrow(expect.objectContaining({ code: 'media_photo_dimensions_unreadable' }));
   });
 
+  it('pads an excessively wide photo without cropping its content', async () => {
+    const source = await sharp({
+      create: {
+        background: { b: 40, g: 30, r: 20 },
+        channels: 3,
+        height: 64,
+        width: 1_420,
+      },
+    })
+      .png()
+      .toBuffer();
+    const prepared = await prepareMediaForTelegram({
+      bytes: source,
+      declaredMimeType: 'image/png',
+      filename: 'wide-banner.png',
+      kind: 'PHOTO',
+      maximumBytes: 20 * 1024 * 1024,
+    });
+
+    expect(prepared).toMatchObject({
+      extension: 'jpg',
+      height: 71,
+      mimeType: 'image/jpeg',
+      transformed: true,
+      width: 1_420,
+    });
+    await expect(sharp(prepared.bytes).metadata()).resolves.toMatchObject({
+      format: 'jpeg',
+      height: 71,
+      width: 1_420,
+    });
+  });
+
+  it('scales down images whose dimension sum exceeds the Telegram limit', async () => {
+    const source = await sharp({
+      create: {
+        background: { b: 40, g: 30, r: 20 },
+        channels: 3,
+        height: 5_500,
+        width: 5_500,
+      },
+    })
+      .jpeg()
+      .toBuffer();
+    const prepared = await prepareMediaForTelegram({
+      bytes: source,
+      declaredMimeType: 'image/jpeg',
+      filename: 'large.jpg',
+      kind: 'PHOTO',
+      maximumBytes: 20 * 1024 * 1024,
+    });
+
+    expect(prepared.width! + prepared.height!).toBeLessThanOrEqual(10_000);
+    expect(prepared.sizeBytes).toBeLessThanOrEqual(10 * 1024 * 1024);
+  });
+
+  it('rejects corrupt image data during normalization', async () => {
+    await expect(
+      prepareMediaForTelegram({
+        bytes: png(800, 600),
+        declaredMimeType: 'image/png',
+        filename: 'corrupt.png',
+        kind: 'PHOTO',
+        maximumBytes: 20 * 1024 * 1024,
+      }),
+    ).rejects.toMatchObject({ code: 'media_photo_decode_failed' });
+  });
+
   it('requires both RIFF and WEBP markers for WebP files', () => {
     const riff = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x41, 0x56, 0x49, 0x20]);
     expect(() =>
@@ -143,6 +213,59 @@ describe('media validation', () => {
         maximumBytes: 100,
       }),
     ).toThrow(MediaValidationError);
+  });
+
+  it('accepts complete PDF and empty ZIP documents without transforming them', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n');
+    const zip = Uint8Array.from([
+      0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+
+    await expect(
+      prepareMediaForTelegram({
+        bytes: pdf,
+        declaredMimeType: 'application/pdf',
+        filename: 'document.pdf',
+        kind: 'DOCUMENT',
+        maximumBytes: 1_000,
+      }),
+    ).resolves.toMatchObject({
+      extension: 'pdf',
+      mimeType: 'application/pdf',
+      transformed: false,
+    });
+    await expect(
+      prepareMediaForTelegram({
+        bytes: zip,
+        declaredMimeType: 'application/zip',
+        filename: 'archive.zip',
+        kind: 'DOCUMENT',
+        maximumBytes: 1_000,
+      }),
+    ).resolves.toMatchObject({
+      extension: 'zip',
+      mimeType: 'application/zip',
+      transformed: false,
+    });
+  });
+
+  it('rejects truncated PDF and ZIP documents', () => {
+    expect(() =>
+      validateMedia({
+        bytes: new TextEncoder().encode('%PDF-1.4\ntruncated'),
+        filename: 'broken.pdf',
+        kind: 'DOCUMENT',
+        maximumBytes: 1_000,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'media_pdf_structure_invalid' }));
+    expect(() =>
+      validateMedia({
+        bytes: Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]),
+        filename: 'broken.zip',
+        kind: 'DOCUMENT',
+        maximumBytes: 1_000,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'media_zip_structure_invalid' }));
   });
 });
 

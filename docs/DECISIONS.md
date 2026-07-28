@@ -574,6 +574,15 @@ download URLs on demand. The cloud Bot API `getFile` download limit is 20 MB.
 The first complete media-template contract supports text, photo and PDF/ZIP
 document messages.
 
+User-uploaded and materialized JPEG, PNG and WebP photos are decoded and
+re-encoded as metadata-free JPEG before storage. Images are proportionally
+scaled when Telegram's dimension-sum limit would be exceeded. An aspect ratio
+above Telegram's limit is corrected with the minimum white padding required;
+content is never cropped implicitly. The outbound worker repeats this
+normalization for legacy stored photo assets before provider upload. PDF and ZIP
+documents are not rewritten: their signatures and terminal structures are
+validated, then their original bytes are retained.
+
 Templates have mutable drafts and immutable published versions. Published
 scenario versions and broadcast snapshots pin a concrete published template
 version; later template changes cannot alter an already published graph or

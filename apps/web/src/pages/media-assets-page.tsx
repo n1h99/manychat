@@ -21,7 +21,7 @@ export function MediaAssetsPage() {
       void message.success('Media asset uploaded.');
     } catch {
       void message.error(
-        'Upload failed. Photos must be JPEG, PNG or WebP, at most 10 MB, with an aspect ratio no greater than 20:1.',
+        'Upload failed. Make sure the image, PDF or ZIP is complete, uses the selected format and is within the upload limit.',
       );
     }
   };
@@ -30,8 +30,10 @@ export function MediaAssetsPage() {
       <Typography.Title level={2}>Media assets</Typography.Title>
       <Typography.Paragraph type="secondary">
         Private assets are validated before storage. Signed download links are created only on
-        demand and are never persisted. Telegram photos must be at most 10 MB, have a width plus
-        height no greater than 10,000, and an aspect ratio no greater than 20:1.
+        demand and are never persisted. JPEG, PNG and WebP photos are converted to Telegram-safe
+        JPEG: oversized images are scaled down and extreme aspect ratios receive minimal white
+        padding without cropping. PDF and ZIP documents are structurally validated and stored
+        unchanged.
       </Typography.Paragraph>
       {canManage ? (
         <Space className="section-actions" wrap>

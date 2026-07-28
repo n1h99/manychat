@@ -5,6 +5,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import sharp from 'sharp';
 
 export type MediaKind = 'DOCUMENT' | 'PHOTO';
 
@@ -91,6 +92,11 @@ export interface ValidatedMedia {
   width?: number;
 }
 
+export interface PreparedMedia extends ValidatedMedia {
+  bytes: Uint8Array;
+  transformed: boolean;
+}
+
 interface ImageDimensions {
   height: number;
   width: number;
@@ -99,6 +105,7 @@ interface ImageDimensions {
 const TELEGRAM_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 const TELEGRAM_PHOTO_MAX_DIMENSION_SUM = 10_000;
 const TELEGRAM_PHOTO_MAX_ASPECT_RATIO = 20;
+const MAXIMUM_IMAGE_INPUT_PIXELS = 100_000_000;
 
 function readBigEndian16(bytes: Uint8Array, offset: number): number {
   return bytes[offset]! * 256 + bytes[offset + 1]!;
@@ -234,7 +241,13 @@ const signatures = [
     extension: 'zip',
     mimeType: 'application/zip',
     matches: (bytes: Uint8Array) =>
-      [0x50, 0x4b, 0x03, 0x04].every((value, index) => bytes[index] === value),
+      ([0x03, 0x05] as const).some(
+        (recordType) =>
+          bytes[0] === 0x50 &&
+          bytes[1] === 0x4b &&
+          bytes[2] === recordType &&
+          bytes[3] === (recordType === 0x03 ? 0x04 : 0x06),
+      ),
   },
 ] as const;
 
@@ -250,7 +263,9 @@ export class MediaValidationError extends Error {
   }
 }
 
-export function validateMedia(input: MediaValidationInput): ValidatedMedia {
+type DetectedMedia = (typeof signatures)[number];
+
+function validateMediaIdentity(input: MediaValidationInput): DetectedMedia {
   if (input.bytes.byteLength === 0) throw new MediaValidationError('media_empty');
   if (input.bytes.byteLength > input.maximumBytes)
     throw new MediaValidationError('media_size_exceeded');
@@ -266,6 +281,45 @@ export function validateMedia(input: MediaValidationInput): ValidatedMedia {
     filenameExtension !== signature.extension
   )
     throw new MediaValidationError('media_extension_mismatch');
+  return signature;
+}
+
+function containsSequence(
+  bytes: Uint8Array,
+  sequence: readonly number[],
+  minimumOffset: number,
+): boolean {
+  for (let offset = bytes.byteLength - sequence.length; offset >= minimumOffset; offset -= 1)
+    if (sequence.every((value, index) => bytes[offset + index] === value)) return true;
+  return false;
+}
+
+function validateDocumentStructure(bytes: Uint8Array, mimeType: string): void {
+  if (mimeType === 'application/pdf') {
+    const searchStart = Math.max(0, bytes.byteLength - 1_024);
+    if (!containsSequence(bytes, [0x25, 0x25, 0x45, 0x4f, 0x46], searchStart))
+      throw new MediaValidationError('media_pdf_structure_invalid');
+    return;
+  }
+  if (mimeType !== 'application/zip') return;
+  const minimumOffset = Math.max(0, bytes.byteLength - 65_557);
+  for (let offset = bytes.byteLength - 22; offset >= minimumOffset; offset -= 1) {
+    if (
+      bytes[offset] !== 0x50 ||
+      bytes[offset + 1] !== 0x4b ||
+      bytes[offset + 2] !== 0x05 ||
+      bytes[offset + 3] !== 0x06
+    )
+      continue;
+    const commentLength = readLittleEndian16(bytes, offset + 20);
+    if (offset + 22 + commentLength === bytes.byteLength) return;
+  }
+  throw new MediaValidationError('media_zip_structure_invalid');
+}
+
+export function validateMedia(input: MediaValidationInput): ValidatedMedia {
+  const signature = validateMediaIdentity(input);
+  if (input.kind === 'DOCUMENT') validateDocumentStructure(input.bytes, signature.mimeType);
   const dimensions =
     input.kind === 'PHOTO' ? validateTelegramPhoto(input.bytes, signature.mimeType) : undefined;
   return {
@@ -275,6 +329,115 @@ export function validateMedia(input: MediaValidationInput): ValidatedMedia {
     sizeBytes: input.bytes.byteLength,
     ...(dimensions ? { width: dimensions.width } : {}),
   };
+}
+
+function orientedDimensions(
+  width: number,
+  height: number,
+  orientation: number | undefined,
+): ImageDimensions {
+  return orientation && orientation >= 5 && orientation <= 8
+    ? { height: width, width: height }
+    : { height, width };
+}
+
+function telegramPhotoCanvas(dimensions: ImageDimensions, scale = 1): ImageDimensions {
+  let width = Math.max(1, Math.floor(dimensions.width * scale));
+  let height = Math.max(1, Math.floor(dimensions.height * scale));
+  if (width + height > TELEGRAM_PHOTO_MAX_DIMENSION_SUM) {
+    const dimensionScale = TELEGRAM_PHOTO_MAX_DIMENSION_SUM / (width + height);
+    width = Math.max(1, Math.floor(width * dimensionScale));
+    height = Math.max(1, Math.floor(height * dimensionScale));
+  }
+  if (width / height > TELEGRAM_PHOTO_MAX_ASPECT_RATIO)
+    height = Math.ceil(width / TELEGRAM_PHOTO_MAX_ASPECT_RATIO);
+  if (height / width > TELEGRAM_PHOTO_MAX_ASPECT_RATIO)
+    width = Math.ceil(height / TELEGRAM_PHOTO_MAX_ASPECT_RATIO);
+  while (width + height > TELEGRAM_PHOTO_MAX_DIMENSION_SUM) {
+    if (width >= height) width -= 1;
+    else height -= 1;
+  }
+  return { height, width };
+}
+
+async function encodeTelegramPhoto(
+  bytes: Uint8Array,
+  source: ImageDimensions,
+  target: ImageDimensions,
+  quality: number,
+): Promise<Uint8Array> {
+  const resizedWidth = Math.min(source.width, target.width);
+  const resizedHeight = Math.min(source.height, target.height);
+  const resizedAspect = source.width / source.height;
+  let contentWidth = resizedWidth;
+  let contentHeight = Math.max(1, Math.round(contentWidth / resizedAspect));
+  if (contentHeight > resizedHeight) {
+    contentHeight = resizedHeight;
+    contentWidth = Math.max(1, Math.round(contentHeight * resizedAspect));
+  }
+  const left = Math.floor((target.width - contentWidth) / 2);
+  const right = target.width - contentWidth - left;
+  const top = Math.floor((target.height - contentHeight) / 2);
+  const bottom = target.height - contentHeight - top;
+  return sharp(Buffer.from(bytes), {
+    failOn: 'error',
+    limitInputPixels: MAXIMUM_IMAGE_INPUT_PIXELS,
+  })
+    .rotate()
+    .resize(contentWidth, contentHeight, { fit: 'fill' })
+    .extend({
+      background: { alpha: 1, b: 255, g: 255, r: 255 },
+      bottom,
+      left,
+      right,
+      top,
+    })
+    .flatten({ background: { b: 255, g: 255, r: 255 } })
+    .jpeg({ chromaSubsampling: '4:4:4', mozjpeg: true, quality })
+    .toBuffer();
+}
+
+export async function prepareMediaForTelegram(input: MediaValidationInput): Promise<PreparedMedia> {
+  validateMediaIdentity(input);
+  if (input.kind === 'DOCUMENT') {
+    const validated = validateMedia(input);
+    return { ...validated, bytes: input.bytes, transformed: false };
+  }
+  let metadata;
+  try {
+    metadata = await sharp(Buffer.from(input.bytes), {
+      failOn: 'error',
+      limitInputPixels: MAXIMUM_IMAGE_INPUT_PIXELS,
+    }).metadata();
+  } catch {
+    throw new MediaValidationError('media_photo_decode_failed');
+  }
+  if (!metadata.width || !metadata.height)
+    throw new MediaValidationError('media_photo_dimensions_unreadable');
+  const source = orientedDimensions(metadata.width, metadata.height, metadata.orientation);
+  let scale = 1;
+  const qualities = [90, 82, 74, 66, 58] as const;
+  for (const quality of qualities) {
+    const target = telegramPhotoCanvas(source, scale);
+    let bytes: Uint8Array;
+    try {
+      bytes = await encodeTelegramPhoto(input.bytes, source, target, quality);
+    } catch {
+      throw new MediaValidationError('media_photo_transform_failed');
+    }
+    if (bytes.byteLength <= TELEGRAM_PHOTO_MAX_BYTES) {
+      const validated = validateMedia({
+        bytes,
+        declaredMimeType: 'image/jpeg',
+        filename: 'telegram-photo.jpg',
+        kind: 'PHOTO',
+        maximumBytes: TELEGRAM_PHOTO_MAX_BYTES,
+      });
+      return { ...validated, bytes, transformed: true };
+    }
+    scale *= Math.min(0.85, Math.sqrt((TELEGRAM_PHOTO_MAX_BYTES * 0.95) / bytes.byteLength));
+  }
+  throw new MediaValidationError('media_photo_size_exceeded');
 }
 
 const templateExpression = /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g;

@@ -18,7 +18,7 @@ import {
   type TelegramOutboundJob,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
-import { S3MediaStorage } from '@omnicus/media-core';
+import { prepareMediaForTelegram, S3MediaStorage, type MediaKind } from '@omnicus/media-core';
 import { Worker, type Job } from 'bullmq';
 import { DatabaseService } from '../database/database.service';
 import { redisConnectionFromUrl } from '../queue/redis-connection';
@@ -55,6 +55,7 @@ export class TelegramOutboundProcessorService
   private readonly workerId = `telegram-outbound-${process.pid}-${randomUUID()}`;
   private readonly secrets: ChannelSecretsService;
   private readonly storage: S3MediaStorage | undefined;
+  private readonly maximumMediaBytes: number;
   private readonly adapter = new TelegramAdapter(new TelegramHttpTransport());
   constructor(
     @Inject(ConfigService) config: ConfigService<WorkerEnvironment, true>,
@@ -65,6 +66,7 @@ export class TelegramOutboundProcessorService
   ) {
     this.config = config;
     this.client = client;
+    this.maximumMediaBytes = config.get('MEDIA_MAX_UPLOAD_BYTES', { infer: true });
     this.secrets = new ChannelSecretsService(config.get('CHANNEL_SECRETS_KEY', { infer: true }));
     if (config.get('MEDIA_STORAGE_ENABLED', { infer: true }))
       this.storage = new S3MediaStorage({
@@ -162,7 +164,11 @@ export class TelegramOutboundProcessorService
             ...sendOptions,
             ...(content.caption ? { caption: content.caption } : {}),
             kind: message.type,
-            media: await this.mediaReference(message.mediaAsset, claimed.connectionId),
+            media: await this.mediaReference(
+              message.mediaAsset,
+              claimed.connectionId,
+              message.type,
+            ),
           });
         } catch (error) {
           if (error instanceof TelegramApiError && error.errorCode === 400)
@@ -214,11 +220,13 @@ export class TelegramOutboundProcessorService
       bucketKey: string | null;
       connectionId: string | null;
       detectedMimeType: string | null;
+      extension: string | null;
       originalFilename: string | null;
       providerMediaId: string | null;
       status: string;
     },
     connectionId: string,
+    kind: MediaKind,
   ): Promise<
     | string
     | {
@@ -237,10 +245,25 @@ export class TelegramOutboundProcessorService
     if (asset.status !== 'AVAILABLE' || !asset.bucketKey || !this.storage)
       throw new TelegramOutboundPermanentError('telegram_outbound_media_unavailable');
     const object = await this.storage.getObject(asset.bucketKey);
+    let prepared;
+    try {
+      prepared = await prepareMediaForTelegram({
+        bytes: object.bytes,
+        ...((asset.detectedMimeType ?? object.contentType)
+          ? { declaredMimeType: asset.detectedMimeType ?? object.contentType }
+          : {}),
+        ...(asset.originalFilename ? { filename: asset.originalFilename } : {}),
+        kind,
+        maximumBytes: this.maximumMediaBytes,
+      });
+    } catch {
+      throw new TelegramOutboundPermanentError('telegram_outbound_media_rejected');
+    }
+    const originalStem = asset.originalFilename?.replace(/\.[^.]+$/, '') || 'telegram-media';
     return {
-      bytes: object.bytes,
-      contentType: asset.detectedMimeType ?? object.contentType ?? 'application/octet-stream',
-      filename: asset.originalFilename ?? 'telegram-media',
+      bytes: prepared.bytes,
+      contentType: prepared.mimeType,
+      filename: `${originalStem}.${prepared.extension}`,
     };
   }
   private async claim(id: string): Promise<Claimed | undefined> {

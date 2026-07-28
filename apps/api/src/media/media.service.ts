@@ -17,8 +17,8 @@ import {
 } from '@omnicus/channel-telegram';
 import {
   MediaValidationError,
+  prepareMediaForTelegram,
   S3MediaStorage,
-  validateMedia,
   type MediaKind,
 } from '@omnicus/media-core';
 
@@ -89,7 +89,7 @@ export class MediaService {
     const storage = this.requireStorage();
     let validated;
     try {
-      validated = validateMedia({
+      validated = await prepareMediaForTelegram({
         bytes: file.buffer,
         declaredMimeType: file.mimetype,
         filename: file.originalname,
@@ -103,7 +103,7 @@ export class MediaService {
     }
     const id = randomUUID();
     const bucketKey = `${projectId}/assets/${id}.${validated.extension}`;
-    const checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
+    const checksumSha256 = createHash('sha256').update(validated.bytes).digest('hex');
     const pending = await this.database.client.mediaAsset.create({
       data: {
         bucketKey,
@@ -121,7 +121,7 @@ export class MediaService {
       },
     });
     try {
-      await storage.putObject(bucketKey, file.buffer, validated.mimeType, {
+      await storage.putObject(bucketKey, validated.bytes, validated.mimeType, {
         assetId: id,
         projectId,
       });
@@ -205,7 +205,7 @@ export class MediaService {
     }
     let validated;
     try {
-      validated = validateMedia({
+      validated = await prepareMediaForTelegram({
         bytes: downloaded.bytes,
         ...(asset.declaredMimeType ? { declaredMimeType: asset.declaredMimeType } : {}),
         ...(asset.originalFilename ? { filename: asset.originalFilename } : {}),
@@ -222,7 +222,7 @@ export class MediaService {
     }
     const bucketKey = `${projectId}/telegram/${asset.id}.${validated.extension}`;
     try {
-      await storage.putObject(bucketKey, downloaded.bytes, validated.mimeType, {
+      await storage.putObject(bucketKey, validated.bytes, validated.mimeType, {
         assetId: asset.id,
         projectId,
       });
@@ -236,7 +236,7 @@ export class MediaService {
       data: {
         availableAt: new Date(),
         bucketKey,
-        checksumSha256: createHash('sha256').update(downloaded.bytes).digest('hex'),
+        checksumSha256: createHash('sha256').update(validated.bytes).digest('hex'),
         detectedMimeType: validated.mimeType,
         extension: validated.extension,
         providerMetadata: {
