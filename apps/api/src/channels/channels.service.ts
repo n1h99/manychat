@@ -489,6 +489,30 @@ export class ChannelsService {
     });
     return result;
   }
+  async identities(projectId: string, connectionId: string) {
+    await this.connection(projectId, connectionId);
+    return this.database.client.channelIdentity.findMany({
+      orderBy: [{ contact: { displayName: 'asc' } }, { createdAt: 'asc' }],
+      select: {
+        contact: {
+          select: {
+            displayName: true,
+            id: true,
+          },
+        },
+        displayName: true,
+        externalUserId: true,
+        id: true,
+        status: true,
+        username: true,
+      },
+      where: {
+        channel: 'TELEGRAM',
+        connectionId,
+        projectId,
+      },
+    });
+  }
   private async connection(projectId: string, id: string) {
     const row = await this.database.client.channelConnection.findUnique({
       where: { projectId_id: { projectId, id } },

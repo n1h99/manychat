@@ -42,6 +42,17 @@ export interface ChannelInboundEvent {
   receivedAt: string;
   status: string;
 }
+export interface ChannelIdentityOption {
+  contact: {
+    displayName: string;
+    id: string;
+  };
+  displayName: string | null;
+  externalUserId: string;
+  id: string;
+  status: 'ACTIVE' | 'BLOCKED';
+  username: string | null;
+}
 type CreateInput = { name: string; botToken: string };
 type UpdateInput = { name?: string; botToken?: string };
 type MessageInput = {
@@ -81,6 +92,19 @@ export function useChannelInboundEvents(projectId?: string, id?: string) {
       ),
     queryKey: ['channel-inbound-events', projectId, id],
     refetchInterval: 10_000,
+  });
+}
+export function useChannelIdentities(projectId?: string, id?: string) {
+  const { accessToken } = useAuth();
+  return useQuery({
+    enabled: Boolean(projectId && id),
+    queryFn: () =>
+      apiRequest<ChannelIdentityOption[]>(
+        `/api/v1/projects/${projectId}/channels/${id}/identities`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['channel-identities', projectId, id],
   });
 }
 export function useChannelMutations(projectId?: string) {

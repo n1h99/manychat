@@ -50,6 +50,17 @@ export class ChannelsController {
       meta: {},
     };
   }
+  @Get(':connectionId/identities')
+  @RequireProjectPermission('channels:manage')
+  async identities(
+    @Param('projectId') projectId: string,
+    @Param('connectionId') connectionId: string,
+  ) {
+    return {
+      data: await this.channels.identities(projectId, connectionId),
+      meta: {},
+    };
+  }
   @Patch(':connectionId')
   @RequireProjectPermission('channels:manage')
   @ApiBody({ type: UpdateTelegramChannelDto })

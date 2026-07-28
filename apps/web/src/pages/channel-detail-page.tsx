@@ -5,6 +5,7 @@ import {
   Form,
   Input,
   Modal,
+  Select,
   Space,
   Switch,
   Table,
@@ -16,6 +17,7 @@ import { useRef } from 'react';
 import { useParams } from 'react-router';
 import {
   useChannel,
+  useChannelIdentities,
   useChannelInboundEvents,
   useChannelMutations,
   type ChannelInboundEvent,
@@ -30,11 +32,12 @@ export function ChannelDetailPage() {
   const inbound = useChannelInboundEvents(projectId, connectionId);
   const m = useChannelMutations(projectId);
   const access = useProjectAccess(projectId);
+  const canManage = hasProjectPermission(access.data, 'channels:manage');
+  const identities = useChannelIdentities(projectId, canManage ? connectionId : undefined);
   const retry = useRef<string | undefined>(undefined);
   if (q.isLoading) return <Typography.Text>Загрузка…</Typography.Text>;
   if (!q.data) return <Typography.Text type="danger">Канал не найден.</Typography.Text>;
   const c = q.data;
-  const canManage = hasProjectPermission(access.data, 'channels:manage');
   const canRotateSecrets = hasProjectPermission(access.data, 'channels:rotate_secrets');
   const action = async (fn: () => Promise<unknown>, ok: string) => {
     try {
@@ -187,11 +190,30 @@ export function ChannelDetailPage() {
             }}
           >
             <Form.Item
-              label="Channel identity ID"
+              label="Telegram-контакт"
               name="channelIdentityId"
-              rules={[{ required: true }]}
+              rules={[{ message: 'Выберите Telegram-контакт', required: true }]}
             >
-              <Input />
+              <Select
+                allowClear
+                loading={identities.isLoading}
+                notFoundContent={
+                  identities.isError
+                    ? 'Не удалось загрузить Telegram-контакты'
+                    : 'У этого канала пока нет Telegram-контактов'
+                }
+                optionFilterProp="label"
+                options={(identities.data ?? []).map((identity) => {
+                  const username = identity.username ? `@${identity.username}` : null;
+                  return {
+                    disabled: identity.status !== 'ACTIVE',
+                    label: [identity.contact.displayName, username].filter(Boolean).join(' · '),
+                    value: identity.id,
+                  };
+                })}
+                placeholder="Выберите получателя"
+                showSearch
+              />
             </Form.Item>
             <Form.Item label="Текст" name="text" rules={[{ required: true }]}>
               <Input.TextArea />
