@@ -50,6 +50,17 @@ export class ChannelsController {
       meta: {},
     };
   }
+  @Get(':connectionId/outbound-events')
+  @RequireProjectPermission('channels:read')
+  async outboundEvents(
+    @Param('projectId') projectId: string,
+    @Param('connectionId') connectionId: string,
+  ) {
+    return {
+      data: await this.channels.outboundEvents(projectId, connectionId),
+      meta: {},
+    };
+  }
   @Get(':connectionId/identities')
   @RequireProjectPermission('channels:manage')
   async identities(

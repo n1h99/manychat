@@ -20,7 +20,9 @@ import {
   useChannelIdentities,
   useChannelInboundEvents,
   useChannelMutations,
+  useChannelOutboundEvents,
   type ChannelInboundEvent,
+  type ChannelOutboundEvent,
 } from '../channels-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 function key() {
@@ -30,6 +32,7 @@ export function ChannelDetailPage() {
   const { projectId, connectionId } = useParams();
   const q = useChannel(projectId, connectionId);
   const inbound = useChannelInboundEvents(projectId, connectionId);
+  const outbound = useChannelOutboundEvents(projectId, connectionId);
   const m = useChannelMutations(projectId);
   const access = useProjectAccess(projectId);
   const canManage = hasProjectPermission(access.data, 'channels:manage');
@@ -121,6 +124,49 @@ export function ChannelDetailPage() {
         pagination={false}
         rowKey={(event) => `${event.externalUpdateId}-${event.receivedAt}`}
         scroll={{ x: 1_100 }}
+        size="small"
+      />
+      <Divider />
+      <Typography.Title level={4}>Telegram outbound pipeline</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        Безопасные статусы исходящих сообщений. Текст сообщения и секреты канала здесь не
+        отображаются.
+      </Typography.Paragraph>
+      <Table<ChannelOutboundEvent>
+        columns={[
+          {
+            dataIndex: 'createdAt',
+            render: (value: string) => new Date(value).toLocaleString(),
+            title: 'Создано',
+          },
+          { dataIndex: 'status', render: (value: string) => <Tag>{value}</Tag>, title: 'Outbox' },
+          {
+            render: (_, event) => `${event.attempts}/${event.maxAttempts}`,
+            title: 'Попытки',
+          },
+          {
+            render: (_, event) => event.message?.status ?? '—',
+            title: 'Message',
+          },
+          {
+            render: (_, event) => event.lastError ?? '—',
+            title: 'Safe error',
+          },
+          {
+            render: (_, event) => event.message?.externalMessageId ?? '—',
+            title: 'Telegram message ID',
+          },
+        ]}
+        dataSource={outbound.data ?? []}
+        loading={outbound.isLoading}
+        locale={{
+          emptyText: outbound.isError
+            ? 'Не удалось загрузить outbound diagnostics'
+            : 'Исходящие сообщения ещё не создавались',
+        }}
+        pagination={false}
+        rowKey="id"
+        scroll={{ x: 900 }}
         size="small"
       />
       {canManage ? (

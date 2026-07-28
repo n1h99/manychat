@@ -513,6 +513,56 @@ export class ChannelsService {
       },
     });
   }
+  async outboundEvents(projectId: string, connectionId: string) {
+    await this.connection(projectId, connectionId);
+    const records = await this.database.client.outboxRecord.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        attempts: true,
+        completedAt: true,
+        createdAt: true,
+        id: true,
+        lastError: true,
+        maxAttempts: true,
+        nextAttemptAt: true,
+        payload: true,
+        status: true,
+        updatedAt: true,
+      },
+      take: 20,
+      where: {
+        connectionId,
+        kind: 'TELEGRAM',
+        projectId,
+      },
+    });
+    const messageIds = records.flatMap((record) => {
+      const messageId = (record.payload as { messageId?: unknown }).messageId;
+      return typeof messageId === 'string' ? [messageId] : [];
+    });
+    const messages = await this.database.client.message.findMany({
+      select: {
+        externalMessageId: true,
+        failedAt: true,
+        id: true,
+        sentAt: true,
+        status: true,
+        type: true,
+      },
+      where: {
+        id: { in: messageIds },
+        projectId,
+      },
+    });
+    const messagesById = new Map(messages.map((message) => [message.id, message]));
+    return records.map(({ payload, ...record }) => {
+      const messageId = (payload as { messageId?: unknown }).messageId;
+      return {
+        ...record,
+        message: typeof messageId === 'string' ? (messagesById.get(messageId) ?? null) : null,
+      };
+    });
+  }
   private async connection(projectId: string, id: string) {
     const row = await this.database.client.channelConnection.findUnique({
       where: { projectId_id: { projectId, id } },

@@ -53,6 +53,25 @@ export interface ChannelIdentityOption {
   status: 'ACTIVE' | 'BLOCKED';
   username: string | null;
 }
+export interface ChannelOutboundEvent {
+  attempts: number;
+  completedAt: string | null;
+  createdAt: string;
+  id: string;
+  lastError: string | null;
+  maxAttempts: number;
+  message: {
+    externalMessageId: string | null;
+    failedAt: string | null;
+    id: string;
+    sentAt: string | null;
+    status: string;
+    type: string;
+  } | null;
+  nextAttemptAt: string | null;
+  status: string;
+  updatedAt: string;
+}
 type CreateInput = { name: string; botToken: string };
 type UpdateInput = { name?: string; botToken?: string };
 type MessageInput = {
@@ -105,6 +124,20 @@ export function useChannelIdentities(projectId?: string, id?: string) {
         accessToken,
       ),
     queryKey: ['channel-identities', projectId, id],
+  });
+}
+export function useChannelOutboundEvents(projectId?: string, id?: string) {
+  const { accessToken } = useAuth();
+  return useQuery({
+    enabled: Boolean(projectId && id),
+    queryFn: () =>
+      apiRequest<ChannelOutboundEvent[]>(
+        `/api/v1/projects/${projectId}/channels/${id}/outbound-events`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['channel-outbound-events', projectId, id],
+    refetchInterval: 5_000,
   });
 }
 export function useChannelMutations(projectId?: string) {
