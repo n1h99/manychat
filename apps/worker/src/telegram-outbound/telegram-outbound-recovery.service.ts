@@ -69,7 +69,10 @@ export class TelegramOutboundRecoveryService
         where: {
           kind: 'TELEGRAM',
           OR: [
-            { status: 'PENDING', nextAttemptAt: { lte: now } },
+            {
+              status: 'PENDING',
+              OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+            },
             { status: 'RETRY', nextAttemptAt: { lte: now } },
             { status: 'PROCESSING', lockedAt: { lt: expiry } },
           ],

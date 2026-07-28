@@ -673,6 +673,7 @@ export class AutomationRuntimeService {
       data: {
         connectionId: context.connectionId,
         idempotencyKey,
+        nextAttemptAt: new Date(),
         payload: { channelIdentityId: identity.id, messageId: message.id },
         projectId: context.projectId,
       },

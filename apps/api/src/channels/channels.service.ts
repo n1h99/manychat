@@ -456,6 +456,7 @@ export class ChannelsService {
           projectId,
           connectionId,
           idempotencyKey: dto.idempotencyKey,
+          nextAttemptAt: new Date(),
           payload: { messageId: message.id, channelIdentityId: identity.id },
         },
       });

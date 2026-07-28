@@ -243,7 +243,10 @@ export class TelegramOutboundProcessorService
         id,
         status: { in: ['PENDING', 'RETRY', 'PROCESSING'] },
         OR: [
-          { status: { in: ['PENDING', 'RETRY'] }, nextAttemptAt: { lte: now } },
+          {
+            status: { in: ['PENDING', 'RETRY'] },
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          },
           { status: 'PROCESSING', lockedAt: { lt: expiry } },
         ],
       },

@@ -225,6 +225,7 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
               connectionId: broadcast.connectionId,
               kind: 'TELEGRAM',
               idempotencyKey: `broadcast-recipient-${recipient.id}`,
+              nextAttemptAt: new Date(),
               payload: { messageId: message.id, channelIdentityId: recipient.channelIdentityId },
             },
           });
