@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, IsUrl, Length, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, Length, MinLength } from 'class-validator';
 
 export class CreateTelegramChannelDto {
   @ApiProperty({ type: String }) @IsString() @Length(1, 120) name!: string;
@@ -7,10 +7,6 @@ export class CreateTelegramChannelDto {
   @IsString()
   @MinLength(8)
   botToken!: string;
-  @ApiPropertyOptional({ type: String })
-  @IsOptional()
-  @IsUrl({ require_tld: false })
-  webhookBaseUrl?: string;
 }
 
 export class UpdateTelegramChannelDto {
@@ -20,13 +16,6 @@ export class UpdateTelegramChannelDto {
   @IsString()
   @MinLength(8)
   botToken?: string;
-}
-
-export class ConnectTelegramChannelDto {
-  @ApiPropertyOptional({ type: String })
-  @IsOptional()
-  @IsUrl({ require_tld: false })
-  webhookBaseUrl?: string;
 }
 
 export class TestTelegramMessageDto {

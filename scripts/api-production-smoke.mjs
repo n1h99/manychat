@@ -28,6 +28,7 @@ const child = spawn(process.execPath, [resolve(repositoryRoot, '.runtime/api/dis
   env: {
     ...process.env,
     API_HOST: '127.0.0.1',
+    API_PUBLIC_URL: 'https://api.example.test',
     APP_ENV: 'production',
     CHANNEL_SECRETS_KEY: Buffer.alloc(32, 13).toString('base64'),
     CORS_ALLOWED_ORIGINS: 'https://stage-zero.example',

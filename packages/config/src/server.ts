@@ -194,6 +194,7 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
   .extend({
     API_HOST: z.string().min(1).default('0.0.0.0'),
     API_PORT: portSchema.default(3000),
+    API_PUBLIC_URL: exactHttpOriginSchema.optional(),
     CORS_ALLOWED_ORIGINS: corsOriginsSchema,
     JWT_ACCESS_SECRET: z.string().min(32),
     CHANNEL_SECRETS_KEY: channelSecretsKeySchema,
@@ -238,6 +239,29 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
     }
 
     if (
+      (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
+      environment.API_PUBLIC_URL === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'API_PUBLIC_URL is required for staging and production',
+        path: ['API_PUBLIC_URL'],
+      });
+    }
+
+    if (
+      environment.API_PUBLIC_URL !== undefined &&
+      (environment.APP_ENV === 'production' || environment.APP_ENV === 'staging') &&
+      new URL(environment.API_PUBLIC_URL).protocol !== 'https:'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'API_PUBLIC_URL must use HTTPS outside local development',
+        path: ['API_PUBLIC_URL'],
+      });
+    }
+
+    if (
       environment.APP_ENV === 'production' &&
       parseCorsOrigins(environment.CORS_ALLOWED_ORIGINS).includes('*')
     ) {
@@ -247,7 +271,12 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
         path: ['CORS_ALLOWED_ORIGINS'],
       });
     }
-  });
+  })
+  .transform((environment) => ({
+    ...environment,
+    API_PUBLIC_URL:
+      environment.API_PUBLIC_URL ?? `http://${environment.API_HOST}:${environment.API_PORT}`,
+  }));
 
 export const workerEnvironmentSchema = serviceEnvironmentSchema
   .extend({

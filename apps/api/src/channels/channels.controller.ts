@@ -7,12 +7,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { ChannelsService } from './channels.service';
-import {
-  ConnectTelegramChannelDto,
-  CreateTelegramChannelDto,
-  TestTelegramMessageDto,
-  UpdateTelegramChannelDto,
-} from './dto';
+import { CreateTelegramChannelDto, TestTelegramMessageDto, UpdateTelegramChannelDto } from './dto';
 
 @ApiTags('channels')
 @ApiBearerAuth()
@@ -76,18 +71,15 @@ export class ChannelsController {
   }
   @Post(':connectionId/connect')
   @RequireProjectPermission('channels:manage')
-  @ApiBody({ type: ConnectTelegramChannelDto })
   async connect(
     @Param('projectId') projectId: string,
     @Param('connectionId') connectionId: string,
-    @Body() dto: ConnectTelegramChannelDto,
     @Req() request: AuthenticatedRequest,
   ) {
     return {
       data: await this.channels.connect(
         projectId,
         connectionId,
-        dto.webhookBaseUrl,
         request.auth!,
         this.context(request),
       ),

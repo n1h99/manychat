@@ -90,6 +90,10 @@ checks, measured RPO/RTO and cleanup confirmation in an operations report.
 
 ## Telegram inbound recovery and dead letters
 
+`API_PUBLIC_URL` must be the exact public HTTPS origin of the API service.
+Channel connect derives `/webhooks/telegram/<connectionId>` from this
+server-owned value and never accepts a client-provided webhook base URL.
+
 A valid Telegram webhook first commits `RawWebhookEvent` and a pending
 `InboxRecord` to PostgreSQL. The subsequent BullMQ enqueue is best-effort. If
 Redis is unavailable, Telegram still receives HTTP 200 and the pending inbox

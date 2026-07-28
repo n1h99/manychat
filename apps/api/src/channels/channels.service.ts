@@ -46,6 +46,7 @@ export class ChannelsService {
   private readonly logger = new Logger(ChannelsService.name);
   private readonly secrets: ChannelSecretsService;
   private readonly telegram = new TelegramAdapter(new TelegramHttpTransport());
+  private readonly apiPublicUrl: string;
   constructor(
     @Inject(ConfigService) config: ConfigService<ApiEnvironment, true>,
     @Inject(DatabaseService) private readonly database: DatabaseService,
@@ -53,6 +54,7 @@ export class ChannelsService {
     @Inject(TelegramOutboundQueueService) private readonly outbound: TelegramOutboundQueueService,
   ) {
     this.secrets = new ChannelSecretsService(config.get('CHANNEL_SECRETS_KEY', { infer: true }));
+    this.apiPublicUrl = config.get('API_PUBLIC_URL', { infer: true });
   }
 
   async list(projectId: string): Promise<SafeChannel[]> {
@@ -216,12 +218,11 @@ export class ChannelsService {
   async connect(
     projectId: string,
     id: string,
-    baseUrl: string | undefined,
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<SafeChannel> {
     const row = await this.connection(projectId, id);
-    const url = this.webhookUrl(baseUrl, id);
+    const url = this.webhookUrl(id);
     try {
       await this.telegram.configureWebhook(this.decrypt(row, 'botToken'), {
         secretToken: this.decrypt(row, 'webhookSecret'),
@@ -527,21 +528,7 @@ export class ChannelsService {
       updatedAt: row.updatedAt,
     };
   }
-  private webhookUrl(baseUrl: string | undefined, id: string): string {
-    if (!baseUrl)
-      throw new BadRequestException({
-        code: 'WEBHOOK_BASE_URL_REQUIRED',
-        message: 'Webhook base URL is required',
-      });
-    try {
-      const parsed = new URL(baseUrl);
-      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error();
-      return `${baseUrl.replace(/\/$/, '')}/webhooks/telegram/${id}`;
-    } catch {
-      throw new BadRequestException({
-        code: 'WEBHOOK_BASE_URL_INVALID',
-        message: 'Webhook base URL is invalid',
-      });
-    }
+  private webhookUrl(id: string): string {
+    return `${this.apiPublicUrl}/webhooks/telegram/${id}`;
   }
 }

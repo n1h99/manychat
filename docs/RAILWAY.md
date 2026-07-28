@@ -46,6 +46,9 @@ Web build:
 API:
 
 - `API_PORT` is only a local fallback; Railway `PORT` wins.
+- `API_PUBLIC_URL` is the exact public HTTPS origin of the API service, for
+  example `https://${{RAILWAY_PUBLIC_DOMAIN}}`. Telegram webhook URLs are
+  derived only from this server-owned value; clients cannot override it.
 
 Worker:
 

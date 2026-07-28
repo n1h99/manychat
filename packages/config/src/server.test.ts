@@ -81,6 +81,34 @@ describe('server environment validation', () => {
     ]);
   });
 
+  it('uses the local API listener as the development public URL default', () => {
+    const environment = validateApiEnvironment(baseEnvironment);
+
+    expect(environment.API_PUBLIC_URL).toBe('http://0.0.0.0:3000');
+  });
+
+  it.each(['production', 'staging'] as const)(
+    'requires an explicit HTTPS API_PUBLIC_URL for %s',
+    (appEnvironment) => {
+      expect(() =>
+        validateApiEnvironment({
+          ...baseEnvironment,
+          APP_ENV: appEnvironment,
+          NODE_ENV: 'production',
+        }),
+      ).toThrow('API_PUBLIC_URL');
+    },
+  );
+
+  it('rejects paths in API_PUBLIC_URL', () => {
+    expect(() =>
+      validateApiEnvironment({
+        ...baseEnvironment,
+        API_PUBLIC_URL: 'https://api.example.test/path',
+      }),
+    ).toThrow();
+  });
+
   it('forbids Swagger in production', () => {
     expect(() =>
       validateApiEnvironment({
@@ -109,6 +137,7 @@ describe('server environment validation', () => {
   it('accepts an explicitly configured S3-compatible media store', () => {
     const environment = validateApiEnvironment({
       ...baseEnvironment,
+      API_PUBLIC_URL: 'https://api.example.test',
       APP_ENV: 'production',
       MEDIA_BUCKET: 'omnicus-media',
       MEDIA_BUCKET_ACCESS_KEY_ID: 'test-access',
