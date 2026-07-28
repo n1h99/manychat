@@ -23,6 +23,7 @@ export type Broadcast = {
   scheduledAt: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  errorCode: string | null;
   recipientCount: number;
   recipientsByStatus?: Record<string, number>;
   createdAt: string;
@@ -58,6 +59,7 @@ export function useBroadcast(projectId?: string, broadcastId?: string) {
   return useQuery({
     enabled: Boolean(projectId && broadcastId),
     queryKey: ['broadcast', projectId, broadcastId],
+    refetchInterval: 5_000,
     queryFn: () =>
       apiRequest<Broadcast>(
         `/api/v1/projects/${projectId}/broadcasts/${broadcastId}`,
@@ -72,6 +74,7 @@ export function useBroadcastRecipients(projectId?: string, broadcastId?: string)
   return useQuery({
     enabled: Boolean(projectId && broadcastId),
     queryKey: ['broadcast-recipients', projectId, broadcastId],
+    refetchInterval: 5_000,
     queryFn: () =>
       apiRequest<{ items: BroadcastRecipient[]; total: number }>(
         `/api/v1/projects/${projectId}/broadcasts/${broadcastId}/recipients`,

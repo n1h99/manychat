@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
 import { PermissionGuard } from '../access/permission.guard';
@@ -18,8 +18,7 @@ import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types'
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BroadcastsService } from './broadcasts.service';
-import { CreateBroadcastDto, UpdateBroadcastDto } from './dto';
-import type { BroadcastRecipientsQueryDto } from './dto';
+import { BroadcastRecipientsQueryDto, CreateBroadcastDto, UpdateBroadcastDto } from './dto';
 
 @ApiTags('broadcasts')
 @ApiBearerAuth()
@@ -139,6 +138,7 @@ export class BroadcastsController {
 
   @Get(':broadcastId/recipients')
   @RequireProjectPermission('broadcasts:read')
+  @ApiQuery({ type: BroadcastRecipientsQueryDto })
   async recipients(
     @Param('projectId') projectId: string,
     @Param('broadcastId') broadcastId: string,

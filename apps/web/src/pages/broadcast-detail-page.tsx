@@ -1,4 +1,15 @@
-import { Button, Descriptions, Modal, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import {
+  Alert,
+  Button,
+  Descriptions,
+  Modal,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import { useParams } from 'react-router';
 
 import { useBroadcast, useBroadcastMutations, useBroadcastRecipients } from '../broadcasts-api';
@@ -34,6 +45,11 @@ export function BroadcastDetailPage() {
           { key: 'audience', label: 'Аудитория', children: broadcast.audience.mode },
           { key: 'text', label: 'Текст', children: broadcast.text },
           { key: 'total', label: 'Получатели', children: broadcast.recipientCount },
+          {
+            key: 'errorCode',
+            label: 'Safe error',
+            children: broadcast.errorCode ?? '—',
+          },
         ]}
       />
       <Space wrap style={{ marginTop: 16 }}>
@@ -101,6 +117,9 @@ export function BroadcastDetailPage() {
         ) : null}
       </Space>
       <Typography.Title level={4}>Получатели</Typography.Title>
+      {recipients.isError ? (
+        <Alert message="Не удалось загрузить получателей рассылки." showIcon type="error" />
+      ) : null}
       <Table
         rowKey="id"
         loading={recipients.isLoading}
