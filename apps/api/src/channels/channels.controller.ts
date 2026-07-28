@@ -39,6 +39,17 @@ export class ChannelsController {
   ) {
     return { data: await this.channels.get(projectId, connectionId), meta: {} };
   }
+  @Get(':connectionId/inbound-events')
+  @RequireProjectPermission('channels:read')
+  async inboundEvents(
+    @Param('projectId') projectId: string,
+    @Param('connectionId') connectionId: string,
+  ) {
+    return {
+      data: await this.channels.inboundEvents(projectId, connectionId),
+      meta: {},
+    };
+  }
   @Patch(':connectionId')
   @RequireProjectPermission('channels:manage')
   @ApiBody({ type: UpdateTelegramChannelDto })

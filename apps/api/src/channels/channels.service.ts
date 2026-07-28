@@ -67,6 +67,44 @@ export class ChannelsService {
   async get(projectId: string, connectionId: string): Promise<SafeChannel> {
     return this.safe(await this.connection(projectId, connectionId));
   }
+  async inboundEvents(projectId: string, connectionId: string) {
+    await this.connection(projectId, connectionId);
+    return this.database.client.rawWebhookEvent.findMany({
+      orderBy: { receivedAt: 'desc' },
+      select: {
+        correlationId: true,
+        externalUpdateId: true,
+        inboxRecord: {
+          select: {
+            attempts: true,
+            completedAt: true,
+            lastError: true,
+            maxAttempts: true,
+            nextAttemptAt: true,
+            normalizedEvent: {
+              select: {
+                createdAt: true,
+                message: {
+                  select: {
+                    contactId: true,
+                    conversationId: true,
+                    id: true,
+                    status: true,
+                  },
+                },
+                type: true,
+              },
+            },
+            status: true,
+          },
+        },
+        receivedAt: true,
+        status: true,
+      },
+      take: 20,
+      where: { connectionId, projectId },
+    });
+  }
   async create(
     projectId: string,
     dto: CreateTelegramChannelDto,

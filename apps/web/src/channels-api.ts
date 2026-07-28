@@ -18,6 +18,30 @@ export interface Channel {
   createdAt: string;
   updatedAt: string;
 }
+export interface ChannelInboundEvent {
+  correlationId: string;
+  externalUpdateId: string;
+  inboxRecord: {
+    attempts: number;
+    completedAt: string | null;
+    lastError: string | null;
+    maxAttempts: number;
+    nextAttemptAt: string | null;
+    normalizedEvent: {
+      createdAt: string;
+      message: {
+        contactId: string;
+        conversationId: string;
+        id: string;
+        status: string;
+      } | null;
+      type: string;
+    } | null;
+    status: string;
+  } | null;
+  receivedAt: string;
+  status: string;
+}
 type CreateInput = { name: string; botToken: string };
 type UpdateInput = { name?: string; botToken?: string };
 type MessageInput = {
@@ -43,6 +67,20 @@ export function useChannel(projectId?: string, id?: string) {
     enabled: Boolean(projectId && id),
     queryFn: () =>
       apiRequest<Channel>(`/api/v1/projects/${projectId}/channels/${id}`, {}, accessToken),
+  });
+}
+export function useChannelInboundEvents(projectId?: string, id?: string) {
+  const { accessToken } = useAuth();
+  return useQuery({
+    enabled: Boolean(projectId && id),
+    queryFn: () =>
+      apiRequest<ChannelInboundEvent[]>(
+        `/api/v1/projects/${projectId}/channels/${id}/inbound-events`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['channel-inbound-events', projectId, id],
+    refetchInterval: 10_000,
   });
 }
 export function useChannelMutations(projectId?: string) {

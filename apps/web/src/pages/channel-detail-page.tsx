@@ -7,13 +7,19 @@ import {
   Modal,
   Space,
   Switch,
+  Table,
   Tag,
   Typography,
   message,
 } from 'antd';
 import { useRef } from 'react';
 import { useParams } from 'react-router';
-import { useChannel, useChannelMutations } from '../channels-api';
+import {
+  useChannel,
+  useChannelInboundEvents,
+  useChannelMutations,
+  type ChannelInboundEvent,
+} from '../channels-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 function key() {
   return crypto.randomUUID();
@@ -21,6 +27,7 @@ function key() {
 export function ChannelDetailPage() {
   const { projectId, connectionId } = useParams();
   const q = useChannel(projectId, connectionId);
+  const inbound = useChannelInboundEvents(projectId, connectionId);
   const m = useChannelMutations(projectId);
   const access = useProjectAccess(projectId);
   const retry = useRef<string | undefined>(undefined);
@@ -62,6 +69,56 @@ export function ChannelDetailPage() {
           },
           { key: 'updated', label: 'Обновлён', children: new Date(c.updatedAt).toLocaleString() },
         ]}
+      />
+      <Divider />
+      <Typography.Title level={4}>Telegram inbound pipeline</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        Только безопасные статусы обработки. Telegram payload и секреты канала не отображаются.
+      </Typography.Paragraph>
+      <Table<ChannelInboundEvent>
+        columns={[
+          {
+            dataIndex: 'receivedAt',
+            render: (value: string) => new Date(value).toLocaleString(),
+            title: 'Получено',
+          },
+          { dataIndex: 'externalUpdateId', title: 'Telegram update ID' },
+          {
+            render: (_, event) => <Tag>{event.inboxRecord?.status ?? 'NOT_CREATED'}</Tag>,
+            title: 'Inbox',
+          },
+          {
+            render: (_, event) =>
+              event.inboxRecord
+                ? `${event.inboxRecord.attempts}/${event.inboxRecord.maxAttempts}`
+                : '—',
+            title: 'Попытки',
+          },
+          {
+            render: (_, event) => event.inboxRecord?.lastError ?? '—',
+            title: 'Safe error',
+          },
+          {
+            render: (_, event) => event.inboxRecord?.normalizedEvent?.type ?? '—',
+            title: 'Normalized',
+          },
+          {
+            render: (_, event) => event.inboxRecord?.normalizedEvent?.message?.contactId ?? '—',
+            title: 'Contact ID',
+          },
+          { dataIndex: 'correlationId', title: 'Correlation ID' },
+        ]}
+        dataSource={inbound.data ?? []}
+        loading={inbound.isLoading}
+        locale={{
+          emptyText: inbound.isError
+            ? 'Не удалось загрузить inbound diagnostics'
+            : 'Telegram updates пока не получены',
+        }}
+        pagination={false}
+        rowKey={(event) => `${event.externalUpdateId}-${event.receivedAt}`}
+        scroll={{ x: 1_100 }}
+        size="small"
       />
       {canManage ? (
         <>

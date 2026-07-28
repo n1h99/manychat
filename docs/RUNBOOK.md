@@ -126,8 +126,14 @@ malformed payload, broken required relation, or exhausted `maxAttempts` becomes
 `DEAD_LETTER`; the retained raw webhook event is never deleted by this flow.
 Unsupported updates complete normally.
 
-To inspect work, query `inbox_records` by `status`, `nextAttemptAt`, `lockedAt`,
-and `lastError` through a controlled operations session. Never log or copy raw
+The Telegram channel detail page displays the latest 20 safe inbound records
+from `GET /projects/:projectId/channels/:connectionId/inbound-events`: update
+ID, correlation ID, inbox status, attempts, safe error code, normalized type
+and resulting contact ID. The endpoint is project-scoped and requires
+`channels:read`; it never selects raw payload or encrypted credentials.
+
+For deeper operations, query `inbox_records` by `status`, `nextAttemptAt`,
+`lockedAt`, and `lastError` through a controlled session. Never log or copy raw
 payloads, bot tokens, webhook secrets, ciphertext, or contact PII into an
 incident ticket. A future operations endpoint will call the internal audited
 manual-retry service for `DEAD_LETTER` / `FAILED` records. It moves only a
