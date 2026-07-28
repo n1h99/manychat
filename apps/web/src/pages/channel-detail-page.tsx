@@ -50,6 +50,16 @@ export function ChannelDetailPage() {
           { key: 'id', label: 'External bot ID', children: c.externalBotId ?? '—' },
           { key: 'token', label: 'Токен', children: c.maskedToken ?? '—' },
           { key: 'wh', label: 'Webhook', children: c.webhookStatus },
+          {
+            key: 'lastWebhookAt',
+            label: 'Последний webhook',
+            children: c.lastWebhookAt ? new Date(c.lastWebhookAt).toLocaleString() : '—',
+          },
+          {
+            key: 'lastErrorAt',
+            label: 'Последняя ошибка',
+            children: c.lastErrorAt ? new Date(c.lastErrorAt).toLocaleString() : '—',
+          },
           { key: 'updated', label: 'Обновлён', children: new Date(c.updatedAt).toLocaleString() },
         ]}
       />

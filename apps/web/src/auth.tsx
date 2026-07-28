@@ -8,7 +8,12 @@ import {
   type PropsWithChildren,
 } from 'react';
 
-import { apiRequest, setAccessTokenRefresher } from './api';
+import {
+  apiRequest,
+  clearPersistedCsrfToken,
+  persistCsrfToken,
+  setAccessTokenRefresher,
+} from './api';
 
 export interface Identity {
   email: string;
@@ -22,6 +27,7 @@ export interface Identity {
 
 interface LoginResponse {
   accessToken: string;
+  csrfToken: string;
   user: Identity;
 }
 
@@ -44,6 +50,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const refreshAccessToken = useCallback(async (): Promise<string | undefined> => {
     try {
       const response = await apiRequest<LoginResponse>('/api/v1/auth/refresh', { method: 'POST' });
+      persistCsrfToken(response.csrfToken);
       setAccessToken(response.accessToken);
       setIdentity(response.user);
       return response.accessToken;
@@ -76,13 +83,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
           body: JSON.stringify({ email, password }),
           method: 'POST',
         });
+        persistCsrfToken(response.csrfToken);
         setAccessToken(response.accessToken);
         setIdentity(response.user);
       },
       async logout() {
-        await apiRequest<void>('/api/v1/auth/logout', { method: 'POST' });
-        setAccessToken(undefined);
-        setIdentity(undefined);
+        try {
+          await apiRequest<void>('/api/v1/auth/logout', { method: 'POST' });
+        } finally {
+          clearPersistedCsrfToken();
+          setAccessToken(undefined);
+          setIdentity(undefined);
+        }
       },
       refresh,
     }),

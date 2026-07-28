@@ -51,7 +51,14 @@ export class AuthController {
   ) {
     const result = await this.auth.login(body.email, body.password, this.context(request));
     this.setSessionCookies(response, result.tokens);
-    return { data: { accessToken: result.tokens.accessToken, user: result.identity }, meta: {} };
+    return {
+      data: {
+        accessToken: result.tokens.accessToken,
+        csrfToken: result.tokens.csrfToken,
+        user: result.identity,
+      },
+      meta: {},
+    };
   }
 
   @Post('refresh')
@@ -67,7 +74,14 @@ export class AuthController {
       this.context(request),
     );
     this.setSessionCookies(response, result.tokens);
-    return { data: { accessToken: result.tokens.accessToken, user: result.identity }, meta: {} };
+    return {
+      data: {
+        accessToken: result.tokens.accessToken,
+        csrfToken: result.tokens.csrfToken,
+        user: result.identity,
+      },
+      meta: {},
+    };
   }
 
   @Post('logout')

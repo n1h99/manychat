@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { apiRequest, setAccessTokenRefresher } from './api';
+import {
+  apiRequest,
+  clearPersistedCsrfToken,
+  persistCsrfToken,
+  setAccessTokenRefresher,
+} from './api';
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -13,6 +18,18 @@ describe('authenticated API requests', () => {
   afterEach(() => {
     setAccessTokenRefresher(undefined);
     vi.unstubAllGlobals();
+  });
+
+  it('persists and clears the CSRF token on the web origin', () => {
+    const documentStub = { cookie: '' };
+    vi.stubGlobal('document', documentStub);
+    vi.stubGlobal('location', { protocol: 'https:' });
+
+    persistCsrfToken('csrf-value');
+    expect(documentStub.cookie).toBe('omnicus_csrf=csrf-value; Path=/; SameSite=Strict; Secure');
+
+    clearPersistedCsrfToken();
+    expect(documentStub.cookie).toBe('omnicus_csrf=; Path=/; SameSite=Strict; Max-Age=0; Secure');
   });
 
   it('refreshes an expired access token and retries the original request once', async () => {

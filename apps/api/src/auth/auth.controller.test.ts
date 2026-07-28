@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AuthController } from './auth.controller';
 
 describe('AuthController session cookies', () => {
-  it('makes the CSRF cookie readable from protected SPA routes', async () => {
+  it('returns the CSRF token so a cross-origin SPA can persist the double-submit token', async () => {
     const controller = new AuthController(
       {
         login: vi.fn().mockResolvedValue({
@@ -15,12 +15,17 @@ describe('AuthController session cookies', () => {
     );
     const response = { clearCookie: vi.fn(), cookie: vi.fn() };
 
-    await controller.login(
+    const result = await controller.login(
       { email: 'admin@example.test', password: 'not-a-real-password' },
       { headers: {} } as never,
       response as never,
     );
 
+    expect(result.data).toEqual({
+      accessToken: 'access',
+      csrfToken: 'csrf',
+      user: { email: 'admin@example.test' },
+    });
     expect(response.clearCookie).toHaveBeenCalledWith('omnicus_csrf', {
       path: '/api/v1/auth',
       sameSite: 'strict',

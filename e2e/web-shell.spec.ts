@@ -37,6 +37,7 @@ test('opens the versioned template and visual automation workspace with mocked A
       return route.fulfill({
         body: envelope({
           accessToken: 'browser-smoke-token',
+          csrfToken: 'browser-smoke-csrf',
           user: {
             email: 'admin@example.test',
             firstName: 'Admin',

@@ -19,6 +19,7 @@ type AccessTokenRefresher = () => Promise<string | undefined>;
 
 let accessTokenRefresher: AccessTokenRefresher | undefined;
 let pendingAccessTokenRefresh: Promise<string | undefined> | undefined;
+const csrfCookieName = 'omnicus_csrf';
 
 export function setAccessTokenRefresher(refresher: AccessTokenRefresher | undefined): void {
   accessTokenRefresher = refresher;
@@ -37,12 +38,22 @@ async function refreshAccessToken(): Promise<string | undefined> {
   return pendingAccessTokenRefresh;
 }
 
+export function persistCsrfToken(token: string): void {
+  const secure = globalThis.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${csrfCookieName}=${encodeURIComponent(token)}; Path=/; SameSite=Strict${secure}`;
+}
+
+export function clearPersistedCsrfToken(): void {
+  const secure = globalThis.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${csrfCookieName}=; Path=/; SameSite=Strict; Max-Age=0${secure}`;
+}
+
 function csrfToken(): string | undefined {
   return document.cookie
     .split(';')
     .map((item) => item.trim())
-    .find((item) => item.startsWith('omnicus_csrf='))
-    ?.slice('omnicus_csrf='.length);
+    .find((item) => item.startsWith(`${csrfCookieName}=`))
+    ?.slice(csrfCookieName.length + 1);
 }
 
 export async function apiRequest<T>(
