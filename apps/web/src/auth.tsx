@@ -8,7 +8,7 @@ import {
   type PropsWithChildren,
 } from 'react';
 
-import { apiRequest } from './api';
+import { apiRequest, setAccessTokenRefresher } from './api';
 
 export interface Identity {
   email: string;
@@ -41,22 +41,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [identity, setIdentity] = useState<Identity>();
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async (): Promise<boolean> => {
+  const refreshAccessToken = useCallback(async (): Promise<string | undefined> => {
     try {
       const response = await apiRequest<LoginResponse>('/api/v1/auth/refresh', { method: 'POST' });
       setAccessToken(response.accessToken);
       setIdentity(response.user);
-      return true;
+      return response.accessToken;
     } catch {
       setAccessToken(undefined);
       setIdentity(undefined);
-      return false;
+      return undefined;
     }
   }, []);
 
   useEffect(() => {
-    void refresh().finally(() => setLoading(false));
-  }, [refresh]);
+    setAccessTokenRefresher(refreshAccessToken);
+    void refreshAccessToken().finally(() => setLoading(false));
+
+    return () => setAccessTokenRefresher(undefined);
+  }, [refreshAccessToken]);
+
+  const refresh = useCallback(
+    async (): Promise<boolean> => Boolean(await refreshAccessToken()),
+    [refreshAccessToken],
+  );
 
   const value = useMemo<AuthContextValue>(
     () => ({

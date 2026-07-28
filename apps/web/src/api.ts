@@ -15,6 +15,28 @@ export class ApiError extends Error {
   }
 }
 
+type AccessTokenRefresher = () => Promise<string | undefined>;
+
+let accessTokenRefresher: AccessTokenRefresher | undefined;
+let pendingAccessTokenRefresh: Promise<string | undefined> | undefined;
+
+export function setAccessTokenRefresher(refresher: AccessTokenRefresher | undefined): void {
+  accessTokenRefresher = refresher;
+  pendingAccessTokenRefresh = undefined;
+}
+
+async function refreshAccessToken(): Promise<string | undefined> {
+  if (!accessTokenRefresher) {
+    return undefined;
+  }
+
+  pendingAccessTokenRefresh ??= accessTokenRefresher().finally(() => {
+    pendingAccessTokenRefresh = undefined;
+  });
+
+  return pendingAccessTokenRefresh;
+}
+
 function csrfToken(): string | undefined {
   return document.cookie
     .split(';')
@@ -27,6 +49,7 @@ export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
   accessToken?: string,
+  retryAfterRefresh = true,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set('accept', 'application/json');
@@ -47,6 +70,12 @@ export async function apiRequest<T>(
     credentials: 'include',
     headers,
   });
+  if (response.status === 401 && accessToken && retryAfterRefresh) {
+    const refreshedAccessToken = await refreshAccessToken();
+    if (refreshedAccessToken) {
+      return apiRequest<T>(path, options, refreshedAccessToken, false);
+    }
+  }
   if (response.status === 204) {
     return undefined as T;
   }
