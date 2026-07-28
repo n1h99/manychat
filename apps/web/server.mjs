@@ -1,6 +1,7 @@
 import { createReadStream, readFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { pipeline } from 'node:stream/promises';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -85,17 +86,86 @@ function sendJson(response, securityHeaders, statusCode, body) {
   response.end(JSON.stringify(body));
 }
 
+const hopByHopHeaders = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+
+function proxyHeaders(requestHeaders, target) {
+  const headers = {};
+  for (const [name, value] of Object.entries(requestHeaders)) {
+    const normalizedName = name.toLowerCase();
+    if (
+      value !== undefined &&
+      !hopByHopHeaders.has(normalizedName) &&
+      !normalizedName.startsWith('x-forwarded-')
+    ) {
+      headers[name] = value;
+    }
+  }
+  headers.host = target.host;
+  return headers;
+}
+
+function resolveProxyTarget(requestUrl, apiOrigin) {
+  const incomingUrl = new URL(requestUrl ?? '/api', 'http://web.invalid');
+  const target = new URL(apiOrigin);
+  target.pathname = incomingUrl.pathname;
+  target.search = incomingUrl.search;
+  return target;
+}
+
+async function proxyApiRequest(request, response, apiOrigin, securityHeaders) {
+  if (!apiOrigin) {
+    throw new HttpRequestError(503, 'API_PROXY_UNAVAILABLE', 'API proxy is not configured');
+  }
+
+  const target = resolveProxyTarget(request.url, apiOrigin);
+  const requester = target.protocol === 'https:' ? httpsRequest : httpRequest;
+
+  await new Promise((resolveProxy, rejectProxy) => {
+    const outgoing = requester(
+      target,
+      {
+        headers: proxyHeaders(request.headers, target),
+        method: request.method,
+      },
+      (upstream) => {
+        response.statusCode = upstream.statusCode ?? 502;
+        for (const [name, value] of Object.entries(upstream.headers)) {
+          if (value !== undefined && !hopByHopHeaders.has(name.toLowerCase())) {
+            response.setHeader(name, value);
+          }
+        }
+        writeHeaders(response, securityHeaders);
+        upstream.once('error', rejectProxy);
+        upstream.pipe(response);
+        response.once('finish', resolveProxy);
+      },
+    );
+
+    outgoing.once('error', rejectProxy);
+    request.once('aborted', () => outgoing.destroy());
+    request.pipe(outgoing);
+  });
+}
+
 function decodeRequestPath(requestUrl) {
   const rawUrl = requestUrl ?? '/';
 
   try {
     decodeURIComponent(rawUrl);
+    const parsedUrl = new URL(rawUrl, 'http://web.invalid');
+    return decodeURIComponent(parsedUrl.pathname);
   } catch {
     throw new HttpRequestError(400, 'MALFORMED_URL', 'Malformed URL encoding');
   }
-
-  const rawPath = rawUrl.split('?', 1)[0] || '/';
-  return decodeURIComponent(rawPath);
 }
 
 function resolveCandidate(distDirectory, requestPath) {
@@ -176,20 +246,27 @@ function defaultLogger(entry) {
 }
 
 export function createWebServer({
+  apiOrigin,
   distDirectory = defaultDistDirectory,
   fileOpener = open,
   logger = defaultLogger,
 } = {}) {
   const resolvedDistDirectory = resolve(distDirectory);
-  const securityHeaders = createSecurityHeaders(loadApiOrigin(resolvedDistDirectory, logger));
+  const resolvedApiOrigin = apiOrigin ?? loadApiOrigin(resolvedDistDirectory, logger);
+  const securityHeaders = createSecurityHeaders(resolvedApiOrigin);
 
   return createServer((request, response) => {
     void (async () => {
+      const requestPath = decodeRequestPath(request.url);
+
+      if (requestPath === '/api' || requestPath.startsWith('/api/')) {
+        await proxyApiRequest(request, response, resolvedApiOrigin, securityHeaders);
+        return;
+      }
+
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         throw new HttpRequestError(405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
       }
-
-      const requestPath = decodeRequestPath(request.url);
 
       if (requestPath === '/health/live') {
         sendJson(response, securityHeaders, 200, {

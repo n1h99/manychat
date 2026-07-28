@@ -6,6 +6,7 @@ import {
   persistCsrfToken,
   setAccessTokenRefresher,
 } from './api';
+import { selectApiBaseUrl } from './env';
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -18,6 +19,15 @@ describe('authenticated API requests', () => {
   afterEach(() => {
     setAccessTokenRefresher(undefined);
     vi.unstubAllGlobals();
+  });
+
+  it('uses the browser origin for production API requests', () => {
+    expect(
+      selectApiBaseUrl('https://api-production.example', true, 'https://web-production.example'),
+    ).toBe('https://web-production.example');
+    expect(selectApiBaseUrl('http://localhost:3000', false, 'http://localhost:5173')).toBe(
+      'http://localhost:3000',
+    );
   });
 
   it('persists and clears the CSRF token on the web origin', () => {

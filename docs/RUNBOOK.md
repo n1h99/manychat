@@ -55,6 +55,20 @@ after diagnosing a dependency failure.
 Readiness failure must remove a service from traffic; it must not trigger schema
 changes or migration commands.
 
+## Browser session reloads
+
+Production browser API traffic uses the web service's same-origin `/api` proxy.
+`VITE_API_URL` remains the server-side upstream target and must resolve to the
+public API origin. A successful login sets the opaque refresh cookie on the web
+origin through the proxy; the access JWT remains only in browser memory and is
+restored by refresh bootstrap after a reload.
+
+If a reload unexpectedly returns to login, verify that the deployed web
+artifact contains `runtime-config.json`, that `/api/v1/auth/refresh` is proxied
+by the web service, and that the login response sets `omnicus_refresh` for the
+web origin. Do not move access or refresh tokens to browser storage as a
+workaround.
+
 ## Graceful shutdown
 
 API shutdown hooks close Prisma and Redis clients. Worker shutdown hooks stop the

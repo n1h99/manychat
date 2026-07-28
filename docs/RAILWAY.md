@@ -42,6 +42,8 @@ Shared server variables:
 Web build:
 
 - `VITE_API_URL`: required exact API base URL for staging/production builds.
+  The browser does not call that cross-site origin directly: the production web
+  server uses it as the upstream for its same-origin `/api` reverse proxy.
 
 API:
 
@@ -62,6 +64,12 @@ Never commit real CRM credentials, database credentials, Redis credentials, or
 Railway-generated values. `.railway/` is ignored.
 
 ## Networking and health
+
+In production the SPA sends application API requests to `/api` on the web
+origin. The lightweight web server forwards those requests to `VITE_API_URL`
+and preserves `Set-Cookie`, so refresh cookies remain first-party and survive a
+page reload even when browsers block third-party cookies. Telegram webhooks
+continue to use the API service's `API_PUBLIC_URL` directly.
 
 Use Railway private service URLs for PostgreSQL/Redis where Railway provides
 them, while still treating credentials and transport security as required

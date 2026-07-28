@@ -1,4 +1,4 @@
-import { readWebEnvironment } from './env';
+import { readApiBaseUrl } from './env';
 
 export interface ApiEnvelope<T> {
   data: T;
@@ -76,7 +76,7 @@ export async function apiRequest<T>(
       headers.set('x-csrf-token', csrf);
     }
   }
-  const response = await fetch(`${readWebEnvironment().VITE_API_URL}${path}`, {
+  const response = await fetch(`${readApiBaseUrl()}${path}`, {
     ...options,
     credentials: 'include',
     headers,

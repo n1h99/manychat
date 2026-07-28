@@ -614,3 +614,31 @@ Bootstrap code is stripped from API and worker runtime artifacts.
 public registration endpoint. Production bootstrap credentials exist only
 during the controlled release step and are not committed, logged or retained
 as normal service configuration.
+
+## ADR-033: Production browser API traffic uses a same-origin web proxy
+
+**Status:** Accepted, 2026-07-28.
+
+**Context:** Railway assigns independent public sites to the web and API
+services. A refresh cookie set by the API site is therefore a third-party
+cookie from the SPA's point of view, and modern browser privacy policies may
+block it even when it is correctly marked `SameSite=None; Secure`. That makes
+an in-memory access-token session impossible to restore after a page reload.
+
+**Decision:** In production the SPA calls `/api` on its own web origin. The
+existing lightweight web server proxies that path to the validated
+`VITE_API_URL` upstream and preserves the API response status, body and
+`Set-Cookie` headers. The upstream origin is fixed by the built runtime
+configuration and cannot be selected by a request. Development continues to
+call the configured API origin directly.
+
+The access JWT remains in memory. The opaque rotating refresh token remains in
+an `HttpOnly`, `Secure` cookie, and cookie-based operations retain synchronizer
+CSRF plus exact Origin/Referer validation. Telegram webhooks continue to target
+the API's separate `API_PUBLIC_URL`.
+
+**Consequences:** Refresh cookies are first-party on the production web origin,
+so F5 bootstrap does not depend on third-party-cookie support. The web service
+becomes a thin browser API ingress and must preserve request bodies and session
+cookies without logging them. API and worker business logic and public webhook
+topology remain unchanged.
