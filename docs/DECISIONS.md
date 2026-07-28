@@ -74,6 +74,10 @@ classification и reconciliation API/UI. Дубликаты исполнения
   `Path` и lifetime;
 - cookie-based state-changing auth operations требуют Origin/Referer validation
   и synchronizer CSRF token в отдельном header;
+- когда Web и API используют разные Railway public sites, refresh cookie
+  использует `SameSite=None; Secure`; API принимает refresh/logout только от
+  точных `CORS_ALLOWED_ORIGINS`, а SPA хранит на своём origin только
+  synchronizer CSRF token;
 - `JWT_REFRESH_SECRET` не используется.
 
 **Последствия:** нужны `Session`/token-family fields и `csrfTokenHash`.

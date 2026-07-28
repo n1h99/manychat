@@ -1,7 +1,18 @@
-import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  Inject,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
-import type { ApiEnvironment } from '@omnicus/config/server';
+import { parseCorsOrigins, type ApiEnvironment } from '@omnicus/config/server';
 import type { Response } from 'express';
 
 import { AuthService } from './auth.service';
@@ -67,6 +78,7 @@ export class AuthController {
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
+    this.assertTrustedBrowserOrigin(request);
     const values = cookies(request);
     const result = await this.auth.refresh(
       values[refreshCookieName],
@@ -90,6 +102,7 @@ export class AuthController {
     @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
+    this.assertTrustedBrowserOrigin(request);
     const values = cookies(request);
     await this.auth.logout(
       values[refreshCookieName],
@@ -127,35 +140,62 @@ export class AuthController {
   }
 
   private setSessionCookies(response: Response, tokens: SessionTokens): void {
-    const secure =
-      this.config.get('APP_ENV', { infer: true }) !== 'development' &&
-      this.config.get('APP_ENV', { infer: true }) !== 'test';
-    // The browser must read this non-HttpOnly token from every SPA route before
-    // it posts to /auth/refresh. The HttpOnly refresh cookie remains scoped.
+    const secure = this.secureCookies();
+    const sameSite = secure ? 'none' : 'strict';
+    // Clear legacy API-origin CSRF cookies. The cross-origin SPA persists the
+    // response token on its own origin and sends it only as a request header.
     response.clearCookie(csrfCookieName, { path: '/api/v1/auth', sameSite: 'strict' });
-    response.cookie(csrfCookieName, tokens.csrfToken, {
-      httpOnly: false,
-      maxAge: this.config.get('REFRESH_TOKEN_TTL_DAYS', { infer: true }) * 24 * 60 * 60 * 1_000,
-      path: '/',
-      sameSite: 'strict',
-      secure,
-    });
+    response.clearCookie(csrfCookieName, { path: '/', sameSite: 'strict' });
     response.cookie(refreshCookieName, tokens.refreshToken, {
       httpOnly: true,
       maxAge: this.config.get('REFRESH_TOKEN_TTL_DAYS', { infer: true }) * 24 * 60 * 60 * 1_000,
       path: '/api/v1/auth',
-      sameSite: 'strict',
+      sameSite,
       secure,
     });
   }
 
   private clearSessionCookies(response: Response): void {
+    const secure = this.secureCookies();
+    const sameSite = secure ? 'none' : 'strict';
     response.clearCookie(csrfCookieName, { path: '/', sameSite: 'strict' });
     response.clearCookie(csrfCookieName, { path: '/api/v1/auth', sameSite: 'strict' });
     response.clearCookie(refreshCookieName, {
       httpOnly: true,
       path: '/api/v1/auth',
-      sameSite: 'strict',
+      sameSite,
+      secure,
     });
+  }
+
+  private assertTrustedBrowserOrigin(request: AuthenticatedRequest): void {
+    const allowedOrigins = parseCorsOrigins(
+      this.config.get('CORS_ALLOWED_ORIGINS', { infer: true }),
+    );
+    const origin = firstHeaderValue(request.headers.origin);
+    const referer = firstHeaderValue(request.headers.referer);
+    let requestOrigin = origin;
+
+    if (!requestOrigin && referer) {
+      try {
+        requestOrigin = new URL(referer).origin;
+      } catch {
+        requestOrigin = undefined;
+      }
+    }
+
+    if (!requestOrigin || !allowedOrigins.includes(requestOrigin)) {
+      throw new ForbiddenException({
+        code: 'CSRF_ORIGIN_REJECTED',
+        message: 'Request origin is not allowed',
+      });
+    }
+  }
+
+  private secureCookies(): boolean {
+    return (
+      this.config.get('APP_ENV', { infer: true }) !== 'development' &&
+      this.config.get('APP_ENV', { infer: true }) !== 'test'
+    );
   }
 }
