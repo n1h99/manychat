@@ -14,7 +14,7 @@ function createService(client: Record<string, unknown>) {
       get: (key: string) =>
         ({
           JWT_ACCESS_SECRET: 'test-only-jwt-secret-that-is-long-enough-for-validation',
-          JWT_ACCESS_TTL_SECONDS: 900,
+          JWT_BROWSER_SESSION_TTL_SECONDS: 604_800,
           REFRESH_TOKEN_TTL_DAYS: 30,
         })[key],
     } as never,

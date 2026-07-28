@@ -7,6 +7,20 @@ import { DatabaseService } from '../database/database.service';
 export class AccessService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
+  async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
+    const session = await this.database.client.session.findFirst({
+      select: { id: true },
+      where: {
+        expiresAt: { gt: new Date() },
+        id: sessionId,
+        status: 'ACTIVE',
+        user: { status: 'ACTIVE' },
+        userId,
+      },
+    });
+    return session !== null;
+  }
+
   async getGlobalAccess(userId: string): Promise<{ permissions: string[]; roleNames: string[] }> {
     const user = await this.database.client.user.findUnique({
       select: { status: true },

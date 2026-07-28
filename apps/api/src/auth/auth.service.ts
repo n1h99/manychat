@@ -180,7 +180,7 @@ export class AuthService {
         message: 'Refresh session is invalid',
       });
     }
-    tokens.accessToken = await this.signAccessToken(identity);
+    tokens.accessToken = await this.signAccessToken(identity, replacementId);
     return { identity, tokens };
   }
 
@@ -249,10 +249,12 @@ export class AuthService {
     context: RequestSecurityContext,
   ): Promise<SessionTokens> {
     const tokens = this.newOpaqueTokens();
+    const sessionId = randomUUID();
     await this.database.client.session.create({
       data: {
         csrfTokenHash: sha256(tokens.csrfToken),
         expiresAt: this.refreshExpiry(),
+        id: sessionId,
         ...(context.ip === undefined ? {} : { ip: context.ip }),
         refreshTokenHash: sha256(tokens.refreshToken),
         tokenFamilyId: randomUUID(),
@@ -260,7 +262,7 @@ export class AuthService {
         userId: identity.userId,
       },
     });
-    tokens.accessToken = await this.signAccessToken(identity);
+    tokens.accessToken = await this.signAccessToken(identity, sessionId);
     return tokens;
   }
 
@@ -325,12 +327,12 @@ export class AuthService {
     );
   }
 
-  private async signAccessToken(identity: AuthIdentity): Promise<string> {
+  private async signAccessToken(identity: AuthIdentity, sessionId: string): Promise<string> {
     return this.jwt.signAsync(
-      { email: identity.email, sub: identity.userId },
+      { email: identity.email, sid: sessionId, sub: identity.userId },
       {
         algorithm: 'HS256',
-        expiresIn: this.config.get('JWT_ACCESS_TTL_SECONDS', { infer: true }),
+        expiresIn: this.config.get('JWT_BROWSER_SESSION_TTL_SECONDS', { infer: true }),
         secret: this.config.get('JWT_ACCESS_SECRET', { infer: true }),
       },
     );

@@ -59,15 +59,14 @@ changes or migration commands.
 
 Production browser API traffic uses the web service's same-origin `/api` proxy.
 `VITE_API_URL` remains the server-side upstream target and must resolve to the
-public API origin. A successful login sets the opaque refresh cookie on the web
-origin through the proxy; the access JWT remains only in browser memory and is
-restored by refresh bootstrap after a reload.
+public API origin. Login returns `{ token, user }`; the SPA stores that session
+under `omnicus-auth` in `localStorage`, validates it through `/api/v1/auth/me`,
+and restores it after a page reload.
 
-If a reload unexpectedly returns to login, verify that the deployed web
-artifact contains `runtime-config.json`, that `/api/v1/auth/refresh` is proxied
-by the web service, and that the login response sets `omnicus_refresh` for the
-web origin. Do not move access or refresh tokens to browser storage as a
-workaround.
+If a reload unexpectedly returns to login, inspect `omnicus-auth` for a
+well-formed token/user object and verify `/api/v1/auth/me`. A `401` deliberately
+clears the stored session. Never paste a production JWT into an incident,
+repository or logs.
 
 ## Graceful shutdown
 

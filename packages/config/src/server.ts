@@ -198,7 +198,7 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
     CORS_ALLOWED_ORIGINS: corsOriginsSchema,
     JWT_ACCESS_SECRET: z.string().min(32),
     CHANNEL_SECRETS_KEY: channelSecretsKeySchema,
-    JWT_ACCESS_TTL_SECONDS: positiveIntegerSchema.max(3_600).default(900),
+    JWT_BROWSER_SESSION_TTL_SECONDS: positiveIntegerSchema.max(2_592_000).default(604_800),
     LOGIN_RATE_LIMIT_MAX_ATTEMPTS: positiveIntegerSchema.max(100).default(10),
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerSchema.max(3_600).default(900),
     REFRESH_TOKEN_TTL_DAYS: positiveIntegerSchema.max(90).default(30),

@@ -642,3 +642,27 @@ so F5 bootstrap does not depend on third-party-cookie support. The web service
 becomes a thin browser API ingress and must preserve request bodies and session
 cookies without logging them. API and worker business logic and public webhook
 topology remain unchanged.
+
+## ADR-034: Browser authentication uses a persistent bearer session
+
+**Status:** Accepted by explicit product-owner direction, 2026-07-28. This
+supersedes ADR-003 and ADR-033 only for the SPA's token storage and bootstrap
+mechanism; opaque refresh support remains available to non-browser clients.
+
+**Decision:** Login returns `{ token, user }`. The SPA stores that object under
+the single `omnicus-auth` `localStorage` key, restores it on startup, and
+validates the bearer token through `/auth/me`. Browser requests use
+`credentials: omit`; the SPA does not issue cookie refresh requests. A `401`
+clears the stored session, and logout revokes server sessions before returning
+to the login route.
+
+Browser JWTs have a seven-day default lifetime and contain a server-side
+session ID. Every protected request verifies that the session and user remain
+active, so disable, logout-all and session revocation invalidate an otherwise
+unexpired JWT.
+
+**Consequences:** Reload behavior no longer depends on third-party or
+first-party cookies. This intentionally accepts the higher XSS exposure of
+browser-readable bearer storage; CSP, dependency controls and avoiding unsafe
+HTML become critical. Tokens must never enter query keys, analytics, logs,
+URLs, screenshots or support payloads.

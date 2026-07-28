@@ -1,22 +1,16 @@
 import { expect, test } from '@playwright/test';
 
+const browserIdentity = {
+  email: 'admin@example.test',
+  firstName: 'Admin',
+  globalPermissions: [],
+  globalRoleNames: [],
+  lastName: 'User',
+  status: 'ACTIVE',
+  userId: 'user-a',
+};
+
 test('redirects an unauthenticated visitor from a protected route to sign in', async ({ page }) => {
-  await page.route('**/api/v1/auth/me', async (route) => {
-    await route.fulfill({
-      status: 401,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }),
-    });
-  });
-
-  await page.route('**/api/v1/auth/refresh', async (route) => {
-    await route.fulfill({
-      status: 401,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }),
-    });
-  });
-
   await page.goto('/projects');
 
   await expect(page).toHaveURL(/\/login$/);
@@ -26,29 +20,63 @@ test('redirects an unauthenticated visitor from a protected route to sign in', a
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
 });
 
+test('restores a persisted bearer session after a full page reload', async ({ page }) => {
+  const envelope = (data: unknown) => JSON.stringify({ data, meta: {} });
+  let meRequests = 0;
+  await page.addInitScript(
+    ({ user }) => {
+      localStorage.setItem('omnicus-auth', JSON.stringify({ token: 'persisted-token', user }));
+    },
+    { user: browserIdentity },
+  );
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/auth/me') {
+      meRequests += 1;
+      return route.fulfill({
+        body: envelope(browserIdentity),
+        contentType: 'application/json',
+        status: 200,
+      });
+    }
+    if (path === '/api/v1/projects')
+      return route.fulfill({
+        body: envelope([]),
+        contentType: 'application/json',
+        status: 200,
+      });
+    return route.fulfill({
+      body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Not found' } }),
+      contentType: 'application/json',
+      status: 404,
+    });
+  });
+
+  await page.goto('/projects');
+  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
+  await page.reload();
+
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
+  expect(meRequests).toBeGreaterThanOrEqual(2);
+});
+
 test('opens the versioned template and visual automation workspace with mocked APIs', async ({
   page,
 }) => {
   const envelope = (data: unknown) => JSON.stringify({ data, meta: {} });
+  await page.addInitScript(
+    ({ user }) => {
+      localStorage.setItem('omnicus-auth', JSON.stringify({ token: 'browser-smoke-token', user }));
+    },
+    { user: browserIdentity },
+  );
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path === '/api/v1/auth/refresh')
+    if (path === '/api/v1/auth/me')
       return route.fulfill({
-        body: envelope({
-          accessToken: 'browser-smoke-token',
-          csrfToken: 'browser-smoke-csrf',
-          csrfTokenMaxAgeSeconds: 2_592_000,
-          user: {
-            email: 'admin@example.test',
-            firstName: 'Admin',
-            globalPermissions: [],
-            globalRoleNames: [],
-            lastName: 'User',
-            status: 'ACTIVE',
-            userId: 'user-a',
-          },
-        }),
+        body: envelope(browserIdentity),
         contentType: 'application/json',
         status: 200,
       });

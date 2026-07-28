@@ -55,18 +55,11 @@ export class AuthController {
   @Post('login')
   @HttpCode(200)
   @ApiBody({ type: LoginDto })
-  async login(
-    @Body() body: LoginDto,
-    @Req() request: AuthenticatedRequest,
-    @Res({ passthrough: true }) response: Response,
-  ) {
+  async login(@Body() body: LoginDto, @Req() request: AuthenticatedRequest) {
     const result = await this.auth.login(body.email, body.password, this.context(request));
-    this.setSessionCookies(response, result.tokens);
     return {
       data: {
-        accessToken: result.tokens.accessToken,
-        csrfToken: result.tokens.csrfToken,
-        csrfTokenMaxAgeSeconds: this.refreshTokenMaxAgeMilliseconds() / 1_000,
+        token: result.tokens.accessToken,
         user: result.identity,
       },
       meta: {},

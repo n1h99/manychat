@@ -26,11 +26,20 @@ export class JwtAuthGuard implements CanActivate {
     }
     try {
       const token = authorization.slice('Bearer '.length);
-      const payload = await this.jwt.verifyAsync<{ email?: unknown; sub?: unknown }>(token, {
+      const payload = await this.jwt.verifyAsync<{
+        email?: unknown;
+        sid?: unknown;
+        sub?: unknown;
+      }>(token, {
         algorithms: ['HS256'],
         secret: this.config.get('JWT_ACCESS_SECRET', { infer: true }),
       });
-      if (typeof payload.sub !== 'string' || typeof payload.email !== 'string') {
+      if (
+        typeof payload.sub !== 'string' ||
+        typeof payload.email !== 'string' ||
+        typeof payload.sid !== 'string' ||
+        !(await this.access.isSessionActive(payload.sub, payload.sid))
+      ) {
         throw new Error('JWT subject is invalid');
       }
       const global = await this.access.getGlobalAccess(payload.sub);

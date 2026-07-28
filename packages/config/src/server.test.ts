@@ -22,6 +22,10 @@ const baseEnvironment = {
 };
 
 describe('server environment validation', () => {
+  it('defaults persistent browser sessions to seven days', () => {
+    expect(validateApiEnvironment(baseEnvironment).JWT_BROWSER_SESSION_TTL_SECONDS).toBe(604_800);
+  });
+
   it('does not fall back to a CWD-relative env file outside a workspace', () => {
     const nonWorkspacePath = resolve(parse(tmpdir()).root, '__omnicus_nonworkspace__');
     expect(rootEnvironmentFilePath(nonWorkspacePath)).toBeUndefined();

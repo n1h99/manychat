@@ -67,8 +67,9 @@ Railway-generated values. `.railway/` is ignored.
 
 In production the SPA sends application API requests to `/api` on the web
 origin. The lightweight web server forwards those requests to `VITE_API_URL`
-and preserves `Set-Cookie`, so refresh cookies remain first-party and survive a
-page reload even when browsers block third-party cookies. Telegram webhooks
+without exposing the upstream origin to application code. Browser
+authentication uses a persistent bearer session in `localStorage`; the proxy
+is no longer relied upon for refresh-cookie persistence. Telegram webhooks
 continue to use the API service's `API_PUBLIC_URL` directly.
 
 Use Railway private service URLs for PostgreSQL/Redis where Railway provides

@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  apiRequest,
-  clearPersistedCsrfToken,
-  persistCsrfToken,
-  setAccessTokenRefresher,
-} from './api';
+import { apiRequest, setUnauthorizedHandler } from './api';
 import { selectApiBaseUrl } from './env';
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -17,7 +12,7 @@ function jsonResponse(body: unknown, status: number): Response {
 
 describe('authenticated API requests', () => {
   afterEach(() => {
-    setAccessTokenRefresher(undefined);
+    setUnauthorizedHandler(undefined);
     vi.unstubAllGlobals();
   });
 
@@ -30,33 +25,12 @@ describe('authenticated API requests', () => {
     );
   });
 
-  it('persists and clears the CSRF token on the web origin', () => {
-    const documentStub = { cookie: '' };
-    vi.stubGlobal('document', documentStub);
-    vi.stubGlobal('location', { protocol: 'https:' });
-
-    persistCsrfToken('csrf-value', 2_592_000);
-    expect(documentStub.cookie).toBe(
-      'omnicus_csrf=csrf-value; Path=/; SameSite=Strict; Max-Age=2592000; Secure',
-    );
-
-    clearPersistedCsrfToken();
-    expect(documentStub.cookie).toBe('omnicus_csrf=; Path=/; SameSite=Strict; Max-Age=0; Secure');
-  });
-
-  it('refreshes an expired access token and retries the original request once', async () => {
+  it('uses a bearer token without browser cookies', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }, 401),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({ data: { permissions: ['channels:read'] }, meta: {} }, 200),
-      );
-    const refresh = vi.fn().mockResolvedValue('fresh-access-token');
+      .mockResolvedValue(jsonResponse({ data: { permissions: ['channels:read'] }, meta: {} }, 200));
 
     vi.stubGlobal('fetch', fetchMock);
-    setAccessTokenRefresher(refresh);
 
     await expect(
       apiRequest<{ permissions: string[] }>(
@@ -66,32 +40,29 @@ describe('authenticated API requests', () => {
       ),
     ).resolves.toEqual({ permissions: ['channels:read'] });
 
-    expect(refresh).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledOnce();
     expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('authorization')).toBe(
       'Bearer expired-token',
     );
-    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('authorization')).toBe(
-      'Bearer fresh-access-token',
-    );
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe('omit');
   });
 
-  it('does not loop when the retried request is still unauthorized', async () => {
+  it('clears persistent authentication on an unauthorized bearer response', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
         jsonResponse({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } }, 401),
       );
-    const refresh = vi.fn().mockResolvedValue('fresh-access-token');
+    const unauthorized = vi.fn();
 
     vi.stubGlobal('fetch', fetchMock);
-    setAccessTokenRefresher(refresh);
+    setUnauthorizedHandler(unauthorized);
 
     await expect(
       apiRequest('/api/v1/projects/project-a', {}, 'expired-token'),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED', status: 401 });
 
-    expect(refresh).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(unauthorized).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });

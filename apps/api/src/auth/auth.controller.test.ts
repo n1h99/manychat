@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AuthController } from './auth.controller';
 
-describe('AuthController session cookies', () => {
-  it('returns the CSRF token so a cross-origin SPA can persist the double-submit token', async () => {
+describe('AuthController sessions', () => {
+  it('returns a persistent bearer token without setting a browser cookie', async () => {
     const controller = new AuthController(
       {
         login: vi.fn().mockResolvedValue({
@@ -15,30 +15,15 @@ describe('AuthController session cookies', () => {
         get: vi.fn((key: string) => (key === 'REFRESH_TOKEN_TTL_DAYS' ? 30 : 'development')),
       } as never,
     );
-    const response = { clearCookie: vi.fn(), cookie: vi.fn() };
-
     const result = await controller.login(
       { email: 'admin@example.test', password: 'not-a-real-password' },
       { headers: {} } as never,
-      response as never,
     );
 
     expect(result.data).toEqual({
-      accessToken: 'access',
-      csrfToken: 'csrf',
-      csrfTokenMaxAgeSeconds: 2_592_000,
+      token: 'access',
       user: { email: 'admin@example.test' },
     });
-    expect(response.clearCookie).toHaveBeenCalledWith('omnicus_csrf', {
-      path: '/api/v1/auth',
-      sameSite: 'strict',
-    });
-    expect(response.cookie).toHaveBeenCalledTimes(1);
-    expect(response.cookie).toHaveBeenCalledWith(
-      'omnicus_refresh',
-      'refresh',
-      expect.objectContaining({ httpOnly: true, sameSite: 'strict', secure: false }),
-    );
   });
 
   it('uses a Secure cross-site refresh cookie and accepts only an allowlisted web origin', async () => {

@@ -3,6 +3,29 @@ import { describe, expect, it, vi } from 'vitest';
 import { AccessService } from './access.service';
 
 describe('AccessService project access', () => {
+  it('accepts only an active, unexpired session for an active user', async () => {
+    const findFirst = vi
+      .fn()
+      .mockResolvedValueOnce({ id: 'session-a' })
+      .mockResolvedValueOnce(null);
+    const service = new AccessService({
+      client: { session: { findFirst } },
+    } as never);
+
+    await expect(service.isSessionActive('user-a', 'session-a')).resolves.toBe(true);
+    await expect(service.isSessionActive('user-a', 'revoked-session')).resolves.toBe(false);
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'session-a',
+          status: 'ACTIVE',
+          user: { status: 'ACTIVE' },
+          userId: 'user-a',
+        }),
+      }),
+    );
+  });
+
   it('returns channel permissions assigned by a project role', async () => {
     const service = new AccessService({
       client: {

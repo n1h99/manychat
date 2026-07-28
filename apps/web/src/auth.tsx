@@ -8,27 +8,19 @@ import {
   type PropsWithChildren,
 } from 'react';
 
+import { ApiError, apiRequest, setUnauthorizedHandler } from './api';
 import {
-  apiRequest,
-  clearPersistedCsrfToken,
-  persistCsrfToken,
-  setAccessTokenRefresher,
-} from './api';
+  clearStoredAuthSession,
+  persistAuthSession,
+  readStoredAuthSession,
+  type Identity,
+  type StoredAuthSession,
+} from './auth-storage';
 
-export interface Identity {
-  email: string;
-  firstName: string;
-  globalPermissions: string[];
-  globalRoleNames: string[];
-  lastName: string;
-  status: string;
-  userId: string;
-}
+export type { Identity } from './auth-storage';
 
 interface LoginResponse {
-  accessToken: string;
-  csrfToken: string;
-  csrfTokenMaxAgeSeconds: number;
+  token: string;
   user: Identity;
 }
 
@@ -44,62 +36,76 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [accessToken, setAccessToken] = useState<string>();
-  const [identity, setIdentity] = useState<Identity>();
+  const [session, setSession] = useState<StoredAuthSession | undefined>(() =>
+    readStoredAuthSession(),
+  );
   const [loading, setLoading] = useState(true);
 
-  const refreshAccessToken = useCallback(async (): Promise<string | undefined> => {
-    try {
-      const response = await apiRequest<LoginResponse>('/api/v1/auth/refresh', { method: 'POST' });
-      persistCsrfToken(response.csrfToken, response.csrfTokenMaxAgeSeconds);
-      setAccessToken(response.accessToken);
-      setIdentity(response.user);
-      return response.accessToken;
-    } catch {
-      setAccessToken(undefined);
-      setIdentity(undefined);
-      return undefined;
-    }
+  const clearSession = useCallback(() => {
+    clearStoredAuthSession();
+    setSession(undefined);
   }, []);
 
   useEffect(() => {
-    setAccessTokenRefresher(refreshAccessToken);
-    void refreshAccessToken().finally(() => setLoading(false));
+    setUnauthorizedHandler(clearSession);
+    if (!session) {
+      setLoading(false);
+      return () => setUnauthorizedHandler(undefined);
+    }
 
-    return () => setAccessTokenRefresher(undefined);
-  }, [refreshAccessToken]);
+    void apiRequest<Identity>('/api/v1/auth/me', {}, session.token)
+      .then((user) => {
+        const validated = { token: session.token, user };
+        persistAuthSession(validated);
+        setSession(validated);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 401) clearSession();
+      })
+      .finally(() => setLoading(false));
 
-  const refresh = useCallback(
-    async (): Promise<boolean> => Boolean(await refreshAccessToken()),
-    [refreshAccessToken],
-  );
+    return () => setUnauthorizedHandler(undefined);
+  }, [clearSession, session?.token]);
+
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (!session) return false;
+    try {
+      const user = await apiRequest<Identity>('/api/v1/auth/me', {}, session.token);
+      const validated = { token: session.token, user };
+      persistAuthSession(validated);
+      setSession(validated);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [session]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      accessToken,
-      identity,
+      accessToken: session?.token,
+      identity: session?.user,
       loading,
       async login(email, password) {
         const response = await apiRequest<LoginResponse>('/api/v1/auth/login', {
           body: JSON.stringify({ email, password }),
           method: 'POST',
         });
-        persistCsrfToken(response.csrfToken, response.csrfTokenMaxAgeSeconds);
-        setAccessToken(response.accessToken);
-        setIdentity(response.user);
+        const authenticated = { token: response.token, user: response.user };
+        persistAuthSession(authenticated);
+        setSession(authenticated);
       },
       async logout() {
+        const token = session?.token;
+        clearSession();
         try {
-          await apiRequest<void>('/api/v1/auth/logout', { method: 'POST' });
-        } finally {
-          clearPersistedCsrfToken();
-          setAccessToken(undefined);
-          setIdentity(undefined);
+          if (token) await apiRequest<void>('/api/v1/auth/logout-all', { method: 'POST' }, token);
+        } catch {
+          // Local logout is authoritative even when the API is unavailable.
         }
       },
       refresh,
     }),
-    [accessToken, identity, loading, refresh],
+    [clearSession, loading, refresh, session],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
