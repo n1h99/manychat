@@ -284,6 +284,10 @@ export class TelegramOutboundProcessorService
     if (asset.status !== 'AVAILABLE' || !asset.bucketKey || !this.storage)
       throw new TelegramOutboundPermanentError('telegram_outbound_media_unavailable');
     const object = await this.storage.getObject(asset.bucketKey);
+    const originalStem = asset.originalFilename?.replace(/\.[^.]+$/, '') || 'telegram-media';
+    const normalizedFilename = asset.extension
+      ? `${originalStem}.${asset.extension}`
+      : asset.originalFilename;
     let prepared;
     try {
       prepared = await prepareMediaForTelegram({
@@ -291,14 +295,13 @@ export class TelegramOutboundProcessorService
         ...((asset.detectedMimeType ?? object.contentType)
           ? { declaredMimeType: asset.detectedMimeType ?? object.contentType }
           : {}),
-        ...(asset.originalFilename ? { filename: asset.originalFilename } : {}),
+        ...(normalizedFilename ? { filename: normalizedFilename } : {}),
         kind,
         maximumBytes: this.maximumMediaBytes,
       });
     } catch {
       throw new TelegramOutboundPermanentError('telegram_outbound_media_rejected');
     }
-    const originalStem = asset.originalFilename?.replace(/\.[^.]+$/, '') || 'telegram-media';
     return {
       bytes: prepared.bytes,
       contentType: prepared.mimeType,

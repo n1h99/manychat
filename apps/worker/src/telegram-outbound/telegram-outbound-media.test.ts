@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { prepareMediaForTelegram } from '@omnicus/media-core';
 import { describe, expect, it, vi } from 'vitest';
 
 import { TelegramOutboundProcessorService } from './telegram-outbound-processor.service';
@@ -132,5 +133,64 @@ describe('Telegram outbound media references', () => {
       'PHOTO',
     )) as { bytes: Uint8Array };
     expect([...result.bytes.slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+  });
+
+  it('validates normalized photo bytes with their stored extension', async () => {
+    const internals = service() as unknown as {
+      storage: {
+        getObject(key: string): Promise<{ bytes: Uint8Array; contentType?: string }>;
+      };
+      mediaReference(
+        asset: {
+          bucketKey: string | null;
+          connectionId: string | null;
+          detectedMimeType: string | null;
+          extension: string | null;
+          originalFilename: string | null;
+          providerMediaId: string | null;
+          status: string;
+        },
+        connectionId: string,
+        kind: 'PHOTO',
+      ): Promise<unknown>;
+    };
+    const originalPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMQkdMQkdNggFAACZYBaWlFihUAAAAASUVORK5CYII=',
+      'base64',
+    );
+    const normalizedJpeg = (
+      await prepareMediaForTelegram({
+        bytes: originalPng,
+        declaredMimeType: 'image/png',
+        filename: 'original-upload.png',
+        kind: 'PHOTO',
+        maximumBytes: 20 * 1024 * 1024,
+      })
+    ).bytes;
+    internals.storage = {
+      getObject: vi.fn().mockResolvedValue({
+        bytes: normalizedJpeg,
+        contentType: 'image/jpeg',
+      }),
+    };
+
+    await expect(
+      internals.mediaReference(
+        {
+          bucketKey: 'project/photo.jpg',
+          connectionId: null,
+          detectedMimeType: 'image/jpeg',
+          extension: 'jpg',
+          originalFilename: 'original-upload.png',
+          providerMediaId: null,
+          status: 'AVAILABLE',
+        },
+        'connection-a',
+        'PHOTO',
+      ),
+    ).resolves.toMatchObject({
+      contentType: 'image/jpeg',
+      filename: 'original-upload.jpg',
+    });
   });
 });
