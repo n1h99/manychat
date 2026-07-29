@@ -366,6 +366,25 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
       type: 'PHOTO',
     };
   }
+  // Telegram also sets `document` for animations for backward compatibility.
+  // Prefer the more specific field so GIF/MP4 animations keep their semantics.
+  if (message.animation) {
+    return {
+      ...base,
+      content: {
+        caption: message.caption ?? null,
+        duration: message.animation.duration,
+        fileId: message.animation.file_id,
+        fileName: message.animation.file_name ?? null,
+        fileSize: message.animation.file_size ?? null,
+        fileUniqueId: message.animation.file_unique_id,
+        height: message.animation.height,
+        mimeType: message.animation.mime_type ?? null,
+        width: message.animation.width,
+      },
+      type: 'ANIMATION',
+    };
+  }
   if (message.document) {
     return {
       ...base,
@@ -386,7 +405,6 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
       ['audio', 'AUDIO'],
       ['voice', 'VOICE'],
       ['video_note', 'VIDEO_NOTE'],
-      ['animation', 'ANIMATION'],
     ] as const
   ).find(([field]) => message[field] !== undefined);
   if (media) {

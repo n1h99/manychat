@@ -38,6 +38,13 @@ export const telegramInboundFixtures = {
       },
       caption: 'welcome',
       chat: { id: 1001, type: 'private' },
+      document: {
+        file_id: 'animation-file-id',
+        file_name: 'welcome.gif',
+        file_size: 2048,
+        file_unique_id: 'animation-unique-id',
+        mime_type: 'image/gif',
+      },
       from: telegramUser,
       message_id: 17,
     },
