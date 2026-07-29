@@ -33,12 +33,33 @@ export class CrmOutboundService {
     private readonly outboundQueue: TelegramOutboundQueueService,
   ) {}
 
-  async assertProjectRoute(crmProjectId: string, omnicusProjectId: string): Promise<void> {
+  async connectionStatus(authenticatedProjectId?: string) {
+    if (!authenticatedProjectId) return { mode: 'legacy', status: 'ACTIVE' as const };
+    const connection = await this.database.client.crmProjectConfig.findUnique({
+      select: {
+        crmProjectId: true,
+        projectId: true,
+        provider: true,
+        status: true,
+      },
+      where: { projectId: authenticatedProjectId },
+    });
+    if (!connection || connection.status !== 'ACTIVE')
+      throw new NotFoundException({ code: 'CRM_CONNECTION_NOT_FOUND' });
+    return connection;
+  }
+
+  async assertProjectRoute(
+    crmProjectId: string,
+    omnicusProjectId: string,
+    authenticatedProjectId?: string,
+  ): Promise<void> {
     const project = await this.database.client.project.findUnique({
       include: { crmConfig: true },
       where: { id: omnicusProjectId },
     });
     if (
+      (authenticatedProjectId !== undefined && authenticatedProjectId !== omnicusProjectId) ||
       !project ||
       project.status !== 'ACTIVE' ||
       !project.crmConfig?.enabled ||
@@ -54,12 +75,14 @@ export class CrmOutboundService {
     dto: CrmOutboundMessageDto,
     idempotencyKey: string,
     correlationId: string,
+    authenticatedProjectId?: string,
   ): Promise<CrmOutboundQueuedResult> {
     const project = await this.database.client.project.findUnique({
       include: { crmConfig: true },
       where: { id: dto.omnicusProjectId },
     });
     if (
+      (authenticatedProjectId !== undefined && authenticatedProjectId !== dto.omnicusProjectId) ||
       !project ||
       project.status !== 'ACTIVE' ||
       !project.crmConfig?.enabled ||
@@ -275,12 +298,17 @@ export class CrmOutboundService {
     operationId: string,
     crmProjectId: string,
     omnicusProjectId: string,
+    authenticatedProjectId?: string,
   ): Promise<CrmOutboundStatusResult> {
     const project = await this.database.client.project.findUnique({
       include: { crmConfig: true },
       where: { id: omnicusProjectId },
     });
-    if (!project?.crmConfig?.enabled || project.crmConfig.crmProjectId !== crmProjectId)
+    if (
+      (authenticatedProjectId !== undefined && authenticatedProjectId !== omnicusProjectId) ||
+      !project?.crmConfig?.enabled ||
+      project.crmConfig.crmProjectId !== crmProjectId
+    )
       throw new NotFoundException({
         code: 'CRM_PROJECT_ROUTE_NOT_FOUND',
         message: 'CRM project route was not found',

@@ -204,6 +204,35 @@ never exposes request payload, credentials, or provider raw errors.
 For a real CRM, use the reconciliation contract in
 `docs/CRM_CONTRACT_REQUIRED.md`; never infer delivery from a timeout alone.
 
+### Pair a CRM without project-specific Railway variables
+
+Railway keeps only platform switches and master encryption keys. Each external
+CRM tenant is connected from the applications:
+
+1. In the Omnicus project, open CRM integration, save the external
+   `crmProjectId`, and generate a pairing code.
+2. Within ten minutes, open the CRM Integrations screen and submit its Omnicus
+   API origin, the code, and the same `crmProjectId`.
+3. Both backends exchange independent random service credentials. Omnicus
+   encrypts the CRM credential with `CHANNEL_SECRETS_KEY`; Cyber Pulse encrypts
+   its Omnicus credential with the installation-wide
+   `INTEGRATION_SECRETS_KEY`. Only inbound token hashes are searchable.
+4. Run **Test connection** from either screen. An active result must contain
+   only safe project and lifecycle metadata.
+
+The code is single-use and expires after ten minutes. If the CRM loses the
+successful response before persisting it, generate a new code; do not attempt to
+recover credentials from logs or the database. Disabling a connection stops
+new service authentication but does not delete contacts, messages, operations,
+or audit records.
+
+Each external `(provider, crmProjectId)` can belong to only one Omnicus project.
+To move a CRM tenant, disable the old connection and perform a controlled
+re-pairing after confirming that no old worker is still dispatching operations.
+Legacy `CRM_BASE_URL`, `CRM_AUTH_TOKEN`, and `CRM_INBOUND_AUTH_TOKEN` values are
+temporary fallback inputs only and must not be copied when onboarding another
+project.
+
 ## Telegram media and template assets
 
 `MediaAsset` is the lifecycle source of truth. Inbound Telegram photo/document

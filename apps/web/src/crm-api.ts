@@ -4,11 +4,24 @@ import { apiRequest } from './api';
 import { useAuth } from './auth';
 
 export interface CrmProjectConfig {
+  baseUrl: string | null;
+  capabilities: Record<string, unknown>;
   crmProjectId: string;
   defaultPipeline: string | null;
   defaultStage: string | null;
   enabled: boolean;
   fieldMapping: Record<string, unknown>;
+  lastErrorAt: string | null;
+  lastTestedAt: string | null;
+  paired: boolean;
+  provider: 'CYBER_PULSE';
+  status: 'DRAFT' | 'PAIRING' | 'ACTIVE' | 'DISABLED' | 'ERROR';
+}
+
+export interface CrmPairing {
+  expiresAt: string;
+  omnicusApiUrl: string;
+  pairingCode: string;
 }
 
 export interface CrmOperation {
@@ -40,7 +53,13 @@ export function useSaveCrmProjectConfig(projectId?: string) {
   const { accessToken } = useAuth();
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: CrmProjectConfig) =>
+    mutationFn: (input: {
+      crmProjectId: string;
+      defaultPipeline: string | null;
+      defaultStage: string | null;
+      enabled: boolean;
+      fieldMapping: Record<string, unknown>;
+    }) =>
       apiRequest<CrmProjectConfig>(
         `/api/v1/projects/${projectId}/crm-config`,
         { body: JSON.stringify(input), method: 'PUT' },
@@ -48,6 +67,41 @@ export function useSaveCrmProjectConfig(projectId?: string) {
       ),
     onSuccess: () => client.invalidateQueries({ queryKey: ['crm-config', projectId] }),
   });
+}
+
+export function useCrmConnectionMutations(projectId?: string) {
+  const { accessToken } = useAuth();
+  const client = useQueryClient();
+  const invalidate = () => client.invalidateQueries({ queryKey: ['crm-config', projectId] });
+  return {
+    disable: useMutation({
+      mutationFn: () =>
+        apiRequest<CrmProjectConfig>(
+          `/api/v1/projects/${projectId}/crm-config/disable`,
+          { method: 'POST' },
+          accessToken,
+        ),
+      onSuccess: invalidate,
+    }),
+    pairing: useMutation({
+      mutationFn: (crmProjectId: string) =>
+        apiRequest<CrmPairing>(
+          `/api/v1/projects/${projectId}/crm-config/pairing`,
+          { body: JSON.stringify({ crmProjectId }), method: 'POST' },
+          accessToken,
+        ),
+      onSuccess: invalidate,
+    }),
+    test: useMutation({
+      mutationFn: () =>
+        apiRequest<{ ok: boolean; status: CrmProjectConfig['status'] }>(
+          `/api/v1/projects/${projectId}/crm-config/test`,
+          { method: 'POST' },
+          accessToken,
+        ),
+      onSuccess: invalidate,
+    }),
+  };
 }
 
 export function useCrmOperations(projectId?: string) {

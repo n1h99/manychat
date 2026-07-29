@@ -796,3 +796,48 @@ independent external side effects with separate retry/unknown states. A CRM
 outage cannot roll back a Telegram send. PostgreSQL remains the recovery source
 of truth, concurrent worker replicas are harmless, and no Telegram credential,
 raw payload, or signed media URL is persisted in the CRM operation journal.
+
+## ADR-038: CRM connections are paired and routed per project
+
+**Status:** Accepted, 2026-07-29.
+
+**Context:** `CrmProjectConfig` already isolates external project mapping, but
+the CRM base URL and both service credentials are deployment-wide environment
+variables. That permits multiple Omnicus projects to target one CRM deployment,
+but it cannot safely connect independent CRM installations without editing
+Railway variables and restarting every service.
+
+**Decision:** Each Omnicus project owns at most one active `CrmProjectConfig`.
+The record contains the CRM adapter, exact HTTPS origin, external project ID,
+connection status, capabilities, a hash of the CRM-to-Omnicus Bearer token and
+an AES-256-GCM envelope for the Omnicus-to-CRM Bearer token. Encryption uses the
+existing `CHANNEL_SECRETS_KEY`; AAD binds the ciphertext to the Omnicus project,
+CRM connection ID, adapter and secret field.
+
+Pairing is an explicit, short-lived handshake:
+
+1. An Omnicus project administrator requests a random, single-use pairing code.
+   PostgreSQL stores only its SHA-256 hash and expiry.
+2. A CRM administrator submits that code and the Omnicus API origin from the CRM
+   integrations screen.
+3. The CRM creates its own random inbound credential and sends it, its exact
+   public origin and external CRM project ID to the public Omnicus pairing
+   endpoint over HTTPS.
+4. Omnicus consumes the code atomically, stores the CRM credential encrypted,
+   creates a separate CRM-to-Omnicus credential, stores only its hash and
+   returns that credential once.
+5. The CRM stores the returned credential encrypted with its deployment master
+   key. Neither side returns either credential after pairing.
+
+All integration requests authenticate to one connection before project routing
+is evaluated. A valid token for one connection cannot address another Omnicus
+or CRM project. Test, disable and credential rotation are audited and never
+include secrets. Legacy environment credentials may be read only as a bounded
+migration fallback for an already deployed connection; new connections never
+depend on them.
+
+**Consequences:** Adding another CRM deployment is an application operation,
+not a Railway configuration change. Railway retains only infrastructure-wide
+master encryption keys and platform resources. A lost pairing response is
+treated as an unknown provisioning result: the operator starts a new pairing,
+which rotates both credentials and invalidates the unfinished attempt.

@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   Param,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -26,7 +27,10 @@ import {
 } from '@nestjs/swagger';
 
 import { MediaService } from '../media/media.service';
-import { CrmIntegrationAuthGuard } from './crm-integration-auth.guard';
+import {
+  CrmIntegrationAuthGuard,
+  type AuthenticatedCrmIntegrationRequest,
+} from './crm-integration-auth.guard';
 import { CrmOutboundService } from './crm-outbound.service';
 import { CrmMediaUploadDto, CrmOperationQueryDto, CrmOutboundMessageDto } from './dto';
 
@@ -40,6 +44,12 @@ export class CrmIntegrationController {
     @Inject(CrmOutboundService) private readonly outbound: CrmOutboundService,
     @Inject(MediaService) private readonly media: MediaService,
   ) {}
+
+  @Get('connection')
+  @ApiOkResponse({ description: 'Authenticated CRM connection metadata' })
+  async connection(@Req() request: AuthenticatedCrmIntegrationRequest) {
+    return this.outbound.connectionStatus(request.crmIntegration?.projectId);
+  }
 
   @Post('media')
   @HttpCode(200)
@@ -75,9 +85,14 @@ export class CrmIntegrationController {
       | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
     this.assertHeaders(idempotencyKey, correlationId);
-    await this.outbound.assertProjectRoute(dto.crmProjectId, dto.omnicusProjectId);
+    await this.outbound.assertProjectRoute(
+      dto.crmProjectId,
+      dto.omnicusProjectId,
+      request.crmIntegration?.projectId,
+    );
     const asset = await this.media.uploadFromService(
       dto.omnicusProjectId,
       dto.kind,
@@ -103,16 +118,31 @@ export class CrmIntegrationController {
     @Body() dto: CrmOutboundMessageDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Headers('x-correlation-id') correlationId: string | undefined,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
     this.assertHeaders(idempotencyKey, correlationId);
-    return this.outbound.queue(dto, idempotencyKey!, correlationId!);
+    return this.outbound.queue(
+      dto,
+      idempotencyKey!,
+      correlationId!,
+      request.crmIntegration?.projectId,
+    );
   }
 
   @Get('operations/:operationId')
   @ApiQuery({ type: CrmOperationQueryDto })
   @ApiOkResponse({ description: 'Current durable Telegram delivery status' })
-  async operation(@Param('operationId') operationId: string, @Query() query: CrmOperationQueryDto) {
-    return this.outbound.status(operationId, query.crmProjectId, query.omnicusProjectId);
+  async operation(
+    @Param('operationId') operationId: string,
+    @Query() query: CrmOperationQueryDto,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    return this.outbound.status(
+      operationId,
+      query.crmProjectId,
+      query.omnicusProjectId,
+      request.crmIntegration?.projectId,
+    );
   }
 
   private assertHeaders(

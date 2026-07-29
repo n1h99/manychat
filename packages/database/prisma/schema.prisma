@@ -113,6 +113,18 @@ enum CrmOperationType {
   FORWARD_OUTBOUND_MESSAGE
 }
 
+enum CrmProvider {
+  CYBER_PULSE
+}
+
+enum CrmConnectionStatus {
+  DRAFT
+  PAIRING
+  ACTIVE
+  DISABLED
+  ERROR
+}
+
 enum NormalizedEventType {
   MESSAGE
   COMMAND
@@ -1157,20 +1169,32 @@ model BroadcastRecipient {
 }
 
 model CrmProjectConfig {
-  id                   String   @id @default(uuid())
-  projectId            String   @unique
-  crmProjectId         String
-  fieldMapping         Json     @default("{}")
-  defaultPipeline      String?
-  defaultStage         String?
-  additionalParameters Json     @default("{}")
-  enabled              Boolean  @default(true)
-  createdAt            DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
-  project              Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id                       String              @id @default(uuid())
+  projectId                String              @unique
+  provider                 CrmProvider         @default(CYBER_PULSE)
+  status                   CrmConnectionStatus @default(DRAFT)
+  crmProjectId             String
+  baseUrl                  String?
+  credentialsEncrypted     Json?
+  inboundTokenHash         String?             @unique
+  pairingCodeHash          String?             @unique
+  pairingExpiresAt         DateTime?           @db.Timestamptz(3)
+  capabilities             Json                @default("{}")
+  fieldMapping             Json                @default("{}")
+  defaultPipeline          String?
+  defaultStage             String?
+  additionalParameters     Json                @default("{}")
+  enabled                  Boolean             @default(true)
+  lastTestedAt             DateTime?           @db.Timestamptz(3)
+  lastErrorAt              DateTime?           @db.Timestamptz(3)
+  createdAt                DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime             @updatedAt @db.Timestamptz(3)
+  project                  Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
 
   @@unique([projectId, id])
   @@unique([projectId, crmProjectId])
+  @@unique([provider, crmProjectId])
+  @@index([status, pairingExpiresAt])
   @@map("crm_project_configs")
 }
 

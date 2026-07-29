@@ -273,14 +273,6 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
         path: ['CORS_ALLOWED_ORIGINS'],
       });
     }
-
-    if (environment.CRM_INBOUND_ENABLED && environment.CRM_INBOUND_AUTH_TOKEN === undefined) {
-      context.addIssue({
-        code: 'custom',
-        message: 'CRM_INBOUND_AUTH_TOKEN is required when CRM inbound API is enabled',
-        path: ['CRM_INBOUND_AUTH_TOKEN'],
-      });
-    }
   })
   .transform((environment) => ({
     ...environment,
@@ -337,23 +329,6 @@ export const workerEnvironmentSchema = serviceEnvironmentSchema
         message: 'Demo jobs are allowed only in development or test',
         path: ['DEMO_JOB_ENABLED'],
       });
-    }
-
-    if (environment.CRM_INTEGRATION_ENABLED) {
-      if (environment.CRM_BASE_URL === undefined) {
-        context.addIssue({
-          code: 'custom',
-          message: 'CRM_BASE_URL is required when CRM integration is enabled',
-          path: ['CRM_BASE_URL'],
-        });
-      }
-      if (environment.CRM_AUTH_TOKEN === undefined) {
-        context.addIssue({
-          code: 'custom',
-          message: 'CRM_AUTH_TOKEN is required when CRM integration is enabled',
-          path: ['CRM_AUTH_TOKEN'],
-        });
-      }
     }
 
     if (

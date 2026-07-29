@@ -1,4 +1,13 @@
-import { IsBoolean, IsObject, IsOptional, IsString, Length } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsBoolean,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Length,
+  MaxLength,
+} from 'class-validator';
 
 export class UpsertCrmProjectConfigDto {
   @IsString()
@@ -36,4 +45,33 @@ export class RetryCrmOperationDto {
   @IsOptional()
   @IsBoolean()
   confirmUnknownDelivery?: boolean;
+}
+
+export class StartCrmPairingDto {
+  @IsString()
+  @Length(1, 160)
+  crmProjectId!: string;
+}
+
+export class CompleteCrmPairingDto {
+  @IsString()
+  @Length(20, 256)
+  pairingCode!: string;
+
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(512)
+  crmBaseUrl!: string;
+
+  @IsString()
+  @Length(1, 160)
+  crmProjectId!: string;
+
+  @ApiProperty({ writeOnly: true })
+  @IsString()
+  @Length(32, 512)
+  crmInboundAuthToken!: string;
+
+  @IsOptional()
+  @IsObject()
+  capabilities?: Record<string, unknown>;
 }

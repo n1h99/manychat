@@ -49,13 +49,13 @@ The worker is enabled with:
 
 ```text
 CRM_INTEGRATION_ENABLED=true
-CRM_BASE_URL=https://cyber-pulse-back-staging.up.railway.app
-CRM_AUTH_TOKEN=<Cyber Pulse OMNICUS_INBOUND_AUTH_TOKEN value>
 ```
 
-`CRM_AUTH_TOKEN` is required only in the worker and is never stored in
-PostgreSQL. `CrmProjectConfig.crmProjectId` selects the CRM project for each
-Omnicus project.
+New CRM connections are paired per project from the application UI. Pairing
+stores the exact CRM origin and an encrypted project-scoped credential in
+`CrmProjectConfig`; neither secret is exposed to the browser after the
+exchange. `CRM_BASE_URL` and `CRM_AUTH_TOKEN` are bounded compatibility inputs
+for connections created before ADR-038 and must not be used for new projects.
 
 The PostgreSQL outbox remains the source of truth. A request timeout is
 reconciled by idempotency key. If reconciliation cannot determine the result,
@@ -72,6 +72,10 @@ CRM_INBOUND_ENABLED=true
 CRM_INBOUND_AUTH_TOKEN=<different random service token>
 ```
 
+New pairings generate a separate inbound token for every project and store only
+its SHA-256 hash. `CRM_INBOUND_AUTH_TOKEN` remains a bounded compatibility
+credential for the already deployed legacy connection.
+
 The API validates the configured `crmProjectId` to `omnicusProjectId` mapping,
 contact, channel identity and connection before creating a Telegram
 `Message`/`OutboxRecord` transaction. Redis enqueue failure does not remove the
@@ -80,6 +84,9 @@ enqueues it.
 
 The create response means `QUEUED`, not `SENT`. Cyber Pulse reconciles the
 operation endpoint before displaying a delivery result.
+
+The machine-readable credential exchange is documented in
+[`CRM_PAIRING_OPENAPI.yaml`](CRM_PAIRING_OPENAPI.yaml).
 
 CRM uploads outbound files first through
 `POST /integrations/v1/crm/media`, then references the returned

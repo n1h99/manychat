@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
@@ -6,7 +6,7 @@ import { PermissionGuard } from '../access/permission.guard';
 import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { UpsertCrmProjectConfigDto } from './dto';
+import { StartCrmPairingDto, UpsertCrmProjectConfigDto } from './dto';
 import { CrmService } from './crm.service';
 
 @ApiTags('crm')
@@ -32,6 +32,38 @@ export class CrmController {
   ) {
     return {
       data: await this.crm.upsertConfig(projectId, body, request.auth!, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Post('pairing')
+  @RequireProjectPermission('integrations:manage')
+  @ApiBody({ type: StartCrmPairingDto })
+  async startPairing(
+    @Param('projectId') projectId: string,
+    @Body() body: StartCrmPairingDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.crm.startPairing(projectId, body, request.auth!, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Post('test')
+  @RequireProjectPermission('integrations:manage')
+  async test(@Param('projectId') projectId: string, @Req() request: AuthenticatedRequest) {
+    return {
+      data: await this.crm.testConnection(projectId, request.auth!, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Post('disable')
+  @RequireProjectPermission('integrations:manage')
+  async disable(@Param('projectId') projectId: string, @Req() request: AuthenticatedRequest) {
+    return {
+      data: await this.crm.disableConnection(projectId, request.auth!, this.context(request)),
       meta: {},
     };
   }

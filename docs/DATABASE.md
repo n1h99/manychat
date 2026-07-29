@@ -468,8 +468,9 @@ model CrmProjectConfig {
 ```
 
 `Project.crmProjectId` удаляется: единственный источник project-specific CRM
-настроек — `CrmProjectConfig`. `CRM_BASE_URL` и `CRM_AUTH_TOKEN` остаются только
-в environment.
+настроек — `CrmProjectConfig`. Новые подключения хранят exact base URL и
+зашифрованный credential в этой записи; `CRM_BASE_URL` и `CRM_AUTH_TOKEN`
+остаются только migration fallback для старого deployment.
 
 ## Contacts, fields, tags и consent
 
@@ -1057,12 +1058,35 @@ Delay и Subflow не входят в pilot.
 
 ### CRM mock outbox (Stage 5)
 
+#### Per-project CRM connection registry
+
+`CrmProjectConfig` is also the durable CRM connection record. In addition to
+field mapping it stores `provider`, exact `baseUrl`, lifecycle `status`,
+capabilities, `lastTestedAt`/`lastErrorAt`, an AES-256-GCM
+`credentialsEncrypted` envelope and a SHA-256 `inboundTokenHash`.
+`pairingCodeHash` and `pairingExpiresAt` are short-lived and cleared atomically
+when a pairing is consumed.
+
+Both token hashes and `(provider, crmProjectId)` are globally unique, so one
+external CRM tenant cannot remain active against two Omnicus projects. All
+connection access is then checked against `(projectId, crmProjectId)`. The
+encrypted credential AAD is
+`projectId:crmConfigId:crm:authToken`; copying its ciphertext to another project
+or record therefore fails authentication. Pairing, status and expiry timestamps
+use `TIMESTAMPTZ(3)`. The polling index on `(status, pairingExpiresAt)` supports
+bounded expiry cleanup without scanning unrelated tenant data.
+
+`CRM_BASE_URL`, `CRM_AUTH_TOKEN` and `CRM_INBOUND_AUTH_TOKEN` are legacy
+migration inputs only. New connections are created through application pairing
+and never require project-specific Railway variables.
+
 CRM side effects не используют `ChannelConnection`: один `OutboxRecord` имеет
 `kind` (`TELEGRAM` или `CRM`), а `connectionId` обязателен только для Telegram
 operation. CRM operation хранится отдельно в `CrmOperation` и ссылается на
 outbox через composite `(projectId, outboxRecordId)`. `CrmProjectConfig`
-содержит только project-specific mapping и routing; base URL и auth token
-остаются исключительно environment configuration. Это позволяет mock CRM
+содержит project-specific mapping, routing, exact base URL и зашифрованный
+service credential. Environment URL/token остаются только ограниченным
+fallback для deployment до появления application pairing. Это позволяет mock CRM
 обрабатывать те же transactional outbox состояния без утверждений о реальном
 provider payload.
 

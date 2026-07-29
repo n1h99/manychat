@@ -323,6 +323,22 @@ delivery reconciliation contract. See `docs/CRM_INTEGRATION.md`.
 Live staging E2E and Railway credential installation remain external acceptance
 gates; the legacy CRM cleanup must not run before those checks pass.
 
+### Per-project CRM connection registry (2026-07-29)
+
+- `CrmProjectConfig` owns the adapter, exact CRM origin, external project ID,
+  connection status and per-direction credentials.
+- A short-lived one-time pairing code replaces manual project-specific Railway
+  variables.
+- Omnicus-to-CRM credentials are encrypted with the existing application master
+  key; CRM-to-Omnicus credentials are stored only as hashes.
+- API authentication resolves the connection before validating project routing.
+- The worker resolves a fresh project-scoped `CrmClient` from PostgreSQL for
+  every CRM outbox attempt.
+- The Cyber Pulse staging integrations screen completes pairing and stores its
+  side of the credentials encrypted in MongoDB.
+- Legacy environment routing is a migration fallback only and is not used for
+  newly paired projects.
+
 ### Key tests
 
 - CRM mock success;

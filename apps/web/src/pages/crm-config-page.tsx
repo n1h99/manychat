@@ -1,6 +1,8 @@
 import {
   Alert,
   Button,
+  Card,
+  Descriptions,
   Form,
   Input,
   Popconfirm,
@@ -12,10 +14,13 @@ import {
   Typography,
   message,
 } from 'antd';
+import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import {
   type CrmOperation,
+  type CrmPairing,
+  useCrmConnectionMutations,
   useCrmOperations,
   useCrmProjectConfig,
   useRetryCrmOperation,
@@ -30,6 +35,8 @@ export function CrmConfigPage() {
   const operations = useCrmOperations(projectId);
   const retry = useRetryCrmOperation(projectId);
   const save = useSaveCrmProjectConfig(projectId);
+  const connectionMutations = useCrmConnectionMutations(projectId);
+  const [pairing, setPairing] = useState<CrmPairing>();
   if (access.isLoading || config.isLoading) return <Spin />;
   if (!hasProjectPermission(access.data, 'integrations:manage'))
     return (
@@ -51,6 +58,82 @@ export function CrmConfigPage() {
         message="Cyber Pulse CRM"
         description="Здесь настраиваются project routing и mapping для подключённой Cyber Pulse CRM."
       />
+      <Card size="small" title="Project CRM connection" style={{ marginBlock: 16 }}>
+        <Descriptions
+          column={2}
+          items={[
+            {
+              key: 'status',
+              label: 'Status',
+              children: <Tag>{config.data?.status ?? 'DRAFT'}</Tag>,
+            },
+            {
+              key: 'provider',
+              label: 'Provider',
+              children: config.data?.provider ?? 'CYBER_PULSE',
+            },
+            { key: 'baseUrl', label: 'CRM URL', children: config.data?.baseUrl ?? 'Not paired' },
+            {
+              key: 'tested',
+              label: 'Last test',
+              children: config.data?.lastTestedAt
+                ? new Date(config.data.lastTestedAt).toLocaleString()
+                : 'Never',
+            },
+          ]}
+          size="small"
+        />
+        <Typography.Paragraph type="secondary">
+          Generate a one-time code, then enter the Omnicus API URL and code on the CRM Integrations
+          page. Per-project credentials are exchanged automatically and are never shown again.
+        </Typography.Paragraph>
+        {pairing ? (
+          <Alert
+            description={
+              <>
+                <div>Omnicus API URL: {pairing.omnicusApiUrl}</div>
+                <div>Pairing code: {pairing.pairingCode}</div>
+                <div>Expires: {new Date(pairing.expiresAt).toLocaleString()}</div>
+              </>
+            }
+            message="Copy these values to CRM"
+            showIcon
+            type="success"
+          />
+        ) : null}
+        <Button
+          loading={connectionMutations.pairing.isPending}
+          onClick={async () => {
+            const crmProjectId = config.data?.crmProjectId;
+            if (!crmProjectId) {
+              void message.error('Save CRM project ID first.');
+              return;
+            }
+            setPairing(await connectionMutations.pairing.mutateAsync(crmProjectId));
+          }}
+        >
+          {config.data?.paired ? 'Rotate / pair again' : 'Generate pairing code'}
+        </Button>{' '}
+        <Button
+          disabled={!config.data?.paired}
+          loading={connectionMutations.test.isPending}
+          onClick={async () => {
+            const result = await connectionMutations.test.mutateAsync();
+            if (result.ok) void message.success('CRM connection verified.');
+            else void message.error('CRM connection test failed.');
+          }}
+        >
+          Test connection
+        </Button>{' '}
+        <Popconfirm
+          title="Disable this CRM connection?"
+          onConfirm={() => connectionMutations.disable.mutateAsync()}
+        >
+          <Button danger disabled={!config.data}>
+            Disable
+          </Button>
+        </Popconfirm>
+      </Card>
       <Form
         initialValues={initialValues}
         layout="vertical"
