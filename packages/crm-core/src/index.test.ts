@@ -161,6 +161,52 @@ describe('HttpCrmClient', () => {
     });
   });
 
+  it('sends confirmed automation messages to the outbound history contract', async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      Response.json({
+        crmLeadId: 'crm-lead-a',
+        crmMessageId: 'crm-message-a',
+        mode: 'created',
+        operationId: 'operation-provider-a',
+      }),
+    );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await client.forwardOutboundMessage(context, {
+      contactId: 'contact-a',
+      deliveryStatus: 'SENT',
+      identity: leadInput.identity,
+      inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+      messageId: '11111111-1111-4111-8111-111111111111',
+      occurredAt: '2026-07-29T00:00:00.000Z',
+      providerMessageId: 'telegram-42',
+      scenarioExecutionId: '22222222-2222-4222-8222-222222222222',
+      source: 'AUTOMATION',
+      text: 'What is your budget?',
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      'https://crm.example.test/integrations/v1/omnicus/messages/outbound',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const request = fetchImplementation.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      crmProjectId: 'cyber-pulse-staging',
+      deliveryStatus: 'SENT',
+      inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+      messageId: '11111111-1111-4111-8111-111111111111',
+      omnicusContactId: 'contact-a',
+      omnicusProjectId: 'project-a',
+      providerMessageId: 'telegram-42',
+      source: 'AUTOMATION',
+    });
+  });
+
   it('classifies rate limits without exposing the provider response', async () => {
     const fetchImplementation = vi
       .fn()

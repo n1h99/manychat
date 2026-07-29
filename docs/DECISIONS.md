@@ -763,3 +763,36 @@ that exact provider kind, but may materialize the document when its bytes,
 declared MIME type and filename match one of the explicitly recognized safe
 signatures. This does not reinterpret the provider event as an animation,
 audio or video message.
+
+## ADR-037: Confirmed Omnicus outbound messages are synchronized to CRM history
+
+**Status:** Accepted, 2026-07-29.
+
+**Context:** Cyber Pulse receives normalized inbound Telegram events and records
+messages created from its own composer, but an outbound message created by an
+Omnicus automation or broadcast was absent from CRM history. A callback could
+therefore arrive before CRM knew the source message and could not render a
+reference preview.
+
+**Decision:** A Telegram outbound message is eligible for CRM history only
+after Telegram confirms it as `SENT`. In the same PostgreSQL transaction that
+stores the provider message ID and completes the Telegram outbox, Omnicus
+creates a separate CRM outbox intent with the stable key
+`crm-outbound-history-<messageId>`. CRM-originated messages are excluded to
+prevent a synchronization loop.
+
+The explicit service contract is
+`POST /integrations/v1/omnicus/messages/outbound`; an outbound event is never
+misrepresented as inbound. It carries the stable Omnicus message UUID, the
+Telegram provider message ID, original occurrence time, source
+(`AUTOMATION`, `BROADCAST`, or `SYSTEM`), normalized text/media/buttons, and
+project-scoped identity. A bounded recovery scan creates missing intents for
+historical automation/broadcast messages. CRM must accept the source message
+after an already stored callback and resolve that reference by
+`sourceMessageId`.
+
+**Consequences:** Telegram delivery and CRM history synchronization remain two
+independent external side effects with separate retry/unknown states. A CRM
+outage cannot roll back a Telegram send. PostgreSQL remains the recovery source
+of truth, concurrent worker replicas are harmless, and no Telegram credential,
+raw payload, or signed media URL is persisted in the CRM operation journal.

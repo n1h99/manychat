@@ -478,3 +478,12 @@ It does not add WhatsApp, Instagram, arbitrary URL fetching, user-account
 Telegram behavior, secret-chat access, an FFmpeg runtime dependency or
 unbounded Telegram history retrieval. Every provider call continues through
 PostgreSQL inbox/outbox state and existing retry/unknown rules.
+
+## Omnicus outbound history synchronization
+
+Confirmed Telegram messages created by automation and broadcasts are mirrored
+to CRM through a dedicated outbound-history contract. The Telegram worker
+creates the CRM outbox intent transactionally with `Message=SENT`; a bounded
+CRM recovery scan backfills earlier sent automation/broadcast messages.
+CRM-originated outbound messages are excluded to prevent loops. This slice does
+not add a new channel, CRM provider behavior, or UI.

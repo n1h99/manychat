@@ -13,6 +13,9 @@ const disabledClient: CrmClient = {
   forwardInboundMessage: async () => {
     throw new CrmClientError('PERMANENT_FAILURE', 'crm_integration_disabled');
   },
+  forwardOutboundMessage: async () => {
+    throw new CrmClientError('PERMANENT_FAILURE', 'crm_integration_disabled');
+  },
   reconcile: async () => ({ status: 'NOT_FOUND' }),
 };
 

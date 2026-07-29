@@ -15,6 +15,7 @@ Omnicus calls only these CRM endpoints:
 ```text
 POST /integrations/v1/omnicus/leads/upsert
 POST /integrations/v1/omnicus/messages/inbound
+POST /integrations/v1/omnicus/messages/outbound
 GET  /integrations/v1/omnicus/operations?crmProjectId=...&idempotencyKey=...
 ```
 
@@ -22,6 +23,9 @@ The exact normalized inbound message extension is documented in
 `docs/OMNICUS_TO_CRM_OPENAPI.yaml`. It preserves the provider-independent
 category in `media.type`, the exact Telegram kind in `media.kind`, and callback
 choices in `interactive`.
+
+CRM implementation and deployment requirements for outbound history are in
+`docs/CRM_OUTBOUND_HISTORY_HANDOFF.md`.
 
 Every request uses service Bearer authentication and a correlation ID. Mutating
 requests also include the durable Omnicus outbox ID as `Idempotency-Key`.
@@ -31,6 +35,13 @@ provider credentials or encrypted secret envelopes. When an inbound Telegram
 file can be materialized, `media.downloadUrl` is a private signed URL with a
 short expiry. It exists only in the outbound request and is never persisted by
 Omnicus. CRM must download it immediately and store its own copy.
+
+Automation, broadcast and other Omnicus-originated Telegram messages are sent
+to the outbound history endpoint only after Telegram confirms `SENT`.
+CRM-originated messages are not echoed back. The history operation carries the
+stable Omnicus message UUID and Telegram provider message ID, allowing a
+callback that arrived first to resolve its `sourceMessageId` later. Telegram
+delivery success is not rolled back if CRM history synchronization is delayed.
 
 ## Direction: Omnicus to CRM
 

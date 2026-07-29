@@ -1252,3 +1252,16 @@ CRM history synchronization creates no history snapshot table. It uses existing
 `crm-history-<messageId>` keys. Only bounded, earlier inbound messages with a
 normalized event are eligible. This makes repeated lead upserts and concurrent
 worker replicas harmless while retaining the normal CRM retry/unknown journal.
+
+Confirmed outbound CRM history uses the same journal with a distinct
+`FORWARD_OUTBOUND_MESSAGE` operation. `CrmOperation.messageId` has a tenant-safe
+foreign key `(projectId, messageId) -> Message(projectId, id)` with
+`ON DELETE RESTRICT`; it cannot point to another project. Each successfully sent
+non-CRM Telegram message receives at most one CRM operation through the unique
+outbox relation and stable `crm-outbound-history-<messageId>` key.
+
+The CRM intent is created transactionally with the Telegram `SENT` transition.
+A bounded recovery query covers earlier `SENT` automation/broadcast messages
+that predate this migration. The journal stores only internal IDs and safe
+source metadata; signed download URLs are generated immediately before the CRM
+request and are not persisted.

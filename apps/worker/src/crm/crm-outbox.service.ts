@@ -16,12 +16,14 @@ import {
   type CrmClient,
   type CrmIdentityInput,
   type CrmInteractiveInput,
+  type CrmInlineKeyboardInput,
   type CrmMediaInput,
 } from '@omnicus/crm-core';
-import type { Prisma } from '@omnicus/database';
+import { Prisma } from '@omnicus/database';
 import { prepareMediaForTelegram, S3MediaStorage, type MediaKind } from '@omnicus/media-core';
 
 import { DatabaseService } from '../database/database.service';
+import { crmOutboundHistorySource, ensureCrmOutboundHistoryIntent } from './crm-outbound-history';
 import { CRM_CLIENT } from './crm.tokens';
 
 @Injectable()
@@ -74,6 +76,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     if (!this.config.get('CRM_INTEGRATION_ENABLED', { infer: true }) || this.scanning) return;
     this.scanning = true;
     try {
+      await this.recoverOutboundHistory();
       const leaseExpiredBefore = new Date(
         now.getTime() - this.config.get('CRM_OUTBOX_LEASE_MS', { infer: true }),
       );
@@ -95,6 +98,38 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     } finally {
       this.scanning = false;
     }
+  }
+
+  async recoverOutboundHistory(): Promise<number> {
+    const messages = await this.database.client.message.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, projectId: true },
+      take: 25,
+      where: {
+        crmOperations: { none: {} },
+        direction: 'OUTBOUND',
+        status: 'SENT',
+        OR: [
+          { metadata: { path: ['source'], equals: 'automation' } },
+          { metadata: { path: ['source'], equals: 'broadcast' } },
+          { metadata: { path: ['broadcastId'], not: Prisma.AnyNull } },
+        ],
+      },
+    });
+    let queued = 0;
+    for (const message of messages)
+      if (
+        await this.database.client.$transaction((transaction) =>
+          ensureCrmOutboundHistoryIntent(transaction, message.projectId, message.id),
+        )
+      )
+        queued += 1;
+    if (queued)
+      this.logger.log({
+        count: queued,
+        message: 'crm_outbound_history_recovered',
+      });
+    return queued;
   }
 
   private async process(
@@ -154,6 +189,13 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
             },
           },
         },
+        message: {
+          include: {
+            connection: { select: { botUsername: true } },
+            conversation: { select: { externalChatId: true } },
+            mediaAsset: true,
+          },
+        },
         outbox: { select: { attempts: true, maxAttempts: true } },
         project: { include: { crmConfig: true } },
       },
@@ -169,7 +211,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       return;
     }
 
-    const connectionId = operation.normalizedEvent?.connectionId;
+    const connectionId = operation.normalizedEvent?.connectionId ?? operation.message?.connectionId;
     const identityRow =
       operation.contact.channelIdentities.find(
         (identity) => identity.connectionId === connectionId,
@@ -179,13 +221,14 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       return;
     }
 
+    const externalChatId =
+      operation.normalizedEvent?.message?.conversation.externalChatId ??
+      operation.message?.conversation.externalChatId;
     const identity: CrmIdentityInput = {
       channel: 'telegram',
       channelIdentityId: identityRow.id,
       connectionId: identityRow.connectionId,
-      ...(operation.normalizedEvent?.message?.conversation.externalChatId
-        ? { externalChatId: operation.normalizedEvent.message.conversation.externalChatId }
-        : {}),
+      ...(externalChatId ? { externalChatId } : {}),
       externalUserId: identityRow.externalUserId,
     };
     const context = {
@@ -196,49 +239,85 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       idempotencyKey: outboxRecordId,
       projectId: operation.projectId,
     };
-    const interactive = await this.interactive(
-      operation.projectId,
-      connectionId,
-      operation.normalizedEvent?.payload,
-    );
+    const interactive =
+      operation.type === 'FORWARD_INBOUND_MESSAGE'
+        ? await this.interactive(
+            operation.projectId,
+            connectionId,
+            operation.normalizedEvent?.payload,
+          )
+        : undefined;
     const inboundText =
       this.messageText(operation.normalizedEvent?.message?.content) ??
       interactive?.displayText ??
       interactive?.data;
 
     try {
-      const result =
-        operation.type === 'CREATE_OR_UPDATE_LEAD'
-          ? await this.client.createOrUpdateLead(context, {
-              contactId: operation.contact.id,
-              contactStatus: operation.contact.status,
-              customFields: this.customFields(operation.contact),
-              displayName: operation.contact.displayName,
-              ...(operation.contact.email ? { email: operation.contact.email } : {}),
-              identity,
-              ...(operation.contact.phone ? { phone: operation.contact.phone } : {}),
-              tags: operation.contact.tags.map(({ tag }) => tag),
-              ...(operation.contact.username ? { username: operation.contact.username } : {}),
-            })
-          : await this.client.forwardInboundMessage(context, {
-              contactId: operation.contact.id,
-              identity,
-              ...(interactive ? { interactive } : {}),
-              ...(await this.media(
-                operation.projectId,
-                connectionId,
-                operation.normalizedEvent?.message?.mediaAsset,
-              )),
-              ...(operation.normalizedEvent?.message?.id
-                ? { messageId: operation.normalizedEvent.message.id }
-                : {}),
-              normalizedEventId: operation.normalizedEventId ?? operation.id,
-              occurredAt:
-                operation.normalizedEvent?.message?.createdAt.toISOString() ??
-                operation.createdAt.toISOString(),
-              senderName: operation.contact.displayName,
-              ...(inboundText === undefined ? {} : { text: inboundText }),
-            });
+      let result;
+      if (operation.type === 'CREATE_OR_UPDATE_LEAD')
+        result = await this.client.createOrUpdateLead(context, {
+          contactId: operation.contact.id,
+          contactStatus: operation.contact.status,
+          customFields: this.customFields(operation.contact),
+          displayName: operation.contact.displayName,
+          ...(operation.contact.email ? { email: operation.contact.email } : {}),
+          identity,
+          ...(operation.contact.phone ? { phone: operation.contact.phone } : {}),
+          tags: operation.contact.tags.map(({ tag }) => tag),
+          ...(operation.contact.username ? { username: operation.contact.username } : {}),
+        });
+      else if (operation.type === 'FORWARD_INBOUND_MESSAGE')
+        result = await this.client.forwardInboundMessage(context, {
+          contactId: operation.contact.id,
+          identity,
+          ...(interactive ? { interactive } : {}),
+          ...(await this.media(
+            operation.projectId,
+            connectionId,
+            operation.normalizedEvent?.message?.mediaAsset,
+          )),
+          ...(operation.normalizedEvent?.message?.id
+            ? { messageId: operation.normalizedEvent.message.id }
+            : {}),
+          normalizedEventId: operation.normalizedEventId ?? operation.id,
+          occurredAt:
+            operation.normalizedEvent?.message?.createdAt.toISOString() ??
+            operation.createdAt.toISOString(),
+          senderName: operation.contact.displayName,
+          ...(inboundText === undefined ? {} : { text: inboundText }),
+        });
+      else {
+        const message = operation.message;
+        const source = crmOutboundHistorySource(message?.metadata);
+        if (!message?.externalMessageId || !source) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_outbound_message_invalid');
+          return;
+        }
+        const metadata = this.jsonRecord(message.metadata);
+        const text = this.messageText(message.content);
+        const inlineKeyboard = this.inlineKeyboard(message.content, message.metadata);
+        result = await this.client.forwardOutboundMessage(context, {
+          contactId: operation.contact.id,
+          deliveryStatus: 'SENT',
+          identity,
+          ...(inlineKeyboard ? { inlineKeyboard } : {}),
+          ...(await this.media(operation.projectId, connectionId, message.mediaAsset)),
+          messageId: message.id,
+          occurredAt: (message.sentAt ?? message.createdAt).toISOString(),
+          providerMessageId: message.externalMessageId,
+          ...(message.connection.botUsername
+            ? { senderName: `@${message.connection.botUsername}` }
+            : {}),
+          source,
+          ...(typeof metadata?.scenarioExecutionId === 'string'
+            ? { scenarioExecutionId: metadata.scenarioExecutionId }
+            : {}),
+          ...(typeof metadata?.broadcastId === 'string'
+            ? { broadcastId: metadata.broadcastId }
+            : {}),
+          ...(text === undefined ? {} : { text }),
+        });
+      }
       await this.finishSuccess(
         operation,
         outboxRecordId,
@@ -294,7 +373,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       contactId: string | null;
       id: string;
       projectId: string;
-      type: 'CREATE_OR_UPDATE_LEAD' | 'FORWARD_INBOUND_MESSAGE';
+      type: 'CREATE_OR_UPDATE_LEAD' | 'FORWARD_INBOUND_MESSAGE' | 'FORWARD_OUTBOUND_MESSAGE';
     },
     outboxRecordId: string,
     leaseToken: string,
@@ -450,6 +529,58 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     const record = content as Record<string, unknown>;
     if (typeof record.text === 'string') return record.text;
     return typeof record.caption === 'string' ? record.caption : undefined;
+  }
+
+  private jsonRecord(
+    value: Prisma.JsonValue | null | undefined,
+  ): Record<string, unknown> | undefined {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  }
+
+  private inlineKeyboard(
+    content: Prisma.JsonValue,
+    metadata: Prisma.JsonValue | null,
+  ): CrmInlineKeyboardInput | undefined {
+    for (const source of [metadata, content]) {
+      const keyboard = this.jsonRecord(source)?.inlineKeyboard;
+      if (!Array.isArray(keyboard)) continue;
+      const result: CrmInlineKeyboardInput = [];
+      let valid = true;
+      for (const row of keyboard) {
+        if (!Array.isArray(row)) {
+          valid = false;
+          break;
+        }
+        const outputRow: CrmInlineKeyboardInput[number] = [];
+        for (const candidate of row) {
+          const button = this.jsonRecord(candidate as Prisma.JsonValue);
+          if (
+            !button ||
+            typeof button.text !== 'string' ||
+            !(
+              (typeof button.callbackData === 'string' && button.url === undefined) ||
+              (typeof button.url === 'string' && button.callbackData === undefined)
+            )
+          ) {
+            valid = false;
+            break;
+          }
+          outputRow.push({
+            text: button.text,
+            ...(typeof button.callbackData === 'string'
+              ? { callbackData: button.callbackData }
+              : {}),
+            ...(typeof button.url === 'string' ? { url: button.url } : {}),
+          });
+        }
+        if (!valid) break;
+        result.push(outputRow);
+      }
+      if (valid) return result;
+    }
+    return undefined;
   }
 
   private async media(

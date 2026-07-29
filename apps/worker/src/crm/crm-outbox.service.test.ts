@@ -43,7 +43,7 @@ function createDatabase() {
     client: {
       $transaction: (callback: (input: typeof transaction) => unknown) => callback(transaction),
       crmOperation: { findUnique: vi.fn().mockResolvedValue(operation) },
-      message: { findFirst: vi.fn() },
+      message: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       outboxRecord: {
         findMany: vi.fn().mockResolvedValue([{ id: 'outbox-a' }]),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -71,6 +71,68 @@ const config = {
 };
 
 describe('CrmOutboxService', () => {
+  it('backfills an earlier sent automation message with a stable CRM intent', async () => {
+    const transaction = {
+      crmOperation: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ id: 'crm-operation-history-a' }),
+      },
+      crmProjectConfig: {
+        findUnique: vi.fn().mockResolvedValue({ enabled: true }),
+      },
+      message: {
+        findUnique: vi.fn().mockResolvedValue({
+          contactId: 'contact-a',
+          direction: 'OUTBOUND',
+          externalMessageId: '42',
+          metadata: { source: 'automation' },
+          status: 'SENT',
+        }),
+      },
+      outboxRecord: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({
+          crmOperation: null,
+          id: 'crm-outbox-history-a',
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+    };
+    const database = {
+      client: {
+        $transaction: (callback: (input: typeof transaction) => unknown) => callback(transaction),
+        message: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: 'message-history-a', projectId: 'project-a' }]),
+        },
+      },
+    };
+    const service = new CrmOutboxService(config as never, database as never, new MockCrmClient());
+
+    await expect(service.recoverOutboundHistory()).resolves.toBe(1);
+
+    expect(database.client.message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 25,
+        where: expect.objectContaining({
+          direction: 'OUTBOUND',
+          status: 'SENT',
+        }),
+      }),
+    );
+    expect(transaction.outboxRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            idempotencyKey: 'crm-outbound-history-message-history-a',
+            projectId: 'project-a',
+          }),
+        ],
+      }),
+    );
+  });
+
   it('writes a safe CRM result and completes a claimed outbox record', async () => {
     const database = createDatabase();
     const service = new CrmOutboxService(config as never, database as never, new MockCrmClient());
@@ -116,6 +178,7 @@ describe('CrmOutboxService', () => {
         .fn()
         .mockRejectedValue(new CrmClientError('UNKNOWN', 'crm_transport_outcome_unknown')),
       forwardInboundMessage: vi.fn(),
+      forwardOutboundMessage: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -168,6 +231,7 @@ describe('CrmOutboxService', () => {
         operationId: 'operation-provider-a',
         providerReference: 'crm-message-a',
       }),
+      forwardOutboundMessage: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -194,6 +258,62 @@ describe('CrmOutboxService', () => {
           type: 'callback_query',
         },
         text: 'Under 1000',
+      }),
+    );
+  });
+
+  it('forwards a confirmed automation message with buttons to CRM history', async () => {
+    const database = createDatabase();
+    Object.assign(database.operation, {
+      message: {
+        connection: { botUsername: 'omnicus_test_bot' },
+        connectionId: 'connection-a',
+        content: {
+          inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+          text: 'What is your budget?',
+        },
+        conversation: { externalChatId: '123' },
+        createdAt: new Date('2026-07-29T00:00:00.000Z'),
+        externalMessageId: '42',
+        id: 'outbound-message-a',
+        mediaAsset: null,
+        metadata: {
+          scenarioExecutionId: 'execution-a',
+          source: 'automation',
+        },
+        sentAt: new Date('2026-07-29T00:00:01.000Z'),
+      },
+      type: 'FORWARD_OUTBOUND_MESSAGE',
+    });
+    const client = {
+      createOrUpdateLead: vi.fn(),
+      forwardInboundMessage: vi.fn(),
+      forwardOutboundMessage: vi.fn().mockResolvedValue({
+        mode: 'created',
+        operationId: 'operation-provider-a',
+        providerReference: 'crm-message-a',
+      }),
+      reconcile: vi.fn(),
+    };
+    const service = new CrmOutboxService(config as never, database as never, client);
+
+    await service.scanOnce(new Date());
+
+    expect(client.forwardOutboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        crmProjectId: 'crm-a',
+        projectId: 'project-a',
+      }),
+      expect.objectContaining({
+        contactId: 'contact-a',
+        deliveryStatus: 'SENT',
+        inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+        messageId: 'outbound-message-a',
+        providerMessageId: '42',
+        scenarioExecutionId: 'execution-a',
+        senderName: '@omnicus_test_bot',
+        source: 'AUTOMATION',
+        text: 'What is your budget?',
       }),
     );
   });

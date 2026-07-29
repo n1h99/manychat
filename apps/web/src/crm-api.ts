@@ -18,7 +18,7 @@ export interface CrmOperation {
   lastError: string | null;
   resultSafe: unknown;
   status: 'FAILED' | 'PENDING' | 'PROCESSING' | 'RETRY' | 'SUCCEEDED' | 'UNKNOWN';
-  type: 'CREATE_OR_UPDATE_LEAD' | 'FORWARD_INBOUND_MESSAGE';
+  type: 'CREATE_OR_UPDATE_LEAD' | 'FORWARD_INBOUND_MESSAGE' | 'FORWARD_OUTBOUND_MESSAGE';
   updatedAt: string;
 }
 

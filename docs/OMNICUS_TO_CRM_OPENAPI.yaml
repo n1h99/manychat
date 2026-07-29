@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Omnicus to CRM inbound messaging contract
-  version: 2.0.0
-  description: Exact extension implemented by Omnicus for normalized Telegram media and interactions.
+  title: Omnicus to CRM messaging contract
+  version: 2.1.0
+  description: Exact contract implemented by Omnicus for normalized Telegram inbound events and confirmed outbound history.
 security:
   - serviceBearer: []
 paths:
@@ -21,6 +21,27 @@ paths:
       responses:
         '200':
           description: Created or idempotently replayed CRM message.
+        '400':
+          description: Safe validation error.
+        '401':
+          description: Invalid service credential.
+        '409':
+          description: Idempotency or project mapping conflict.
+  /integrations/v1/omnicus/messages/outbound:
+    post:
+      operationId: receiveOmnicusOutboundMessage
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutboundMessage'
+      responses:
+        '200':
+          description: Created or idempotently replayed CRM outbound history message.
         '400':
           description: Safe validation error.
         '401':
@@ -141,6 +162,36 @@ components:
           type: string
           format: uuid
           description: Omnicus UUID of the outbound message whose button was pressed.
+    InlineKeyboardButton:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 64
+        callbackData:
+          type: string
+          minLength: 1
+          maxLength: 64
+        url:
+          type: string
+          format: uri
+      oneOf:
+        - required:
+            - callbackData
+        - required:
+            - url
+    InlineKeyboard:
+      type: array
+      maxItems: 8
+      items:
+        type: array
+        maxItems: 8
+        items:
+          $ref: '#/components/schemas/InlineKeyboardButton'
     InboundMessage:
       type: object
       additionalProperties: false
@@ -189,3 +240,69 @@ components:
             - media
         - required:
             - interactive
+    OutboundMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - messageId
+        - providerMessageId
+        - occurredAt
+        - deliveryStatus
+        - source
+      properties:
+        crmProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusContactId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        identity:
+          $ref: '#/components/schemas/Identity'
+        messageId:
+          type: string
+          format: uuid
+        providerMessageId:
+          type: string
+          minLength: 1
+        occurredAt:
+          type: string
+          format: date-time
+        senderName:
+          type: string
+        text:
+          type: string
+        media:
+          $ref: '#/components/schemas/Media'
+        inlineKeyboard:
+          $ref: '#/components/schemas/InlineKeyboard'
+        deliveryStatus:
+          type: string
+          enum:
+            - SENT
+        source:
+          type: string
+          enum:
+            - AUTOMATION
+            - BROADCAST
+            - SYSTEM
+        scenarioExecutionId:
+          type: string
+          format: uuid
+        broadcastId:
+          type: string
+          format: uuid
+      anyOf:
+        - required:
+            - text
+        - required:
+            - media

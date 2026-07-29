@@ -518,6 +518,32 @@ if (!proposalSql.includes('CREATE TABLE "users"')) {
   failures.push('Committed Stage 1 SQL proposal is malformed');
 }
 
+const crmOutboundHistoryMigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260729000200_crm_outbound_history/migration.sql',
+);
+if (!existsSync(crmOutboundHistoryMigrationPath)) {
+  failures.push('CRM outbound history migration is missing');
+} else {
+  const crmOutboundHistorySql = readFileSync(crmOutboundHistoryMigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  for (const fragment of [
+    'ALTER TYPE "CrmOperationType" ADD VALUE \'FORWARD_OUTBOUND_MESSAGE\'',
+    'ADD COLUMN "messageId" TEXT',
+    'CREATE UNIQUE INDEX "crm_operations_messageId_key"',
+    'CREATE INDEX "crm_operations_projectId_messageId_idx"',
+    'FOREIGN KEY ("projectId", "messageId") REFERENCES "messages"("projectId", "id")',
+    'ON DELETE RESTRICT ON UPDATE CASCADE',
+  ]) {
+    if (!crmOutboundHistorySql.includes(fragment))
+      failures.push(`CRM outbound history migration is missing invariant: ${fragment}`);
+  }
+  if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(crmOutboundHistorySql))
+    failures.push('CRM outbound history migration contains a destructive operation');
+}
+
 if (failures.length > 0) {
   for (const failure of failures) {
     process.stderr.write(`- ${failure}\n`);

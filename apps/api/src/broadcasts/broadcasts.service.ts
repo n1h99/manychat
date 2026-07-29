@@ -452,6 +452,7 @@ export class BroadcastsService {
             status: 'QUEUED',
             content: rendered.content as Prisma.InputJsonValue,
             metadata: {
+              source: 'broadcast',
               broadcastId,
               broadcastRecipientId: recipient.id,
               templateVersionId: current.templateVersionId,

@@ -41,6 +41,14 @@ export interface CrmInteractiveInput {
   type: 'callback_query';
 }
 
+export interface CrmInlineKeyboardButtonInput {
+  callbackData?: string;
+  text: string;
+  url?: string;
+}
+
+export type CrmInlineKeyboardInput = CrmInlineKeyboardButtonInput[][];
+
 export interface CreateOrUpdateLeadInput {
   contactId: string;
   contactStatus?: string;
@@ -65,6 +73,22 @@ export interface ForwardInboundMessageInput {
   text?: string;
 }
 
+export interface ForwardOutboundMessageInput {
+  broadcastId?: string;
+  contactId: string;
+  deliveryStatus: 'SENT';
+  identity: CrmIdentityInput;
+  inlineKeyboard?: CrmInlineKeyboardInput;
+  media?: CrmMediaInput;
+  messageId: string;
+  occurredAt: string;
+  providerMessageId: string;
+  scenarioExecutionId?: string;
+  senderName?: string;
+  source: 'AUTOMATION' | 'BROADCAST' | 'SYSTEM';
+  text?: string;
+}
+
 export interface CrmResult {
   mode: string;
   operationId: string;
@@ -85,6 +109,10 @@ export interface CrmClient {
   forwardInboundMessage(
     context: CrmCallContext,
     input: ForwardInboundMessageInput,
+  ): Promise<CrmResult>;
+  forwardOutboundMessage(
+    context: CrmCallContext,
+    input: ForwardOutboundMessageInput,
   ): Promise<CrmResult>;
   reconcile(context: CrmCallContext): Promise<CrmReconciliationResult>;
 }
@@ -196,6 +224,40 @@ export class HttpCrmClient implements CrmClient {
     };
     const result = await this.postAndReconcile(
       '/integrations/v1/omnicus/messages/inbound',
+      context,
+      payload,
+      messageResultSchema,
+    );
+    return {
+      mode: result.mode,
+      operationId: result.operationId,
+      providerReference: result.crmMessageId,
+    };
+  }
+
+  async forwardOutboundMessage(
+    context: CrmCallContext,
+    input: ForwardOutboundMessageInput,
+  ): Promise<CrmResult> {
+    const payload = {
+      broadcastId: input.broadcastId,
+      crmProjectId: context.crmProjectId,
+      deliveryStatus: input.deliveryStatus,
+      identity: input.identity,
+      inlineKeyboard: input.inlineKeyboard,
+      media: input.media,
+      messageId: input.messageId,
+      occurredAt: input.occurredAt,
+      omnicusContactId: input.contactId,
+      omnicusProjectId: context.projectId,
+      providerMessageId: input.providerMessageId,
+      scenarioExecutionId: input.scenarioExecutionId,
+      senderName: input.senderName,
+      source: input.source,
+      text: input.text,
+    };
+    const result = await this.postAndReconcile(
+      '/integrations/v1/omnicus/messages/outbound',
       context,
       payload,
       messageResultSchema,
@@ -328,6 +390,7 @@ export class CrmMockError extends CrmClientError {
 
 export class MockCrmClient implements CrmClient {
   private readonly results = new Map<string, CrmResult>();
+  private readonly resultKinds = new Map<string, 'lead' | 'message' | 'outbound-message'>();
 
   constructor(private readonly outcomeFor: (key: string) => MockCrmOutcome = () => 'SUCCESS') {}
 
@@ -345,13 +408,23 @@ export class MockCrmClient implements CrmClient {
     return this.perform(context, 'message');
   }
 
+  async forwardOutboundMessage(
+    context: CrmCallContext,
+    _input: ForwardOutboundMessageInput,
+  ): Promise<CrmResult> {
+    return this.perform(context, 'outbound-message');
+  }
+
   async reconcile(context: CrmCallContext): Promise<CrmReconciliationResult> {
     const result = this.results.get(context.idempotencyKey);
+    const kind = this.resultKinds.get(context.idempotencyKey);
     return result
       ? {
           operationId: result.operationId,
           result: {
-            crmLeadId: result.providerReference,
+            ...(kind === 'lead'
+              ? { crmLeadId: result.providerReference }
+              : { crmMessageId: result.providerReference }),
             mode: result.mode,
             operationId: result.operationId,
           },
@@ -360,7 +433,10 @@ export class MockCrmClient implements CrmClient {
       : { status: 'NOT_FOUND' };
   }
 
-  private perform(context: CrmCallContext, kind: 'lead' | 'message'): CrmResult {
+  private perform(
+    context: CrmCallContext,
+    kind: 'lead' | 'message' | 'outbound-message',
+  ): CrmResult {
     const known = this.results.get(context.idempotencyKey);
     if (known) return known;
     const outcome = this.outcomeFor(context.idempotencyKey);
@@ -375,6 +451,7 @@ export class MockCrmClient implements CrmClient {
       providerReference: `mock-${digest}`,
     };
     this.results.set(context.idempotencyKey, result);
+    this.resultKinds.set(context.idempotencyKey, kind);
     return result;
   }
 }

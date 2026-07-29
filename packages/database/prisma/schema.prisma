@@ -110,6 +110,7 @@ enum OutboxKind {
 enum CrmOperationType {
   CREATE_OR_UPDATE_LEAD
   FORWARD_INBOUND_MESSAGE
+  FORWARD_OUTBOUND_MESSAGE
 }
 
 enum NormalizedEventType {
@@ -957,6 +958,7 @@ model Message {
   normalizedEvent    NormalizedEvent?    @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
   mediaAsset         MediaAsset?         @relation(fields: [projectId, mediaAssetId], references: [projectId, id], onDelete: Restrict)
   broadcastRecipient BroadcastRecipient? @relation("BroadcastRecipientMessage")
+  crmOperations      CrmOperation[]
 
   @@unique([projectId, id])
   @@unique([projectId, normalizedEventId])
@@ -1178,6 +1180,7 @@ model CrmOperation {
   outboxRecordId    String           @unique
   contactId         String?
   normalizedEventId String?
+  messageId         String?          @unique
   type              CrmOperationType
   inputSafe         Json
   resultSafe        Json?
@@ -1187,11 +1190,13 @@ model CrmOperation {
   outbox            OutboxRecord     @relation(fields: [projectId, outboxRecordId], references: [projectId, id], onDelete: Restrict)
   contact           Contact?         @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
   normalizedEvent   NormalizedEvent? @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+  message           Message?         @relation(fields: [projectId, messageId], references: [projectId, id], onDelete: Restrict)
 
   @@unique([projectId, id])
   @@unique([projectId, outboxRecordId])
   @@index([projectId, contactId])
   @@index([projectId, normalizedEventId])
+  @@index([projectId, messageId])
   @@map("crm_operations")
 }
 

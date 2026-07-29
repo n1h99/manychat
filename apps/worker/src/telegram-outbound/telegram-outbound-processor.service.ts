@@ -29,6 +29,7 @@ import {
 import { Worker, type Job } from 'bullmq';
 import { DatabaseService } from '../database/database.service';
 import { redisConnectionFromUrl } from '../queue/redis-connection';
+import { ensureCrmOutboundHistoryIntent } from '../crm/crm-outbound-history';
 
 export const TELEGRAM_OUTBOUND_PROCESSOR_CLIENT = Symbol('TELEGRAM_OUTBOUND_PROCESSOR_CLIENT');
 export interface TelegramOutboundProcessorClient {
@@ -246,6 +247,7 @@ export class TelegramOutboundProcessorService
           where: { projectId_id: { projectId: claimed.projectId, id: message.id } },
           data: { status: 'SENT', sentAt: new Date(), externalMessageId: sent.messageId },
         });
+        await ensureCrmOutboundHistoryIntent(tx, claimed.projectId, message.id);
         if (recipient) {
           await tx.broadcastRecipient.updateMany({
             where: { id: recipient.id, projectId: claimed.projectId, status: 'PROCESSING' },

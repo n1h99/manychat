@@ -662,6 +662,7 @@ export class AutomationRuntimeService {
         mediaAssetId: templateVersion?.mediaAssetId ?? null,
         metadata: {
           source: 'automation',
+          scenarioExecutionId: executionId,
           ...(templateContent?.inlineKeyboard
             ? { inlineKeyboard: templateContent.inlineKeyboard }
             : {}),
