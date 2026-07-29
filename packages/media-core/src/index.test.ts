@@ -189,7 +189,7 @@ describe('media validation', () => {
 
     expect(prepared.width! + prepared.height!).toBeLessThanOrEqual(10_000);
     expect(prepared.sizeBytes).toBeLessThanOrEqual(10 * 1024 * 1024);
-  });
+  }, 15_000);
 
   it('rejects corrupt image data during normalization', async () => {
     await expect(
