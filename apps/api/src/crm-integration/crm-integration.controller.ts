@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiExtraModels,
   ApiHeader,
   ApiOkResponse,
   ApiQuery,
@@ -27,11 +28,11 @@ import {
 import { MediaService } from '../media/media.service';
 import { CrmIntegrationAuthGuard } from './crm-integration-auth.guard';
 import { CrmOutboundService } from './crm-outbound.service';
-import { CrmOperationQueryDto, CrmOutboundMessageDto } from './dto';
-import type { CrmMediaUploadDto } from './dto';
+import { CrmMediaUploadDto, CrmOperationQueryDto, CrmOutboundMessageDto } from './dto';
 
 @ApiTags('crm integration')
 @ApiBearerAuth()
+@ApiExtraModels(CrmMediaUploadDto)
 @UseGuards(CrmIntegrationAuthGuard)
 @Controller('integrations/v1/crm')
 export class CrmIntegrationController {
