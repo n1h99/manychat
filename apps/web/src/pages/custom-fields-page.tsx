@@ -1,3 +1,4 @@
+import { PlusOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Select, Space, Table, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -42,21 +43,27 @@ export function CustomFieldsPage() {
   const reload = () => cache.invalidateQueries({ queryKey: ['custom-fields', projectId] });
   return (
     <section>
-      <Space className="page-heading" direction="vertical" size={0}>
-        <Typography.Title level={2}>Custom fields</Typography.Title>
-        <Typography.Text type="secondary">Typed, project-local contact data.</Typography.Text>
-      </Space>
-      <Button
-        onClick={() => {
-          form.resetFields();
-          setEditing(undefined);
-          setType('TEXT');
-          setOpen(true);
-        }}
-        type="primary"
-      >
-        Create field
-      </Button>
+      <div className="page-heading-row">
+        <div>
+          <Typography.Text className="header-kicker">Data model</Typography.Text>
+          <Typography.Title level={2}>Custom fields</Typography.Title>
+          <Typography.Text type="secondary">
+            Typed, project-specific data available on every contact.
+          </Typography.Text>
+        </div>
+        <Button
+          icon={<PlusOutlined />}
+          onClick={() => {
+            form.resetFields();
+            setEditing(undefined);
+            setType('TEXT');
+            setOpen(true);
+          }}
+          type="primary"
+        >
+          Create field
+        </Button>
+      </div>
       <Table<Field>
         columns={[
           { dataIndex: 'name', title: 'Name' },
@@ -107,6 +114,7 @@ export function CustomFieldsPage() {
         onClose={() => setOpen(false)}
         open={open}
         title={editing ? 'Edit custom field' : 'Create custom field'}
+        width={440}
       >
         <Form
           form={form}
@@ -171,7 +179,7 @@ export function CustomFieldsPage() {
           <Form.Item label="Description" name="description">
             <Input.TextArea />
           </Form.Item>
-          <Button htmlType="submit" type="primary">
+          <Button block htmlType="submit" type="primary">
             {editing ? 'Save changes' : 'Create'}
           </Button>
         </Form>

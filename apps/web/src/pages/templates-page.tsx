@@ -80,17 +80,20 @@ export function TemplatesPage() {
 
   return (
     <section>
-      <Space className="page-heading">
-        <Typography.Title level={2}>Message templates</Typography.Title>
+      <div className="page-heading-row">
+        <div>
+          <Typography.Text className="header-kicker">Content library</Typography.Text>
+          <Typography.Title level={2}>Message templates</Typography.Title>
+          <Typography.Text type="secondary">
+            Reusable, versioned content for scenarios and broadcasts.
+          </Typography.Text>
+        </div>
         {canManage ? (
           <Button onClick={() => open()} type="primary">
             New template
           </Button>
         ) : null}
-      </Space>
-      <Typography.Paragraph type="secondary">
-        Publishing creates an immutable version. Scenarios and broadcasts pin that exact version.
-      </Typography.Paragraph>
+      </div>
       <Table<MessageTemplate>
         dataSource={templates.data ?? []}
         loading={templates.isLoading}

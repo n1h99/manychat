@@ -1,4 +1,5 @@
-import { Button, Drawer, Form, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
+import { Button, Drawer, Empty, Form, Input, Select, Table, Tag, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -30,18 +31,31 @@ export function ProjectsPage() {
   const refresh = async () => client.invalidateQueries({ queryKey: ['projects'] });
   return (
     <section>
-      <Space className="page-heading" direction="vertical" size={0}>
-        <Typography.Title level={2}>Projects</Typography.Title>
-        <Typography.Text type="secondary">Projects available to your account.</Typography.Text>
-      </Space>
-      {canCreate ? (
-        <Button onClick={() => setOpen(true)} type="primary">
-          Create project
-        </Button>
-      ) : null}
+      <div className="page-heading-row">
+        <div>
+          <Typography.Text className="header-kicker">Workspace</Typography.Text>
+          <Typography.Title level={2}>Projects</Typography.Title>
+          <Typography.Text type="secondary">
+            Manage customer workspaces and their operational settings.
+          </Typography.Text>
+        </div>
+        {canCreate ? (
+          <Button icon={<PlusOutlined />} onClick={() => setOpen(true)} type="primary">
+            Create project
+          </Button>
+        ) : null}
+      </div>
       <Table<Project>
         dataSource={projects.data ?? []}
         loading={projects.isLoading}
+        locale={{
+          emptyText: (
+            <Empty
+              description="No projects are available yet"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
+          ),
+        }}
         pagination={false}
         rowKey="id"
         columns={[
@@ -61,7 +75,13 @@ export function ProjectsPage() {
           },
         ]}
       />
-      <Drawer destroyOnHidden onClose={() => setOpen(false)} open={open} title="Create project">
+      <Drawer
+        destroyOnHidden
+        onClose={() => setOpen(false)}
+        open={open}
+        title="Create project"
+        width={440}
+      >
         <Form
           form={form}
           layout="vertical"
@@ -92,7 +112,7 @@ export function ProjectsPage() {
           <Form.Item label="Locale" name="locale" rules={[{ required: true }]}>
             <Select options={[{ value: 'en' }, { value: 'ru' }]} />
           </Form.Item>
-          <Button htmlType="submit" type="primary">
+          <Button block htmlType="submit" type="primary">
             Create
           </Button>
         </Form>

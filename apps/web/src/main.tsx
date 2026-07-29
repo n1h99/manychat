@@ -33,8 +33,25 @@ try {
         <ConfigProvider
           theme={{
             token: {
-              borderRadius: 8,
-              colorPrimary: '#3659e3',
+              borderRadius: 12,
+              borderRadiusLG: 20,
+              boxShadow: '0 10px 24px rgba(15, 23, 42, 0.05)',
+              boxShadowSecondary: '0 18px 40px rgba(15, 23, 42, 0.08)',
+              colorBgContainer: '#ffffff',
+              colorBgLayout: '#f4f7fb',
+              colorBorder: '#e2e8f0',
+              colorError: '#dc2626',
+              colorInfo: '#0ea5e9',
+              colorLink: '#1677ff',
+              colorPrimary: '#0f766e',
+              colorSuccess: '#15803d',
+              colorText: '#0f172a',
+              colorTextSecondary: '#64748b',
+              colorWarning: '#d97706',
+              controlHeight: 42,
+              controlHeightLG: 46,
+              fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+              fontSize: 14,
             },
           }}
         >

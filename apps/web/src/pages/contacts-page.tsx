@@ -1,4 +1,5 @@
-import { Alert, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
+import { Alert, Empty, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
@@ -22,6 +23,7 @@ interface ContactPage {
   pageSize: number;
   total: number;
 }
+
 interface SegmentItem {
   id: string;
   name: string;
@@ -61,58 +63,71 @@ export function ContactsPage() {
       apiRequest<SegmentItem[]>(`/api/v1/projects/${projectId}/segments`, {}, accessToken),
     queryKey: ['segments', projectId],
   });
+
   return (
     <section>
-      <Space className="page-heading" direction="vertical" size={0}>
-        <Typography.Title level={2}>Contacts</Typography.Title>
-        <Typography.Text type="secondary">Project contact directory.</Typography.Text>
-      </Space>
-      <Space className="section-actions" wrap>
-        <Input
-          allowClear
-          aria-label="Search contacts"
-          onChange={(event) => {
-            setPage(1);
-            setSearch(event.target.value);
-          }}
-          placeholder="Name, username, phone or email"
-          value={search}
-        />
-        <Select
-          allowClear
-          aria-label="Contact status"
-          onChange={(value) => {
-            setPage(1);
-            setStatus(value);
-          }}
-          options={[
-            { label: 'Active', value: 'ACTIVE' },
-            { label: 'Blocked', value: 'BLOCKED' },
-            { label: 'Unsubscribed', value: 'UNSUBSCRIBED' },
-            { label: 'Archived', value: 'ARCHIVED' },
-            { label: 'Merged', value: 'MERGED' },
-          ]}
-          placeholder="Status"
-          value={status}
-        />
-        <Select
-          allowClear
-          aria-label="Contact segment"
-          onChange={(value) => {
-            setPage(1);
-            setSegmentId(value);
-          }}
-          options={(segments.data ?? []).map((segment) => ({
-            label: segment.name,
-            value: segment.id,
-          }))}
-          placeholder="Segment"
-          value={segmentId}
-        />
-      </Space>
+      <div className="page-heading">
+        <div>
+          <Typography.Text className="header-kicker">Audience</Typography.Text>
+          <Typography.Title level={2}>Contacts</Typography.Title>
+          <Typography.Text type="secondary">
+            Search, filter and manage the people connected to this project.
+          </Typography.Text>
+        </div>
+      </div>
+      <div className="filter-panel surface">
+        <Space wrap>
+          <Input
+            allowClear
+            aria-label="Search contacts"
+            onChange={(event) => {
+              setPage(1);
+              setSearch(event.target.value);
+            }}
+            placeholder="Name, username, phone or email"
+            prefix={<SearchOutlined />}
+            style={{ width: 320 }}
+            value={search}
+          />
+          <Select
+            allowClear
+            aria-label="Contact status"
+            onChange={(value) => {
+              setPage(1);
+              setStatus(value);
+            }}
+            options={[
+              { label: 'Active', value: 'ACTIVE' },
+              { label: 'Blocked', value: 'BLOCKED' },
+              { label: 'Unsubscribed', value: 'UNSUBSCRIBED' },
+              { label: 'Archived', value: 'ARCHIVED' },
+              { label: 'Merged', value: 'MERGED' },
+            ]}
+            placeholder="Status"
+            style={{ width: 180 }}
+            value={status}
+          />
+          <Select
+            allowClear
+            aria-label="Contact segment"
+            onChange={(value) => {
+              setPage(1);
+              setSegmentId(value);
+            }}
+            options={(segments.data ?? []).map((segment) => ({
+              label: segment.name,
+              value: segment.id,
+            }))}
+            placeholder="Segment"
+            style={{ width: 220 }}
+            value={segmentId}
+          />
+        </Space>
+      </div>
       {contacts.isError ? (
         <Alert
-          message="Не удалось загрузить контакты. Обновите страницу или повторите позже."
+          className="form-alert"
+          message="Contacts could not be loaded. Refresh the page or try again."
           showIcon
           type="error"
         />
@@ -158,6 +173,14 @@ export function ContactsPage() {
         ]}
         dataSource={contacts.data?.items ?? []}
         loading={contacts.isLoading}
+        locale={{
+          emptyText: (
+            <Empty
+              description="No contacts match the selected filters"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
+          ),
+        }}
         pagination={{
           current: page,
           onChange: setPage,

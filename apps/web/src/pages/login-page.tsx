@@ -14,10 +14,13 @@ export function LoginPage() {
   return (
     <main className="login-page">
       <Card className="login-card">
-        <Typography.Title level={2}>Omnicus</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          Sign in to the pilot administration console.
-        </Typography.Paragraph>
+        <div className="login-brand">
+          <span className="brand-mark">OM</span>
+          <Typography.Title level={2}>Welcome to Omnicus</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            Sign in to manage customer journeys and messaging operations.
+          </Typography.Paragraph>
+        </div>
         {error ? <Alert className="form-alert" message={error} type="error" /> : null}
         <Form
           layout="vertical"

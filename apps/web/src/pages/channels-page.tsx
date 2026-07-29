@@ -1,50 +1,84 @@
-import { Button, Empty, Space, Spin, Table, Tag, Typography } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Spin, Table, Tag, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router';
-import { useChannels, type Channel } from '../channels-api';
+
+import { type Channel, useChannels } from '../channels-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+
 export function ChannelsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const query = useChannels(projectId);
   const access = useProjectAccess(projectId);
-  if (query.isLoading) return <Spin />;
-  if (query.isError)
-    return <Typography.Text type="danger">Не удалось загрузить каналы.</Typography.Text>;
+
+  if (query.isLoading) return <Spin className="route-loading" />;
+
   return (
     <section>
-      <Space className="page-heading" direction="vertical" size={0}>
-        <Typography.Title level={2}>Каналы</Typography.Title>
-        <Typography.Text type="secondary">Подключения Telegram текущего проекта.</Typography.Text>
-      </Space>
-      {hasProjectPermission(access.data, 'channels:manage') ? (
-        <Button type="primary" onClick={() => navigate(`/projects/${projectId}/channels/new`)}>
-          Подключить Telegram
-        </Button>
-      ) : null}
-      {query.data?.length ? (
-        <Table<Channel>
-          rowKey="id"
-          pagination={false}
-          dataSource={query.data}
-          onRow={(row) => ({
-            onClick: () => navigate(`/projects/${projectId}/channels/${row.id}`),
-          })}
-          columns={[
-            { title: 'Название', dataIndex: 'name' },
-            { title: 'Тип', dataIndex: 'type' },
-            { title: 'Бот', dataIndex: 'botUsername' },
-            { title: 'Статус', dataIndex: 'status', render: (v) => <Tag>{v}</Tag> },
-            { title: 'Webhook', dataIndex: 'webhookStatus' },
-            {
-              title: 'Обновлён',
-              dataIndex: 'updatedAt',
-              render: (v) => new Date(v).toLocaleString(),
-            },
-          ]}
+      <div className="page-heading-row">
+        <div>
+          <Typography.Text className="header-kicker">Messaging</Typography.Text>
+          <Typography.Title level={2}>Channels</Typography.Title>
+          <Typography.Text type="secondary">
+            Telegram connections for the current project.
+          </Typography.Text>
+        </div>
+        {hasProjectPermission(access.data, 'channels:manage') ? (
+          <Button
+            icon={<PlusOutlined />}
+            onClick={() => navigate(`/projects/${projectId}/channels/new`)}
+            type="primary"
+          >
+            Connect Telegram
+          </Button>
+        ) : null}
+      </div>
+      {query.isError ? (
+        <Alert
+          className="form-alert"
+          message="Channels could not be loaded. Try again shortly."
+          showIcon
+          type="error"
         />
-      ) : (
-        <Empty description="Каналы ещё не подключены" />
-      )}
+      ) : null}
+      <Table<Channel>
+        columns={[
+          { dataIndex: 'name', title: 'Name' },
+          { dataIndex: 'type', title: 'Type' },
+          {
+            dataIndex: 'botUsername',
+            render: (value) => (value ? `@${value}` : '—'),
+            title: 'Bot',
+          },
+          {
+            dataIndex: 'status',
+            render: (value) => (
+              <Tag color={value === 'ACTIVE' ? 'green' : value === 'ERROR' ? 'red' : 'default'}>
+                {value}
+              </Tag>
+            ),
+            title: 'Status',
+          },
+          { dataIndex: 'webhookStatus', title: 'Webhook' },
+          {
+            dataIndex: 'updatedAt',
+            render: (value) => new Date(value).toLocaleString(),
+            title: 'Updated',
+          },
+        ]}
+        dataSource={query.data ?? []}
+        locale={{
+          emptyText: (
+            <Empty description="No channels connected" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ),
+        }}
+        onRow={(row) => ({
+          onClick: () => navigate(`/projects/${projectId}/channels/${row.id}`),
+        })}
+        pagination={false}
+        rowClassName="clickable-row"
+        rowKey="id"
+      />
     </section>
   );
 }

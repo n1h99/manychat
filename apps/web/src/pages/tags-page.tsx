@@ -1,3 +1,4 @@
+import { PlusOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Space, Table, Tag, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -28,20 +29,26 @@ export function TagsPage() {
   const reload = () => cache.invalidateQueries({ queryKey: ['tags', projectId] });
   return (
     <section>
-      <Space className="page-heading" direction="vertical" size={0}>
-        <Typography.Title level={2}>Tags</Typography.Title>
-        <Typography.Text type="secondary">Project-local contact labels.</Typography.Text>
-      </Space>
-      <Button
-        onClick={() => {
-          form.resetFields();
-          setEditing(undefined);
-          setOpen(true);
-        }}
-        type="primary"
-      >
-        Create tag
-      </Button>
+      <div className="page-heading-row">
+        <div>
+          <Typography.Text className="header-kicker">Audience</Typography.Text>
+          <Typography.Title level={2}>Tags</Typography.Title>
+          <Typography.Text type="secondary">
+            Organize contacts with project-specific labels.
+          </Typography.Text>
+        </div>
+        <Button
+          icon={<PlusOutlined />}
+          onClick={() => {
+            form.resetFields();
+            setEditing(undefined);
+            setOpen(true);
+          }}
+          type="primary"
+        >
+          Create tag
+        </Button>
+      </div>
       <Table<TagItem>
         columns={[
           {
@@ -89,6 +96,7 @@ export function TagsPage() {
         onClose={() => setOpen(false)}
         open={open}
         title={editing ? 'Edit tag' : 'Create tag'}
+        width={440}
       >
         <Form
           form={form}
@@ -113,7 +121,7 @@ export function TagsPage() {
           <Form.Item label="Description" name="description">
             <Input.TextArea />
           </Form.Item>
-          <Button htmlType="submit" type="primary">
+          <Button block htmlType="submit" type="primary">
             {editing ? 'Save changes' : 'Create'}
           </Button>
         </Form>

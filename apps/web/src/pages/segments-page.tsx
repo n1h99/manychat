@@ -1,4 +1,4 @@
-import { Button, Form, Input, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Form, Input, Popconfirm, Table, Tag, Typography, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 
@@ -46,15 +46,18 @@ export function SegmentsPage() {
   const canEdit = hasProjectPermission(access.data, 'contacts:update');
   return (
     <section>
-      <Space className="page-heading" direction="vertical" size={0}>
-        <Typography.Title level={2}>Segments</Typography.Title>
-        <Typography.Text type="secondary">
-          Saved filters; contact membership is calculated when used.
-        </Typography.Text>
-      </Space>
+      <div className="page-heading">
+        <div>
+          <Typography.Text className="header-kicker">Audience</Typography.Text>
+          <Typography.Title level={2}>Segments</Typography.Title>
+          <Typography.Text type="secondary">
+            Saved filters whose membership is calculated when used.
+          </Typography.Text>
+        </div>
+      </div>
       {canEdit ? (
         <Form
-          className="section-actions"
+          className="segment-create-form surface"
           layout="inline"
           onFinish={async (values: { filter: string; name: string }) => {
             try {

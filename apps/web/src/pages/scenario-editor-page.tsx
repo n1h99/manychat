@@ -190,24 +190,40 @@ export function ScenarioEditorPage() {
 
   return (
     <section>
-      <Typography.Title level={2}>{scenarioQuery.data?.name ?? 'New scenario'}</Typography.Title>
-      <Form form={form} initialValues={{ name: '' }} layout="vertical" onFinish={save}>
+      <div className="page-heading">
+        <div>
+          <Typography.Text className="header-kicker">Automation editor</Typography.Text>
+          <Typography.Title level={2}>
+            {scenarioQuery.data?.name ?? 'New scenario'}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            Design, validate and publish a deterministic customer journey.
+          </Typography.Text>
+        </div>
+      </div>
+      <Form
+        className="automation-editor"
+        form={form}
+        initialValues={{ name: '' }}
+        layout="vertical"
+        onFinish={save}
+      >
         <Row gutter={16}>
-          <Col span={12}>
+          <Col md={12} xs={24}>
             <Form.Item label="Name" name="name" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col md={12} xs={24}>
             <Form.Item label="Description" name="description">
               <Input />
             </Form.Item>
           </Col>
         </Row>
-        <Row gutter={16}>
-          <Col span={5}>
+        <Row className="automation-workspace" gutter={[16, 16]}>
+          <Col lg={6} xl={5} xs={24}>
             <Card size="small" title="Node palette">
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space className="node-palette" direction="vertical">
                 {palette.map(([type, label]) => (
                   <Button block key={type} onClick={() => addNode(type)}>
                     {label}
@@ -216,8 +232,8 @@ export function ScenarioEditorPage() {
               </Space>
             </Card>
           </Col>
-          <Col span={14}>
-            <div aria-label="Scenario canvas" style={{ border: '1px solid #d9d9d9', height: 560 }}>
+          <Col lg={18} xl={14} xs={24}>
+            <div aria-label="Scenario canvas" className="scenario-canvas">
               <ReactFlow
                 edges={edges}
                 fitView
@@ -240,7 +256,7 @@ export function ScenarioEditorPage() {
               </ReactFlow>
             </div>
           </Col>
-          <Col span={5}>
+          <Col lg={24} xl={5} xs={24}>
             <Card size="small" title={selected ? 'Node settings' : 'Edge settings'}>
               {selected ? (
                 <>
@@ -286,7 +302,7 @@ export function ScenarioEditorPage() {
             </Card>
           </Col>
         </Row>
-        <Space style={{ marginTop: 16 }}>
+        <Space className="automation-actions" wrap>
           <Button
             htmlType="submit"
             loading={mutations.create.isPending || mutations.update.isPending}
@@ -305,7 +321,7 @@ export function ScenarioEditorPage() {
           ) : null}
         </Space>
       </Form>
-      <Space direction="vertical" style={{ marginTop: 16, width: '100%' }}>
+      <Space className="automation-validation" direction="vertical">
         {validation.errors.length ? (
           <Alert
             description={validation.errors.map((error) => (

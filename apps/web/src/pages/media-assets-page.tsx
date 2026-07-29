@@ -27,16 +27,17 @@ export function MediaAssetsPage() {
   };
   return (
     <section>
-      <Typography.Title level={2}>Media assets</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        Private assets are validated before storage. Signed download links are created only on
-        demand and are never persisted. JPEG, PNG and WebP photos are converted to Telegram-safe
-        JPEG: oversized images are scaled down and extreme aspect ratios receive minimal white
-        padding without cropping. PDF and ZIP documents are structurally validated and stored
-        unchanged.
-      </Typography.Paragraph>
+      <div className="page-heading">
+        <div>
+          <Typography.Text className="header-kicker">Content library</Typography.Text>
+          <Typography.Title level={2}>Media assets</Typography.Title>
+          <Typography.Text type="secondary">
+            Validated private files for Telegram templates and automated messages.
+          </Typography.Text>
+        </div>
+      </div>
       {canManage ? (
-        <Space className="section-actions" wrap>
+        <Space className="media-upload-panel surface" wrap>
           <Select
             onChange={setKind}
             options={[

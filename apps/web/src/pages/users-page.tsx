@@ -1,3 +1,4 @@
+import { PlusOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -36,15 +37,18 @@ export function UsersPage() {
   const refresh = () => client.invalidateQueries({ queryKey: ['users'] });
   return (
     <section>
-      <Space className="page-heading" direction="vertical" size={0}>
-        <Typography.Title level={2}>Users</Typography.Title>
-        <Typography.Text type="secondary">
-          Global administration users and their system roles.
-        </Typography.Text>
-      </Space>
-      <Button onClick={() => setOpen(true)} type="primary">
-        Create user
-      </Button>
+      <div className="page-heading-row">
+        <div>
+          <Typography.Text className="header-kicker">Administration</Typography.Text>
+          <Typography.Title level={2}>Users</Typography.Title>
+          <Typography.Text type="secondary">
+            Global administration users and their system roles.
+          </Typography.Text>
+        </div>
+        <Button icon={<PlusOutlined />} onClick={() => setOpen(true)} type="primary">
+          Create user
+        </Button>
+      </div>
       <Table<UserRow>
         dataSource={users.data ?? []}
         loading={users.isLoading}
@@ -120,6 +124,7 @@ export function UsersPage() {
         }}
         open={open}
         title={editing ? 'Edit user' : 'Create user'}
+        width={440}
       >
         <Typography.Paragraph type="secondary">
           The temporary password must be delivered through an approved out-of-band channel.
@@ -167,7 +172,7 @@ export function UsersPage() {
               placeholder="Optional global roles"
             />
           </Form.Item>
-          <Button htmlType="submit" type="primary">
+          <Button block htmlType="submit" type="primary">
             {editing ? 'Save changes' : 'Create'}
           </Button>
         </Form>

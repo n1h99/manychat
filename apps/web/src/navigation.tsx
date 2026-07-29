@@ -1,4 +1,4 @@
-import { AppstoreOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, TeamOutlined } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 
 export interface NavigationItem {
@@ -11,5 +11,4 @@ export interface NavigationItem {
 export const navigationItems: readonly NavigationItem[] = [
   { icon: <AppstoreOutlined />, key: 'projects', label: 'Projects', path: '/projects' },
   { icon: <TeamOutlined />, key: 'users', label: 'Users', path: '/users' },
-  { icon: <SettingOutlined />, key: 'settings', label: 'Settings', path: '/settings' },
 ] as const;

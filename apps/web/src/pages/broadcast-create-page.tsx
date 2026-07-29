@@ -15,12 +15,18 @@ export function BroadcastCreatePage() {
   const contentMode = Form.useWatch('contentMode', form) ?? 'TEXT';
   if (channels.isLoading || templates.isLoading) return <Spin />;
   return (
-    <section>
-      <Typography.Title level={2}>New Telegram broadcast</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        The audience and a concrete published template version are snapshotted at launch.
-      </Typography.Paragraph>
+    <section className="narrow-page">
+      <div className="page-heading">
+        <div>
+          <Typography.Text className="header-kicker">New campaign</Typography.Text>
+          <Typography.Title level={2}>New Telegram broadcast</Typography.Title>
+          <Typography.Text type="secondary">
+            The audience and published template version are snapshotted at launch.
+          </Typography.Text>
+        </div>
+      </div>
       <Form
+        className="settings-form surface"
         form={form}
         initialValues={{ audienceMode: 'ALL_ACTIVE', contentMode: 'TEXT' }}
         layout="vertical"
