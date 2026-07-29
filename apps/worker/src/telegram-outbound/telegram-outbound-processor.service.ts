@@ -20,7 +20,12 @@ import {
   type TelegramOutboundJob,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
-import { prepareMediaForTelegram, S3MediaStorage, type MediaKind } from '@omnicus/media-core';
+import {
+  MediaValidationError,
+  prepareMediaForTelegram,
+  S3MediaStorage,
+  type MediaKind,
+} from '@omnicus/media-core';
 import { Worker, type Job } from 'bullmq';
 import { DatabaseService } from '../database/database.service';
 import { redisConnectionFromUrl } from '../queue/redis-connection';
@@ -299,8 +304,12 @@ export class TelegramOutboundProcessorService
         kind,
         maximumBytes: this.maximumMediaBytes,
       });
-    } catch {
-      throw new TelegramOutboundPermanentError('telegram_outbound_media_rejected');
+    } catch (error) {
+      throw new TelegramOutboundPermanentError(
+        error instanceof MediaValidationError
+          ? `telegram_outbound_${error.code}`
+          : 'telegram_outbound_media_rejected',
+      );
     }
     return {
       bytes: prepared.bytes,

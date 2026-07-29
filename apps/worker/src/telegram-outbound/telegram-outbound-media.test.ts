@@ -193,4 +193,141 @@ describe('Telegram outbound media references', () => {
       filename: 'original-upload.jpg',
     });
   });
+
+  it.each([
+    {
+      bytes: new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n'),
+      extension: 'pdf',
+      kind: 'DOCUMENT' as const,
+      mimeType: 'application/pdf',
+    },
+    {
+      bytes: Uint8Array.from([
+        0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      ]),
+      extension: 'zip',
+      kind: 'DOCUMENT' as const,
+      mimeType: 'application/zip',
+    },
+    {
+      bytes: Uint8Array.from([0x49, 0x44, 0x33]),
+      extension: 'mp3',
+      kind: 'AUDIO' as const,
+      mimeType: 'audio/mpeg',
+    },
+    {
+      bytes: Uint8Array.from([0x4f, 0x67, 0x67, 0x53]),
+      extension: 'ogg',
+      kind: 'VOICE' as const,
+      mimeType: 'audio/ogg',
+    },
+    {
+      bytes: Uint8Array.from([0, 0, 0, 12, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0]),
+      extension: 'mp4',
+      kind: 'VIDEO' as const,
+      mimeType: 'video/mp4',
+    },
+    {
+      bytes: Uint8Array.from([0, 0, 0, 12, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0]),
+      extension: 'mp4',
+      kind: 'VIDEO_NOTE' as const,
+      mimeType: 'video/mp4',
+    },
+    {
+      bytes: new TextEncoder().encode('GIF89a'),
+      extension: 'gif',
+      kind: 'ANIMATION' as const,
+      mimeType: 'image/gif',
+    },
+  ])('loads and validates $kind .$extension uploads from private storage', async (fixture) => {
+    const internals = service() as unknown as {
+      storage: {
+        getObject(key: string): Promise<{ bytes: Uint8Array; contentType?: string }>;
+      };
+      mediaReference(
+        asset: {
+          bucketKey: string | null;
+          connectionId: string | null;
+          detectedMimeType: string | null;
+          extension: string | null;
+          originalFilename: string | null;
+          providerMediaId: string | null;
+          status: string;
+        },
+        connectionId: string,
+        kind: typeof fixture.kind,
+      ): Promise<unknown>;
+    };
+    internals.storage = {
+      getObject: vi.fn().mockResolvedValue({
+        bytes: fixture.bytes,
+        contentType: fixture.mimeType,
+      }),
+    };
+
+    await expect(
+      internals.mediaReference(
+        {
+          bucketKey: `project/upload.${fixture.extension}`,
+          connectionId: null,
+          detectedMimeType: fixture.mimeType,
+          extension: fixture.extension,
+          originalFilename: `upload.${fixture.extension}`,
+          providerMediaId: null,
+          status: 'AVAILABLE',
+        },
+        'connection-a',
+        fixture.kind,
+      ),
+    ).resolves.toMatchObject({
+      contentType: fixture.mimeType,
+      filename: `upload.${fixture.extension}`,
+    });
+  });
+
+  it('returns a safe, specific validation code without exposing media contents', async () => {
+    const internals = service() as unknown as {
+      storage: {
+        getObject(key: string): Promise<{ bytes: Uint8Array; contentType?: string }>;
+      };
+      mediaReference(
+        asset: {
+          bucketKey: string | null;
+          connectionId: string | null;
+          detectedMimeType: string | null;
+          extension: string | null;
+          originalFilename: string | null;
+          providerMediaId: string | null;
+          status: string;
+        },
+        connectionId: string,
+        kind: 'DOCUMENT',
+      ): Promise<unknown>;
+    };
+    internals.storage = {
+      getObject: vi.fn().mockResolvedValue({
+        bytes: new TextEncoder().encode('not-a-pdf'),
+        contentType: 'application/pdf',
+      }),
+    };
+
+    await expect(
+      internals.mediaReference(
+        {
+          bucketKey: 'project/upload.pdf',
+          connectionId: null,
+          detectedMimeType: 'application/pdf',
+          extension: 'pdf',
+          originalFilename: 'upload.pdf',
+          providerMediaId: null,
+          status: 'AVAILABLE',
+        },
+        'connection-a',
+        'DOCUMENT',
+      ),
+    ).rejects.toMatchObject({
+      code: 'telegram_outbound_media_type_rejected',
+      message: 'Telegram outbound request cannot be retried',
+    });
+  });
 });
