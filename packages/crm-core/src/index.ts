@@ -27,9 +27,18 @@ export interface CrmMediaInput {
   downloadUrl?: string;
   downloadUrlExpiresAt?: string;
   fileName?: string;
+  kind: 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
   mimeType?: string;
   size?: number;
   type: 'audio' | 'file' | 'image' | 'video';
+}
+
+export interface CrmInteractiveInput {
+  callbackQueryId: string;
+  data?: string;
+  displayText?: string;
+  sourceMessageId?: string;
+  type: 'callback_query';
 }
 
 export interface CreateOrUpdateLeadInput {
@@ -47,6 +56,7 @@ export interface CreateOrUpdateLeadInput {
 export interface ForwardInboundMessageInput {
   contactId: string;
   identity: CrmIdentityInput;
+  interactive?: CrmInteractiveInput;
   media?: CrmMediaInput;
   messageId?: string;
   normalizedEventId?: string;
@@ -174,6 +184,7 @@ export class HttpCrmClient implements CrmClient {
     const payload = {
       crmProjectId: context.crmProjectId,
       identity: input.identity,
+      interactive: input.interactive,
       media: input.media,
       messageId: input.messageId,
       normalizedEventId: input.normalizedEventId,

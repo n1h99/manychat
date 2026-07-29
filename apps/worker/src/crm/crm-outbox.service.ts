@@ -15,6 +15,7 @@ import {
   CrmClientError,
   type CrmClient,
   type CrmIdentityInput,
+  type CrmInteractiveInput,
   type CrmMediaInput,
 } from '@omnicus/crm-core';
 import type { Prisma } from '@omnicus/database';
@@ -195,7 +196,15 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       idempotencyKey: outboxRecordId,
       projectId: operation.projectId,
     };
-    const inboundText = this.messageText(operation.normalizedEvent?.message?.content);
+    const interactive = await this.interactive(
+      operation.projectId,
+      connectionId,
+      operation.normalizedEvent?.payload,
+    );
+    const inboundText =
+      this.messageText(operation.normalizedEvent?.message?.content) ??
+      interactive?.displayText ??
+      interactive?.data;
 
     try {
       const result =
@@ -214,6 +223,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           : await this.client.forwardInboundMessage(context, {
               contactId: operation.contact.id,
               identity,
+              ...(interactive ? { interactive } : {}),
               ...(await this.media(
                 operation.projectId,
                 connectionId,
@@ -497,6 +507,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           ? { mimeType: current.detectedMimeType ?? current.declaredMimeType! }
           : {}),
         ...(size === undefined ? {} : { size }),
+        kind: current.kind as CrmMediaInput['kind'],
         type:
           current.kind === 'PHOTO'
             ? 'image'
@@ -507,6 +518,86 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
                 : 'file',
       },
     };
+  }
+
+  private async interactive(
+    projectId: string,
+    connectionId: string | null | undefined,
+    payload: Prisma.JsonValue | undefined,
+  ): Promise<CrmInteractiveInput | undefined> {
+    if (!connectionId || !payload || typeof payload !== 'object' || Array.isArray(payload))
+      return undefined;
+    const normalized = payload as Record<string, unknown>;
+    const content =
+      normalized.content &&
+      typeof normalized.content === 'object' &&
+      !Array.isArray(normalized.content)
+        ? (normalized.content as Record<string, unknown>)
+        : undefined;
+    if (!content || typeof content.id !== 'string') return undefined;
+    const data = typeof content.data === 'string' ? content.data : undefined;
+    const metadata =
+      normalized.metadata &&
+      typeof normalized.metadata === 'object' &&
+      !Array.isArray(normalized.metadata)
+        ? (normalized.metadata as Record<string, unknown>)
+        : undefined;
+    const callback =
+      metadata?.telegramCallbackQuery &&
+      typeof metadata.telegramCallbackQuery === 'object' &&
+      !Array.isArray(metadata.telegramCallbackQuery)
+        ? (metadata.telegramCallbackQuery as Record<string, unknown>)
+        : undefined;
+    const sourceTelegramMessage =
+      callback?.message && typeof callback.message === 'object' && !Array.isArray(callback.message)
+        ? (callback.message as Record<string, unknown>)
+        : undefined;
+    const sourceProviderId =
+      typeof sourceTelegramMessage?.message_id === 'number'
+        ? String(sourceTelegramMessage.message_id)
+        : undefined;
+    const source = sourceProviderId
+      ? await this.database.client.message.findFirst({
+          select: { content: true, id: true, metadata: true },
+          where: {
+            connectionId,
+            direction: 'OUTBOUND',
+            externalMessageId: sourceProviderId,
+            projectId,
+          },
+        })
+      : undefined;
+    const displayText = data
+      ? this.callbackLabel(source?.content, source?.metadata, data)
+      : undefined;
+    return {
+      callbackQueryId: content.id,
+      ...(data === undefined ? {} : { data }),
+      ...(displayText === undefined ? {} : { displayText }),
+      ...(source?.id ? { sourceMessageId: source.id } : {}),
+      type: 'callback_query',
+    };
+  }
+
+  private callbackLabel(
+    content: Prisma.JsonValue | undefined,
+    metadata: Prisma.JsonValue | null | undefined,
+    data: string,
+  ): string | undefined {
+    for (const value of [content, metadata]) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const keyboard = (value as Record<string, unknown>).inlineKeyboard;
+      if (!Array.isArray(keyboard)) continue;
+      for (const row of keyboard) {
+        if (!Array.isArray(row)) continue;
+        for (const candidate of row) {
+          if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+          const button = candidate as Record<string, unknown>;
+          if (button.callbackData === data && typeof button.text === 'string') return button.text;
+        }
+      }
+    }
+    return undefined;
   }
 
   private async materializeTelegramMedia(

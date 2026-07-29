@@ -43,6 +43,7 @@ function createDatabase() {
     client: {
       $transaction: (callback: (input: typeof transaction) => unknown) => callback(transaction),
       crmOperation: { findUnique: vi.fn().mockResolvedValue(operation) },
+      message: { findFirst: vi.fn() },
       outboxRecord: {
         findMany: vi.fn().mockResolvedValue([{ id: 'outbox-a' }]),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -127,6 +128,72 @@ describe('CrmOutboxService', () => {
           lastError: 'crm_transport_outcome_unknown',
           status: 'UNKNOWN',
         }),
+      }),
+    );
+  });
+
+  it('forwards callback context with a project-scoped source message', async () => {
+    const database = createDatabase();
+    const occurredAt = new Date('2026-07-29T00:00:00.000Z');
+    Object.assign(database.operation, {
+      normalizedEvent: {
+        connectionId: 'connection-a',
+        inboxRecord: { rawWebhookEvent: { correlationId: 'correlation-a' } },
+        message: {
+          content: {},
+          conversation: { externalChatId: '123' },
+          createdAt: occurredAt,
+          id: 'inbound-message-a',
+          mediaAsset: null,
+        },
+        payload: {
+          content: { data: 'budget:1000', id: 'callback-a' },
+          metadata: { telegramCallbackQuery: { message: { message_id: 42 } } },
+        },
+      },
+      normalizedEventId: 'normalized-event-a',
+      type: 'FORWARD_INBOUND_MESSAGE',
+    });
+    database.client.message.findFirst.mockResolvedValue({
+      content: {
+        inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+      },
+      id: 'source-message-a',
+      metadata: null,
+    });
+    const client = {
+      createOrUpdateLead: vi.fn(),
+      forwardInboundMessage: vi.fn().mockResolvedValue({
+        mode: 'created',
+        operationId: 'operation-provider-a',
+        providerReference: 'crm-message-a',
+      }),
+      reconcile: vi.fn(),
+    };
+    const service = new CrmOutboxService(config as never, database as never, client);
+
+    await service.scanOnce(new Date());
+
+    expect(database.client.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          connectionId: 'connection-a',
+          externalMessageId: '42',
+          projectId: 'project-a',
+        }),
+      }),
+    );
+    expect(client.forwardInboundMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        interactive: {
+          callbackQueryId: 'callback-a',
+          data: 'budget:1000',
+          displayText: 'Under 1000',
+          sourceMessageId: 'source-message-a',
+          type: 'callback_query',
+        },
+        text: 'Under 1000',
       }),
     );
   });

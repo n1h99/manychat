@@ -751,3 +751,9 @@ Short-lived inbound download URLs are generated only after materialization and
 must be fetched immediately by CRM, never persisted. Unsupported Telegram
 features remain explicit capability-matrix entries instead of silently falling
 back to a different message type.
+
+The CRM bridge preserves two media classifications: `media.type` is a broad
+rendering category, while `media.kind` is the exact Telegram semantic kind.
+Callback queries are transferred as `interactive.callbackQueryId`, `data`,
+resolved `displayText` and the original Omnicus `sourceMessageId` when it can be
+resolved inside the same project and connection.

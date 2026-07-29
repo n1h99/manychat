@@ -18,6 +18,11 @@ POST /integrations/v1/omnicus/messages/inbound
 GET  /integrations/v1/omnicus/operations?crmProjectId=...&idempotencyKey=...
 ```
 
+The exact normalized inbound message extension is documented in
+`docs/OMNICUS_TO_CRM_OPENAPI.yaml`. It preserves the provider-independent
+category in `media.type`, the exact Telegram kind in `media.kind`, and callback
+choices in `interactive`.
+
 Every request uses service Bearer authentication and a correlation ID. Mutating
 requests also include the durable Omnicus outbox ID as `Idempotency-Key`.
 

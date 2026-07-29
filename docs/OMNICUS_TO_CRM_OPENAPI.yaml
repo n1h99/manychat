@@ -1,0 +1,191 @@
+openapi: 3.1.0
+info:
+  title: Omnicus to CRM inbound messaging contract
+  version: 2.0.0
+  description: Exact extension implemented by Omnicus for normalized Telegram media and interactions.
+security:
+  - serviceBearer: []
+paths:
+  /integrations/v1/omnicus/messages/inbound:
+    post:
+      operationId: receiveOmnicusInboundMessage
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboundMessage'
+      responses:
+        '200':
+          description: Created or idempotently replayed CRM message.
+        '400':
+          description: Safe validation error.
+        '401':
+          description: Invalid service credential.
+        '409':
+          description: Idempotency or project mapping conflict.
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-token
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  schemas:
+    Identity:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - channelIdentityId
+        - connectionId
+      properties:
+        channel:
+          type: string
+          enum:
+            - telegram
+        channelIdentityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        connectionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        externalChatId:
+          type: string
+        externalUserId:
+          type: string
+    Media:
+      type: object
+      additionalProperties: false
+      required:
+        - assetId
+        - kind
+        - type
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - PHOTO
+            - DOCUMENT
+            - VIDEO
+            - AUDIO
+            - VOICE
+            - VIDEO_NOTE
+            - ANIMATION
+        type:
+          type: string
+          enum:
+            - image
+            - file
+            - audio
+            - video
+        fileName:
+          type: string
+        mimeType:
+          type: string
+        size:
+          type: integer
+          minimum: 0
+        downloadUrl:
+          type: string
+          format: uri
+          description: Short-lived signed URL. Download immediately and never persist it.
+        downloadUrlExpiresAt:
+          type: string
+          format: date-time
+    Interactive:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - callbackQueryId
+      properties:
+        type:
+          type: string
+          enum:
+            - callback_query
+        callbackQueryId:
+          type: string
+          minLength: 1
+        data:
+          type: string
+          maxLength: 64
+        displayText:
+          type: string
+          description: Label resolved from the original Omnicus inline keyboard when available.
+        sourceMessageId:
+          type: string
+          format: uuid
+          description: Omnicus UUID of the outbound message whose button was pressed.
+    InboundMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - occurredAt
+      properties:
+        crmProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusContactId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        identity:
+          $ref: '#/components/schemas/Identity'
+        messageId:
+          type: string
+          format: uuid
+        normalizedEventId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        senderName:
+          type: string
+        text:
+          type: string
+        media:
+          $ref: '#/components/schemas/Media'
+        interactive:
+          $ref: '#/components/schemas/Interactive'
+      anyOf:
+        - required:
+            - text
+        - required:
+            - media
+        - required:
+            - interactive

@@ -115,6 +115,52 @@ describe('HttpCrmClient', () => {
     expect(String(fetchImplementation.mock.calls[1]?.[0])).toContain('idempotencyKey=operation-a');
   });
 
+  it('preserves exact Telegram media kind and callback context in inbound messages', async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      Response.json({
+        crmLeadId: 'crm-lead-a',
+        crmMessageId: 'crm-message-a',
+        mode: 'created',
+        operationId: 'operation-provider-a',
+      }),
+    );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await client.forwardInboundMessage(context, {
+      contactId: 'contact-a',
+      identity: leadInput.identity,
+      interactive: {
+        callbackQueryId: 'callback-a',
+        data: 'budget:1000',
+        displayText: 'Under 1000',
+        sourceMessageId: '11111111-1111-4111-8111-111111111111',
+        type: 'callback_query',
+      },
+      media: {
+        assetId: 'asset-a',
+        kind: 'VIDEO_NOTE',
+        type: 'video',
+      },
+      occurredAt: '2026-07-29T00:00:00.000Z',
+    });
+
+    const request = fetchImplementation.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      interactive: {
+        callbackQueryId: 'callback-a',
+        data: 'budget:1000',
+        sourceMessageId: '11111111-1111-4111-8111-111111111111',
+        type: 'callback_query',
+      },
+      media: { assetId: 'asset-a', kind: 'VIDEO_NOTE', type: 'video' },
+    });
+  });
+
   it('classifies rate limits without exposing the provider response', async () => {
     const fetchImplementation = vi
       .fn()
