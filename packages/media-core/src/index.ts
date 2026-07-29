@@ -215,21 +215,21 @@ function validateTelegramPhoto(bytes: Uint8Array, mimeType: string): ImageDimens
 const signatures = [
   {
     extension: 'jpg',
-    kinds: new Set<MediaKind>(['PHOTO']),
+    kinds: new Set<MediaKind>(['DOCUMENT', 'PHOTO']),
     mimeType: 'image/jpeg',
     matches: (bytes: Uint8Array) =>
       [0xff, 0xd8, 0xff].every((value, index) => bytes[index] === value),
   },
   {
     extension: 'png',
-    kinds: new Set<MediaKind>(['PHOTO']),
+    kinds: new Set<MediaKind>(['DOCUMENT', 'PHOTO']),
     mimeType: 'image/png',
     matches: (bytes: Uint8Array) =>
       [0x89, 0x50, 0x4e, 0x47].every((value, index) => bytes[index] === value),
   },
   {
     extension: 'webp',
-    kinds: new Set<MediaKind>(['PHOTO']),
+    kinds: new Set<MediaKind>(['DOCUMENT', 'PHOTO']),
     mimeType: 'image/webp',
     matches: (bytes: Uint8Array) =>
       [0x52, 0x49, 0x46, 0x46].every((value, index) => bytes[index] === value) &&
@@ -257,7 +257,7 @@ const signatures = [
   },
   {
     extension: 'gif',
-    kinds: new Set<MediaKind>(['ANIMATION']),
+    kinds: new Set<MediaKind>(['ANIMATION', 'DOCUMENT']),
     mimeType: 'image/gif',
     matches: (bytes: Uint8Array) =>
       bytes.byteLength >= 6 &&
@@ -265,7 +265,7 @@ const signatures = [
   },
   {
     extension: 'mp4',
-    kinds: new Set<MediaKind>(['ANIMATION', 'VIDEO', 'VIDEO_NOTE']),
+    kinds: new Set<MediaKind>(['ANIMATION', 'DOCUMENT', 'VIDEO', 'VIDEO_NOTE']),
     mimeType: 'video/mp4',
     matches: (bytes: Uint8Array) =>
       bytes.byteLength >= 12 &&
@@ -273,7 +273,7 @@ const signatures = [
   },
   {
     extension: 'm4a',
-    kinds: new Set<MediaKind>(['AUDIO', 'VOICE']),
+    kinds: new Set<MediaKind>(['AUDIO', 'DOCUMENT', 'VOICE']),
     mimeType: 'audio/mp4',
     matches: (bytes: Uint8Array) =>
       bytes.byteLength >= 12 &&
@@ -281,7 +281,7 @@ const signatures = [
   },
   {
     extension: 'mp3',
-    kinds: new Set<MediaKind>(['AUDIO', 'VOICE']),
+    kinds: new Set<MediaKind>(['AUDIO', 'DOCUMENT', 'VOICE']),
     mimeType: 'audio/mpeg',
     matches: (bytes: Uint8Array) =>
       bytes.byteLength >= 3 &&
@@ -290,7 +290,7 @@ const signatures = [
   },
   {
     extension: 'ogg',
-    kinds: new Set<MediaKind>(['VOICE']),
+    kinds: new Set<MediaKind>(['DOCUMENT', 'VOICE']),
     mimeType: 'audio/ogg',
     matches: (bytes: Uint8Array) =>
       bytes.byteLength >= 4 &&

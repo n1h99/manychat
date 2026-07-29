@@ -249,6 +249,24 @@ describe('media validation', () => {
     });
   });
 
+  it('materializes a signature-validated MP4 that Telegram classified as a document', async () => {
+    const mp4 = Uint8Array.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0]);
+
+    await expect(
+      prepareMediaForTelegram({
+        bytes: mp4,
+        declaredMimeType: 'video/mp4',
+        filename: 'telegram-animation.mp4',
+        kind: 'DOCUMENT',
+        maximumBytes: 1_000,
+      }),
+    ).resolves.toMatchObject({
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      transformed: false,
+    });
+  });
+
   it.each([
     ['ANIMATION', 'welcome.gif', 'image/gif', new TextEncoder().encode('GIF89a-content')],
     [

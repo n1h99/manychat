@@ -757,3 +757,9 @@ rendering category, while `media.kind` is the exact Telegram semantic kind.
 Callback queries are transferred as `interactive.callbackQueryId`, `data`,
 resolved `displayText` and the original Omnicus `sourceMessageId` when it can be
 resolved inside the same project and connection.
+
+Telegram may classify otherwise previewable media as `DOCUMENT`. Omnicus keeps
+that exact provider kind, but may materialize the document when its bytes,
+declared MIME type and filename match one of the explicitly recognized safe
+signatures. This does not reinterpret the provider event as an animation,
+audio or video message.
