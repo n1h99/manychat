@@ -245,6 +245,10 @@ test('opens the versioned template and visual automation workspace with mocked A
   await page.getByRole('button', { name: /Messaging/ }).click();
   await expect(page.getByRole('button', { name: 'Send template' })).toBeVisible();
   await expect(page.getByLabel('Scenario canvas')).toBeVisible();
+  await page.getByRole('button', { name: 'Enter full screen' }).click();
+  await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
   await expect(page.getByText('Graph validation passed')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Execution inspector' })).toBeVisible();
 

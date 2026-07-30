@@ -22,6 +22,8 @@ import {
   BranchesOutlined,
   ClockCircleOutlined,
   DatabaseOutlined,
+  FullscreenExitOutlined,
+  FullscreenOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   SendOutlined,
@@ -202,6 +204,9 @@ export function ScenarioEditorPage() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
   const [inspectedExecution, setInspectedExecution] = useState<ScenarioExecution>();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance>();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const scenarioName = Form.useWatch('name', form);
+  const scenarioDescription = Form.useWatch('description', form);
 
   useEffect(() => {
     const scenario = scenarioQuery.data;
@@ -216,6 +221,30 @@ export function ScenarioEditorPage() {
       name: scenario.name,
     });
   }, [form, scenarioQuery.data, setEdges, setNodes]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', exitOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', exitOnEscape);
+    };
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    if (!flowInstance) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        void fitDefaultAutomationViewport(flowInstance);
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [flowInstance, isFullscreen]);
 
   if (scenarioId !== 'new' && scenarioQuery.isLoading)
     return <Spin className="route-loading" size="large" />;
@@ -326,22 +355,64 @@ export function ScenarioEditorPage() {
         </div>
       </div>
       <Form
-        className="automation-editor"
+        className={`automation-editor${isFullscreen ? ' is-fullscreen' : ''}`}
         form={form}
         initialValues={{ name: '' }}
         layout="vertical"
         onFinish={save}
       >
-        <Row gutter={16}>
-          <Col md={12} xs={24}>
+        <div className="automation-fullscreen-toolbar">
+          <div className="automation-fullscreen-title">
+            <Typography.Text className="header-kicker">Automation workspace</Typography.Text>
+            <strong>{scenarioName || scenarioQuery.data?.name || 'New scenario'}</strong>
+            {scenarioDescription ? <small>{scenarioDescription}</small> : null}
+          </div>
+          <Space wrap>
+            <Button
+              htmlType="submit"
+              loading={mutations.create.isPending || mutations.update.isPending}
+              type="primary"
+            >
+              Save draft
+            </Button>
+            {scenarioQuery.data ? (
+              <Button
+                disabled={validation.errors.length > 0}
+                loading={mutations.publish.isPending}
+                onClick={() => void mutations.publish.mutateAsync(scenarioQuery.data!.id)}
+              >
+                Publish
+              </Button>
+            ) : null}
+            <Button
+              aria-label="Exit full screen"
+              icon={<FullscreenExitOutlined />}
+              onClick={() => setIsFullscreen(false)}
+            >
+              Exit full screen
+            </Button>
+          </Space>
+        </div>
+        <Row className="automation-editor-fields" gutter={16}>
+          <Col lg={10} xs={24}>
             <Form.Item label="Name" name="name" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
           </Col>
-          <Col md={12} xs={24}>
+          <Col lg={10} xs={24}>
             <Form.Item label="Description" name="description">
               <Input />
             </Form.Item>
+          </Col>
+          <Col className="automation-fullscreen-trigger" lg={4} xs={24}>
+            <Button
+              aria-label="Enter full screen"
+              block
+              icon={<FullscreenOutlined />}
+              onClick={() => setIsFullscreen(true)}
+            >
+              Full screen
+            </Button>
           </Col>
         </Row>
         <Row className="automation-workspace" gutter={[16, 16]}>
@@ -390,9 +461,6 @@ export function ScenarioEditorPage() {
                 nodes={nodes}
                 onInit={(instance) => {
                   setFlowInstance(instance);
-                  window.requestAnimationFrame(() => {
-                    void fitDefaultAutomationViewport(instance);
-                  });
                 }}
                 onConnect={connect}
                 onEdgeClick={(_, edge) => {
