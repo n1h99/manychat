@@ -14,6 +14,7 @@ import {
   type Node,
   type NodeProps,
   type NodeTypes,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { validateScenarioGraph } from '@omnicus/automation-core';
@@ -195,6 +196,7 @@ export function ScenarioEditorPage() {
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
   const [inspectedExecution, setInspectedExecution] = useState<ScenarioExecution>();
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance>();
 
   useEffect(() => {
     const scenario = scenarioQuery.data;
@@ -245,6 +247,11 @@ export function ScenarioEditorPage() {
             ? { timeoutSeconds: 300 }
             : {},
     }));
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        void flowInstance?.fitView({ duration: 240, padding: 0.24 });
+      });
+    });
   };
 
   const connect = (connection: Connection) => {
@@ -372,6 +379,12 @@ export function ScenarioEditorPage() {
                 minZoom={0.35}
                 nodeTypes={automationNodeTypes}
                 nodes={nodes}
+                onInit={(instance) => {
+                  setFlowInstance(instance);
+                  window.requestAnimationFrame(() => {
+                    void instance.fitView({ padding: 0.24 });
+                  });
+                }}
                 onConnect={connect}
                 onEdgeClick={(_, edge) => {
                   setSelectedEdgeId(edge.id);
