@@ -37,7 +37,7 @@ export function CrmConfigPage() {
   const save = useSaveCrmProjectConfig(projectId);
   const connectionMutations = useCrmConnectionMutations(projectId);
   const [pairing, setPairing] = useState<CrmPairing>();
-  if (access.isLoading || config.isLoading) return <Spin />;
+  if (access.isLoading || config.isLoading) return <Spin className="route-loading" size="large" />;
   if (!hasProjectPermission(access.data, 'integrations:manage'))
     return (
       <Result

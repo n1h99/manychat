@@ -13,7 +13,8 @@ export function BroadcastCreatePage() {
   const mutations = useBroadcastMutations(projectId);
   const [form] = Form.useForm();
   const contentMode = Form.useWatch('contentMode', form) ?? 'TEXT';
-  if (channels.isLoading || templates.isLoading) return <Spin />;
+  if (channels.isLoading || templates.isLoading)
+    return <Spin className="route-loading" size="large" />;
   return (
     <section className="narrow-page">
       <div className="page-heading">

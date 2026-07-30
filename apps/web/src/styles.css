@@ -120,10 +120,27 @@ button:disabled,
   padding: 2rem;
 }
 
-.app-loading,
-.route-loading {
-  display: block;
-  margin: 20vh auto;
+.app-loading {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  margin: 0;
+  background: var(--bg-canvas);
+  place-items: center;
+}
+
+.route-loading.ant-spin {
+  display: grid !important;
+  width: 100%;
+  min-height: max(320px, calc(100dvh - 190px));
+  margin: 0;
+  place-items: center;
+}
+
+.app-loading .ant-spin-dot,
+.route-loading .ant-spin-dot {
+  margin: 0 !important;
 }
 
 .app-shell {

@@ -217,7 +217,8 @@ export function ScenarioEditorPage() {
     });
   }, [form, scenarioQuery.data, setEdges, setNodes]);
 
-  if (scenarioId !== 'new' && scenarioQuery.isLoading) return <Spin />;
+  if (scenarioId !== 'new' && scenarioQuery.isLoading)
+    return <Spin className="route-loading" size="large" />;
   if (!hasProjectPermission(access.data, 'automation:manage'))
     return (
       <Result

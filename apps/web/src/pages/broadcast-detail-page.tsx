@@ -21,7 +21,7 @@ export function BroadcastDetailPage() {
   const recipients = useBroadcastRecipients(projectId, broadcastId);
   const access = useProjectAccess(projectId);
   const mutations = useBroadcastMutations(projectId);
-  if (query.isLoading || !query.data) return <Spin />;
+  if (query.isLoading || !query.data) return <Spin className="route-loading" size="large" />;
   const broadcast = query.data;
   const canLaunch = hasProjectPermission(access.data, 'broadcasts:launch');
   const canPause = hasProjectPermission(access.data, 'broadcasts:pause');
