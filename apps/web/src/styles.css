@@ -1076,24 +1076,21 @@ button:disabled,
   background: rgba(255, 255, 255, 0.97);
   border: 1px solid var(--border-strong);
   border-radius: 14px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+  box-shadow: none;
+  transition: border-color 160ms ease;
 }
 
 .automation-flow-node:hover {
-  border-color: color-mix(in srgb, var(--node-accent) 34%, var(--border));
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.11);
-  transform: translateY(-1px);
+  border-color: var(--border-strong);
+  box-shadow: none;
+  transform: none;
 }
 
 .automation-flow-node.is-selected {
   border-color: var(--node-accent);
-  box-shadow:
-    0 0 0 3px var(--node-soft),
-    0 14px 30px rgba(15, 23, 42, 0.12);
+  outline: 3px solid var(--node-soft);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .automation-flow-node--logic {
@@ -1181,8 +1178,9 @@ button:disabled,
 
 .scenario-canvas .react-flow__edge-textbg {
   fill: rgba(255, 255, 255, 0.94);
-  stroke: var(--border);
-  stroke-width: 1;
+  stroke: none;
+  rx: 8px;
+  ry: 8px;
 }
 
 .automation-flow-controls {
@@ -1207,6 +1205,8 @@ button:disabled,
 }
 
 .automation-flow-minimap {
+  width: 100px !important;
+  height: 75px !important;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.9) !important;
   border: 1px solid var(--border);

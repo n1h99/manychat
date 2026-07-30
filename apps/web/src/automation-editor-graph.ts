@@ -8,6 +8,13 @@ export type AutomationEdgeData = {
   priority?: number;
 };
 
+export function automationEdgeLabel(output?: string): string | undefined {
+  if (!output || output === 'default') return undefined;
+  const branch = /^branch-(\d+)$/i.exec(output);
+  if (branch) return `Branch ${branch[1]}`;
+  return output.replaceAll('_', ' ');
+}
+
 export function scenarioGraphToFlow(graph: ScenarioGraph): { edges: Edge[]; nodes: Node[] } {
   return {
     edges: graph.edges.map((edge, index) => ({
@@ -17,7 +24,7 @@ export function scenarioGraphToFlow(graph: ScenarioGraph): { edges: Edge[]; node
         ...(edge.priority === undefined ? {} : { priority: edge.priority }),
       },
       id: edge.id ?? `edge-${index}-${edge.from}-${edge.to}`,
-      label: edge.output && edge.output !== 'default' ? edge.output : undefined,
+      label: automationEdgeLabel(edge.output),
       source: edge.from,
       target: edge.to,
     })),

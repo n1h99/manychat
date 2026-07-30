@@ -3,7 +3,6 @@ import {
   Background,
   Controls,
   Handle,
-  MarkerType,
   MiniMap,
   Position,
   ReactFlow,
@@ -58,6 +57,7 @@ import { useNavigate, useParams } from 'react-router';
 
 import { AutomationNodeConfig } from '../automation-node-config';
 import {
+  automationEdgeLabel,
   type AutomationEdgeData,
   flowToScenarioGraph,
   scenarioGraphToFlow,
@@ -162,15 +162,19 @@ function AutomationCanvasNode({ data, selected }: NodeProps<AutomationCanvasNode
 
 const automationNodeTypes: NodeTypes = { automation: AutomationCanvasNode };
 const automationEdgeDefaults: Partial<Edge> = {
-  markerEnd: {
-    color: '#64748b',
-    height: 18,
-    type: MarkerType.ArrowClosed,
-    width: 18,
-  },
+  labelBgBorderRadius: 8,
+  labelBgPadding: [7, 4],
+  labelBgStyle: { fill: '#ffffff', fillOpacity: 0.96 },
+  labelStyle: { fill: '#475569', fontSize: 10, fontWeight: 600 },
   style: { stroke: '#94a3b8', strokeWidth: 2 },
   type: 'smoothstep',
 };
+
+async function fitDefaultAutomationViewport(instance: ReactFlowInstance) {
+  await instance.fitView({ padding: 0.24 });
+  await instance.zoomOut({ duration: 0 });
+  await instance.zoomOut({ duration: 0 });
+}
 
 function styledNodes(nodes: Node[]): Node[] {
   return nodes.map((node) => ({ ...node, type: 'automation' }));
@@ -278,7 +282,7 @@ export function ScenarioEditorPage() {
         {
           ...connection,
           data,
-          label: data.output === 'default' ? undefined : data.output,
+          label: automationEdgeLabel(data.output),
         },
         current,
       ),
@@ -382,7 +386,7 @@ export function ScenarioEditorPage() {
                 onInit={(instance) => {
                   setFlowInstance(instance);
                   window.requestAnimationFrame(() => {
-                    void instance.fitView({ padding: 0.24 });
+                    void fitDefaultAutomationViewport(instance);
                   });
                 }}
                 onConnect={connect}
@@ -396,6 +400,7 @@ export function ScenarioEditorPage() {
                   setSelectedEdgeId(undefined);
                 }}
                 onNodesChange={onNodesChange}
+                proOptions={{ hideAttribution: true }}
               >
                 <Background color="#dbe5ef" gap={22} size={1.2} />
                 <Controls className="automation-flow-controls" />
@@ -403,6 +408,7 @@ export function ScenarioEditorPage() {
                   className="automation-flow-minimap"
                   maskColor="rgba(241, 245, 249, 0.78)"
                   nodeColor="#99c9c4"
+                  style={{ height: 75, width: 100 }}
                 />
               </ReactFlow>
             </div>
