@@ -242,6 +242,7 @@ test('opens the versioned template and visual automation workspace with mocked A
     'href',
     '/projects/project-a/scenarios',
   );
+  await page.getByRole('button', { name: /Messaging/ }).click();
   await expect(page.getByRole('button', { name: 'Send template' })).toBeVisible();
   await expect(page.getByLabel('Scenario canvas')).toBeVisible();
   await expect(page.getByText('Graph validation passed')).toBeVisible();

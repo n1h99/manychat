@@ -28,8 +28,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProperties, ErrorBound
     if (this.state.failed) {
       return (
         <main className="bootstrap-error" role="alert">
-          <h1>Не удалось загрузить интерфейс</h1>
-          <p>Обновите страницу. Если ошибка повторяется, сообщите в поддержку.</p>
+          <h1>The interface could not be loaded</h1>
+          <p>Refresh the page. If the problem persists, contact support.</p>
         </main>
       );
     }

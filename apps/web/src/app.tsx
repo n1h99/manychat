@@ -62,7 +62,7 @@ export function App() {
   return (
     <Suspense
       fallback={
-        <div aria-label="Загрузка страницы" role="status" className="app-loading">
+        <div aria-label="Loading page" role="status" className="app-loading">
           <Spin size="large" />
         </div>
       }

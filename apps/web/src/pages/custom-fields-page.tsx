@@ -1,4 +1,4 @@
-import { PlusOutlined } from '@ant-design/icons';
+import { EditOutlined, InboxOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Select, Space, Table, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -25,6 +25,16 @@ const fieldTypes = [
   'MULTI_SELECT',
   'JSON',
 ];
+const fieldTypeLabels: Record<string, string> = {
+  BOOLEAN: 'Boolean',
+  DATE: 'Date',
+  DATETIME: 'Date & time',
+  JSON: 'JSON',
+  MULTI_SELECT: 'Multi-select',
+  NUMBER: 'Number',
+  SELECT: 'Select',
+  TEXT: 'Text',
+};
 
 export function CustomFieldsPage() {
   const { projectId } = useParams();
@@ -66,29 +76,55 @@ export function CustomFieldsPage() {
       </div>
       <Table<Field>
         columns={[
-          { dataIndex: 'name', title: 'Name' },
-          { dataIndex: 'key', title: 'Key' },
-          { dataIndex: 'type', title: 'Type' },
+          {
+            dataIndex: 'name',
+            render: (name: string) => <Typography.Text strong>{name}</Typography.Text>,
+            title: 'Name',
+            width: '22%',
+          },
+          {
+            dataIndex: 'key',
+            render: (key: string) => <code className="field-key-label">{key}</code>,
+            title: 'Key',
+            width: '20%',
+          },
+          {
+            dataIndex: 'type',
+            render: (value: string) => (
+              <span className="field-type-label">{fieldTypeLabels[value] ?? value}</span>
+            ),
+            title: 'Type',
+            width: '20%',
+          },
           {
             dataIndex: 'options',
-            render: (options) => options?.join(', ') ?? '—',
+            render: (options) =>
+              options?.length ? (
+                options.join(', ')
+              ) : (
+                <Typography.Text type="secondary">—</Typography.Text>
+              ),
             title: 'Options',
           },
           {
+            align: 'right',
             render: (_, row) => (
-              <Space>
+              <Space size={8}>
                 <Button
+                  icon={<EditOutlined />}
                   onClick={() => {
                     form.setFieldsValue({ ...row, options: row.options?.join(', ') });
                     setEditing(row);
                     setType(row.type);
                     setOpen(true);
                   }}
+                  size="small"
                 >
                   Edit
                 </Button>
                 <Button
                   danger
+                  icon={<InboxOutlined />}
                   onClick={() =>
                     void apiRequest(
                       `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
@@ -96,12 +132,14 @@ export function CustomFieldsPage() {
                       accessToken,
                     ).then(reload)
                   }
+                  size="small"
                 >
                   Archive
                 </Button>
               </Space>
             ),
             title: 'Actions',
+            width: 190,
           },
         ]}
         dataSource={fields.data ?? []}

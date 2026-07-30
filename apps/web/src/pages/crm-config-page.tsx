@@ -49,6 +49,16 @@ export function CrmConfigPage() {
   const initialValues = config.data
     ? { ...config.data, fieldMapping: JSON.stringify(config.data.fieldMapping, null, 2) }
     : { enabled: true, fieldMapping: '{}' };
+  const isConnected = Boolean(config.data?.paired && config.data.status !== 'DISABLED');
+  const generatePairingCode = async () => {
+    const crmProjectId = config.data?.crmProjectId;
+    if (!crmProjectId) {
+      void message.error('Save the CRM project ID first.');
+      return;
+    }
+    setPairing(await connectionMutations.pairing.mutateAsync(crmProjectId));
+  };
+
   return (
     <section>
       <div className="page-heading">
@@ -60,91 +70,59 @@ export function CrmConfigPage() {
           </Typography.Text>
         </div>
       </div>
-      <Alert
-        className="form-alert"
-        showIcon
-        type="info"
-        message="Cyber Pulse CRM"
-        description="Здесь настраиваются project routing и mapping для подключённой Cyber Pulse CRM."
-      />
-      <Card className="crm-connection-card" title="Project CRM connection">
-        <Descriptions
-          column={2}
-          items={[
-            {
-              key: 'status',
-              label: 'Status',
-              children: <Tag>{config.data?.status ?? 'DRAFT'}</Tag>,
-            },
-            {
-              key: 'provider',
-              label: 'Provider',
-              children: config.data?.provider ?? 'CYBER_PULSE',
-            },
-            { key: 'baseUrl', label: 'CRM URL', children: config.data?.baseUrl ?? 'Not paired' },
-            {
-              key: 'tested',
-              label: 'Last test',
-              children: config.data?.lastTestedAt
-                ? new Date(config.data.lastTestedAt).toLocaleString()
-                : 'Never',
-            },
-          ]}
-          size="small"
-        />
-        <Typography.Paragraph type="secondary">
-          Generate a one-time code, then enter the Omnicus API URL and code on the CRM Integrations
-          page. Per-project credentials are exchanged automatically and are never shown again.
-        </Typography.Paragraph>
-        {pairing ? (
-          <Alert
-            description={
-              <>
-                <div>Omnicus API URL: {pairing.omnicusApiUrl}</div>
-                <div>Pairing code: {pairing.pairingCode}</div>
-                <div>Expires: {new Date(pairing.expiresAt).toLocaleString()}</div>
-              </>
-            }
-            message="Copy these values to CRM"
-            showIcon
-            type="success"
+      {isConnected ? (
+        <Card className="crm-connection-card" title="Project CRM connection">
+          <Descriptions
+            column={2}
+            items={[
+              {
+                key: 'status',
+                label: 'Status',
+                children: <Tag>{config.data?.status}</Tag>,
+              },
+              {
+                key: 'provider',
+                label: 'Provider',
+                children: config.data?.provider,
+              },
+              { key: 'baseUrl', label: 'CRM URL', children: config.data?.baseUrl },
+              {
+                key: 'tested',
+                label: 'Last test',
+                children: config.data?.lastTestedAt
+                  ? new Date(config.data.lastTestedAt).toLocaleString()
+                  : 'Never',
+              },
+            ]}
+            size="small"
           />
-        ) : null}
-        <Button
-          loading={connectionMutations.pairing.isPending}
-          onClick={async () => {
-            const crmProjectId = config.data?.crmProjectId;
-            if (!crmProjectId) {
-              void message.error('Save CRM project ID first.');
-              return;
-            }
-            setPairing(await connectionMutations.pairing.mutateAsync(crmProjectId));
-          }}
-        >
-          {config.data?.paired ? 'Rotate / pair again' : 'Generate pairing code'}
-        </Button>{' '}
-        <Button
-          disabled={!config.data?.paired}
-          loading={connectionMutations.test.isPending}
-          onClick={async () => {
-            const result = await connectionMutations.test.mutateAsync();
-            if (result.ok) void message.success('CRM connection verified.');
-            else void message.error('CRM connection test failed.');
-          }}
-        >
-          Test connection
-        </Button>{' '}
-        <Popconfirm
-          title="Disable this CRM connection?"
-          onConfirm={() => connectionMutations.disable.mutateAsync()}
-        >
-          <Button danger disabled={!config.data}>
-            Disable
-          </Button>
-        </Popconfirm>
-      </Card>
+          <div className="crm-connection-actions">
+            <Button
+              loading={connectionMutations.test.isPending}
+              onClick={async () => {
+                const result = await connectionMutations.test.mutateAsync();
+                if (result.ok) void message.success('CRM connection verified.');
+                else void message.error('CRM connection test failed.');
+              }}
+            >
+              Test connection
+            </Button>
+            <Popconfirm
+              description="Configuration values will remain available for a future reconnection."
+              title="Disconnect this CRM?"
+              onConfirm={async () => {
+                await connectionMutations.disable.mutateAsync();
+                setPairing(undefined);
+              }}
+            >
+              <Button danger>Disconnect</Button>
+            </Popconfirm>
+          </div>
+        </Card>
+      ) : null}
       <Form
         className="settings-form surface crm-routing-form"
+        disabled={isConnected}
         initialValues={initialValues}
         layout="vertical"
         onFinish={async (values: {
@@ -165,9 +143,9 @@ export function CrmConfigPage() {
               enabled: values.enabled,
               fieldMapping,
             });
-            void message.success('CRM configuration сохранена.');
+            void message.success('CRM configuration saved.');
           } catch {
-            void message.error('Не удалось сохранить конфигурацию. Проверьте JSON mapping.');
+            void message.error('The configuration could not be saved. Check the JSON mapping.');
           }
         }}
       >
@@ -186,9 +164,35 @@ export function CrmConfigPage() {
         <Form.Item label="Enable CRM integration" name="enabled" valuePropName="checked">
           <Switch />
         </Form.Item>
-        <Button htmlType="submit" loading={save.isPending} type="primary">
-          Save configuration
-        </Button>
+        <div className="crm-config-actions">
+          <Button disabled={isConnected} htmlType="submit" loading={save.isPending} type="primary">
+            Save configuration
+          </Button>
+          {!isConnected ? (
+            <Button
+              htmlType="button"
+              loading={connectionMutations.pairing.isPending}
+              onClick={() => void generatePairingCode()}
+            >
+              Generate pairing code
+            </Button>
+          ) : null}
+        </div>
+        {!isConnected && pairing ? (
+          <Alert
+            className="crm-pairing-note"
+            description={
+              <>
+                <div>Omnicus API URL: {pairing.omnicusApiUrl}</div>
+                <div>Pairing code: {pairing.pairingCode}</div>
+                <div>Expires: {new Date(pairing.expiresAt).toLocaleString()}</div>
+              </>
+            }
+            message="Copy these values to CRM"
+            showIcon
+            type="success"
+          />
+        ) : null}
       </Form>
       <Typography.Title className="section-heading-title" level={3}>
         CRM operation journal
@@ -198,15 +202,15 @@ export function CrmConfigPage() {
         showIcon
         type="warning"
         message="Unknown delivery requires confirmation"
-        description="Повтор UNKNOWN-операции возможен только после проверки, что внешняя CRM не применила запрос. Это защищает от слепого дублирования side effect."
+        description="Retry an UNKNOWN operation only after confirming that the external CRM did not apply the request. This prevents duplicate side effects."
       />
       <Table<CrmOperation>
         dataSource={operations.data ?? []}
         loading={operations.isLoading}
         locale={{
           emptyText: operations.isError
-            ? 'Не удалось загрузить журнал операций.'
-            : 'CRM operations пока нет.',
+            ? 'The CRM operation journal could not be loaded.'
+            : 'No CRM operations yet.',
         }}
         pagination={{ pageSize: 10, showSizeChanger: false }}
         rowKey="id"

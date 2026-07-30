@@ -2,20 +2,40 @@ import {
   addEdge,
   Background,
   Controls,
+  Handle,
+  MarkerType,
   MiniMap,
+  Position,
   ReactFlow,
   useEdgesState,
   useNodesState,
   type Connection,
   type Edge,
+  type Node,
+  type NodeProps,
+  type NodeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { validateScenarioGraph } from '@omnicus/automation-core';
+import {
+  ApiOutlined,
+  BranchesOutlined,
+  ClockCircleOutlined,
+  DatabaseOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  SendOutlined,
+  SettingOutlined,
+  StopOutlined,
+  TagsOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
 import {
   Alert,
   Button,
   Card,
   Col,
+  Collapse,
   Descriptions,
   Drawer,
   Form,
@@ -52,23 +72,108 @@ import {
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { useTemplates } from '../templates-api';
 
-const palette = [
-  ['INCOMING_MESSAGE', 'Incoming message'],
-  ['CONDITION', 'Condition'],
-  ['CREATE_OR_UPDATE_LEAD', 'Create/update CRM lead'],
-  ['FORWARD_TO_CRM', 'Forward message to CRM'],
-  ['SEND_MESSAGE', 'Send message'],
-  ['SEND_TEMPLATE', 'Send template'],
-  ['ADD_TAG', 'Add tag'],
-  ['REMOVE_TAG', 'Remove tag'],
-  ['SET_CUSTOM_FIELD', 'Set custom field'],
-  ['DELAY', 'Delay'],
-  ['WAIT_FOR_REPLY', 'Wait for reply'],
-  ['START_SUBFLOW', 'Subflow'],
-  ['PAUSE_AUTOMATION', 'Pause automation'],
-  ['RESUME_AUTOMATION', 'Resume automation'],
-  ['STOP', 'Stop'],
+const paletteGroups = [
+  {
+    key: 'triggers',
+    label: 'Triggers',
+    nodes: [['INCOMING_MESSAGE', 'Incoming message']],
+  },
+  {
+    key: 'logic',
+    label: 'Logic',
+    nodes: [
+      ['CONDITION', 'Condition'],
+      ['DELAY', 'Delay'],
+      ['WAIT_FOR_REPLY', 'Wait for reply'],
+      ['START_SUBFLOW', 'Subflow'],
+      ['STOP', 'Stop'],
+    ],
+  },
+  {
+    key: 'messaging',
+    label: 'Messaging',
+    nodes: [
+      ['SEND_MESSAGE', 'Send message'],
+      ['SEND_TEMPLATE', 'Send template'],
+      ['FORWARD_TO_CRM', 'Forward to CRM'],
+    ],
+  },
+  {
+    key: 'data',
+    label: 'Data & control',
+    nodes: [
+      ['CREATE_OR_UPDATE_LEAD', 'Create/update lead'],
+      ['ADD_TAG', 'Add tag'],
+      ['REMOVE_TAG', 'Remove tag'],
+      ['SET_CUSTOM_FIELD', 'Set custom field'],
+      ['PAUSE_AUTOMATION', 'Pause automation'],
+      ['RESUME_AUTOMATION', 'Resume automation'],
+    ],
+  },
 ] as const;
+
+const paletteLabels = new Map<string, string>(
+  paletteGroups.flatMap((group) =>
+    group.nodes.map(([type, label]) => [type, label] as [string, string]),
+  ),
+);
+
+type AutomationCanvasNodeDefinition = Node<{ label: string }, 'automation'>;
+
+function automationNodeIcon(type: string) {
+  if (type === 'INCOMING_MESSAGE') return <ThunderboltOutlined />;
+  if (type === 'CONDITION') return <BranchesOutlined />;
+  if (type === 'SEND_MESSAGE' || type === 'SEND_TEMPLATE') return <SendOutlined />;
+  if (type === 'FORWARD_TO_CRM') return <ApiOutlined />;
+  if (type === 'CREATE_OR_UPDATE_LEAD' || type === 'SET_CUSTOM_FIELD') return <DatabaseOutlined />;
+  if (type === 'ADD_TAG' || type === 'REMOVE_TAG') return <TagsOutlined />;
+  if (type === 'DELAY' || type === 'WAIT_FOR_REPLY') return <ClockCircleOutlined />;
+  if (type === 'PAUSE_AUTOMATION') return <PauseCircleOutlined />;
+  if (type === 'RESUME_AUTOMATION') return <PlayCircleOutlined />;
+  if (type === 'STOP') return <StopOutlined />;
+  if (type === 'START_SUBFLOW') return <BranchesOutlined />;
+  return <SettingOutlined />;
+}
+
+function automationNodeCategory(type: string) {
+  if (type === 'INCOMING_MESSAGE') return 'Trigger';
+  if (['CONDITION', 'DELAY', 'WAIT_FOR_REPLY', 'START_SUBFLOW'].includes(type)) return 'Logic';
+  if (type === 'STOP') return 'End';
+  return 'Action';
+}
+
+function AutomationCanvasNode({ data, selected }: NodeProps<AutomationCanvasNodeDefinition>) {
+  const type = String(data.label);
+  return (
+    <div
+      className={`automation-flow-node automation-flow-node--${automationNodeCategory(type).toLowerCase()}${selected ? ' is-selected' : ''}`}
+    >
+      <Handle className="automation-node-handle" position={Position.Top} type="target" />
+      <span className="automation-flow-node-icon">{automationNodeIcon(type)}</span>
+      <span className="automation-flow-node-copy">
+        <small>{automationNodeCategory(type)}</small>
+        <strong>{paletteLabels.get(type) ?? type}</strong>
+      </span>
+      <Handle className="automation-node-handle" position={Position.Bottom} type="source" />
+    </div>
+  );
+}
+
+const automationNodeTypes: NodeTypes = { automation: AutomationCanvasNode };
+const automationEdgeDefaults: Partial<Edge> = {
+  markerEnd: {
+    color: '#64748b',
+    height: 18,
+    type: MarkerType.ArrowClosed,
+    width: 18,
+  },
+  style: { stroke: '#94a3b8', strokeWidth: 2 },
+  type: 'smoothstep',
+};
+
+function styledNodes(nodes: Node[]): Node[] {
+  return nodes.map((node) => ({ ...node, type: 'automation' }));
+}
 
 export function ScenarioEditorPage() {
   const { projectId, scenarioId } = useParams();
@@ -80,7 +185,10 @@ export function ScenarioEditorPage() {
   const executions = useScenarioExecutions(projectId, scenarioId);
   const mutations = useScenarioMutations(projectId);
   const [form] = Form.useForm<{ description?: string; name: string }>();
-  const initial = useMemo(() => scenarioGraphToFlow(emptyScenarioGraph), []);
+  const initial = useMemo(() => {
+    const flow = scenarioGraphToFlow(emptyScenarioGraph);
+    return { ...flow, nodes: styledNodes(flow.nodes) };
+  }, []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const [configs, setConfigs] = useState<Record<string, Record<string, unknown>>>({});
@@ -93,7 +201,7 @@ export function ScenarioEditorPage() {
     const graph = scenario?.draftVersion?.graph ?? scenario?.activeVersion?.graph;
     if (!graph || !scenario) return;
     const flow = scenarioGraphToFlow(graph);
-    setNodes(flow.nodes);
+    setNodes(styledNodes(flow.nodes));
     setEdges(flow.edges);
     setConfigs(Object.fromEntries(graph.nodes.map((node) => [node.id, node.config ?? {}])));
     form.setFieldsValue({
@@ -125,7 +233,7 @@ export function ScenarioEditorPage() {
         data: { label: type },
         id,
         position: { x: 140 + current.length * 45, y: 120 + current.length * 35 },
-        type: 'default',
+        type: 'automation',
       },
     ]);
     setConfigs((current) => ({
@@ -222,21 +330,47 @@ export function ScenarioEditorPage() {
         </Row>
         <Row className="automation-workspace" gutter={[16, 16]}>
           <Col lg={6} xl={5} xs={24}>
-            <Card size="small" title="Node palette">
-              <Space className="node-palette" direction="vertical">
-                {palette.map(([type, label]) => (
-                  <Button block key={type} onClick={() => addNode(type)}>
-                    {label}
-                  </Button>
-                ))}
-              </Space>
+            <Card className="automation-panel-card" size="small" title="Add a step">
+              <Typography.Paragraph className="automation-panel-hint" type="secondary">
+                Choose a step and place it on the canvas.
+              </Typography.Paragraph>
+              <Collapse
+                className="node-palette"
+                defaultActiveKey={['triggers', 'logic']}
+                ghost
+                items={paletteGroups.map((group) => ({
+                  children: (
+                    <div className="node-palette-items">
+                      {group.nodes.map(([type, label]) => (
+                        <Button
+                          block
+                          className="node-palette-item"
+                          icon={automationNodeIcon(type)}
+                          key={type}
+                          onClick={() => addNode(type)}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                  ),
+                  key: group.key,
+                  label: group.label,
+                }))}
+              />
             </Card>
           </Col>
           <Col lg={18} xl={14} xs={24}>
             <div aria-label="Scenario canvas" className="scenario-canvas">
               <ReactFlow
+                connectionLineStyle={{ stroke: '#0f766e', strokeWidth: 2 }}
+                defaultEdgeOptions={automationEdgeDefaults}
                 edges={edges}
                 fitView
+                fitViewOptions={{ padding: 0.24 }}
+                maxZoom={1.6}
+                minZoom={0.35}
+                nodeTypes={automationNodeTypes}
                 nodes={nodes}
                 onConnect={connect}
                 onEdgeClick={(_, edge) => {
@@ -250,14 +384,22 @@ export function ScenarioEditorPage() {
                 }}
                 onNodesChange={onNodesChange}
               >
-                <Background />
-                <Controls />
-                <MiniMap />
+                <Background color="#dbe5ef" gap={22} size={1.2} />
+                <Controls className="automation-flow-controls" />
+                <MiniMap
+                  className="automation-flow-minimap"
+                  maskColor="rgba(241, 245, 249, 0.78)"
+                  nodeColor="#99c9c4"
+                />
               </ReactFlow>
             </div>
           </Col>
           <Col lg={24} xl={5} xs={24}>
-            <Card size="small" title={selected ? 'Node settings' : 'Edge settings'}>
+            <Card
+              className="automation-panel-card"
+              size="small"
+              title={selected ? 'Node settings' : selectedEdge ? 'Connection settings' : 'Settings'}
+            >
               {selected ? (
                 <>
                   <Tag>{String(selected.data.label)}</Tag>
@@ -297,7 +439,13 @@ export function ScenarioEditorPage() {
                   }
                 />
               ) : (
-                <Typography.Text type="secondary">Select a node or edge.</Typography.Text>
+                <div className="automation-settings-empty">
+                  <SettingOutlined />
+                  <strong>Nothing selected</strong>
+                  <Typography.Text type="secondary">
+                    Select a step or connection on the canvas to configure it.
+                  </Typography.Text>
+                </div>
               )}
             </Card>
           </Col>
@@ -324,6 +472,7 @@ export function ScenarioEditorPage() {
       <Space className="automation-validation" direction="vertical">
         {validation.errors.length ? (
           <Alert
+            className="soft-notice"
             description={validation.errors.map((error) => (
               <div key={error}>{error}</div>
             ))}
@@ -332,15 +481,28 @@ export function ScenarioEditorPage() {
             type="error"
           />
         ) : (
-          <Alert message="Graph validation passed" showIcon type="success" />
+          <Alert
+            className="soft-notice"
+            message="Graph validation passed"
+            showIcon
+            type="success"
+          />
         )}
         {validation.warnings.length ? (
-          <Alert description={validation.warnings.join('; ')} message="Warnings" type="warning" />
+          <Alert
+            className="soft-notice"
+            description={validation.warnings.join('; ')}
+            message="Warnings"
+            showIcon
+            type="warning"
+          />
         ) : null}
       </Space>
       {scenarioQuery.data ? (
         <>
-          <Typography.Title level={4}>Version history</Typography.Title>
+          <Typography.Title className="automation-section-title" level={4}>
+            Version history
+          </Typography.Title>
           <Table
             columns={[
               { dataIndex: 'version', title: 'Version' },
@@ -371,7 +533,9 @@ export function ScenarioEditorPage() {
             pagination={false}
             rowKey="id"
           />
-          <Typography.Title level={4}>Execution inspector</Typography.Title>
+          <Typography.Title className="automation-section-title" level={4}>
+            Execution inspector
+          </Typography.Title>
           <Table
             columns={[
               {

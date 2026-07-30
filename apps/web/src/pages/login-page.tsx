@@ -21,7 +21,7 @@ export function LoginPage() {
             Sign in to manage customer journeys and messaging operations.
           </Typography.Paragraph>
         </div>
-        {error ? <Alert className="form-alert" message={error} type="error" /> : null}
+        {error ? <Alert className="form-alert" message={error} showIcon type="error" /> : null}
         <Form
           layout="vertical"
           onFinish={async (values: { email: string; password: string }) => {

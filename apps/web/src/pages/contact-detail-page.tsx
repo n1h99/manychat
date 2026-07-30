@@ -90,7 +90,7 @@ export function ContactDetailPage() {
         </Space>
       </div>
 
-      <Row gutter={[18, 18]}>
+      <Row className="balanced-card-row" gutter={[18, 18]}>
         <Col lg={9} xs={24}>
           <Card title="Contact summary">
             <Descriptions column={1} size="small">
@@ -223,7 +223,7 @@ export function ContactDetailPage() {
         </Col>
       </Row>
 
-      <Row className="contact-secondary-row" gutter={[18, 18]}>
+      <Row className="balanced-card-row contact-secondary-row" gutter={[18, 18]}>
         <Col lg={hasProjectPermission(access.data, 'contacts:merge') ? 15 : 24} xs={24}>
           <Card title="Custom field values">
             <Form

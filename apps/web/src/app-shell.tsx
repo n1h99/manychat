@@ -4,19 +4,9 @@ import {
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
-import {
-  Avatar,
-  Breadcrumb,
-  Button,
-  Drawer,
-  Dropdown,
-  Grid,
-  Layout,
-  Menu,
-  Space,
-  Typography,
-} from 'antd';
+import { Avatar, Breadcrumb, Button, Drawer, Dropdown, Grid, Layout, Menu, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
@@ -169,14 +159,12 @@ export function AppShell() {
             trigger={['click']}
           >
             <Button className="account-menu" type="text">
-              <Space size={10}>
-                <Avatar size={34}>{avatarLabel}</Avatar>
-                <span className="account-copy">
-                  <strong>{identity?.email ?? 'Account'}</strong>
-                  <small>Manage session</small>
-                </span>
-                <DownOutlined />
-              </Space>
+              <Avatar size={34}>{avatarLabel}</Avatar>
+              <span className="account-copy">
+                <strong>{identity?.email ?? 'Account'}</strong>
+                <small>Manage session</small>
+              </span>
+              <DownOutlined className="account-menu-chevron" />
             </Button>
           </Dropdown>
         </Header>
@@ -192,6 +180,7 @@ export function AppShell() {
                       breadcrumb.label
                     ),
                   }))}
+                  separator={<RightOutlined />}
                 />
               </nav>
             ) : null}

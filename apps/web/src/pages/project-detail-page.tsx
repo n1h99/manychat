@@ -136,7 +136,7 @@ export function ProjectDetailPage() {
         </Button>
       </div>
 
-      <Row className="project-overview-row" gutter={[18, 18]}>
+      <Row className="balanced-card-row" gutter={[18, 18]}>
         <Col lg={9} xs={24}>
           <Card title="Project details">
             <Descriptions column={1} size="small">

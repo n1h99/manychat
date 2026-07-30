@@ -2,7 +2,7 @@ import { SearchOutlined } from '@ant-design/icons';
 import { Alert, Empty, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 
 import { apiRequest } from '../api';
 import { useAuth } from '../auth';
@@ -31,6 +31,7 @@ interface SegmentItem {
 
 export function ContactsPage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const { accessToken } = useAuth();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -80,12 +81,16 @@ export function ContactsPage() {
           <Input
             allowClear
             aria-label="Search contacts"
+            autoComplete="off"
+            className="contact-search-input"
+            name="contact-search"
             onChange={(event) => {
               setPage(1);
               setSearch(event.target.value);
             }}
             placeholder="Name, username, phone or email"
             prefix={<SearchOutlined />}
+            spellCheck={false}
             style={{ width: 320 }}
             value={search}
           />
@@ -136,9 +141,7 @@ export function ContactsPage() {
         columns={[
           {
             dataIndex: 'displayName',
-            render: (name, row) => (
-              <Link to={`/projects/${projectId}/contacts/${row.id}`}>{name}</Link>
-            ),
+            render: (name) => <Typography.Text strong>{name}</Typography.Text>,
             title: 'Name',
           },
           { dataIndex: 'email', title: 'Email' },
@@ -187,6 +190,18 @@ export function ContactsPage() {
           pageSize: 25,
           total: contacts.data?.total ?? 0,
         }}
+        onRow={(row) => ({
+          className: 'clickable-row',
+          onClick: () => navigate(`/projects/${projectId}/contacts/${row.id}`),
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              navigate(`/projects/${projectId}/contacts/${row.id}`);
+            }
+          },
+          role: 'link',
+          tabIndex: 0,
+        })}
         rowKey="id"
       />
     </section>

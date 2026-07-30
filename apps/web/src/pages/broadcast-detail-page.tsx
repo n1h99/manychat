@@ -31,7 +31,7 @@ export function BroadcastDetailPage() {
       await operation();
       void message.success(success);
     } catch {
-      void message.error('Операция не выполнена. Проверьте текущий статус рассылки.');
+      void message.error('The operation failed. Check the current broadcast status.');
     }
   };
   return (
@@ -41,10 +41,10 @@ export function BroadcastDetailPage() {
         bordered
         column={1}
         items={[
-          { key: 'status', label: 'Статус', children: <Tag>{broadcast.status}</Tag> },
-          { key: 'audience', label: 'Аудитория', children: broadcast.audience.mode },
-          { key: 'text', label: 'Текст', children: broadcast.text },
-          { key: 'total', label: 'Получатели', children: broadcast.recipientCount },
+          { key: 'status', label: 'Status', children: <Tag>{broadcast.status}</Tag> },
+          { key: 'audience', label: 'Audience', children: broadcast.audience.mode },
+          { key: 'text', label: 'Message', children: broadcast.text },
+          { key: 'total', label: 'Recipients', children: broadcast.recipientCount },
           {
             key: 'errorCode',
             label: 'Safe error',
@@ -58,34 +58,28 @@ export function BroadcastDetailPage() {
             loading={mutations.launch.isPending}
             type="primary"
             onClick={() =>
-              void action(
-                () => mutations.launch.mutateAsync(broadcast.id),
-                'Рассылка поставлена в очередь.',
-              )
+              void action(() => mutations.launch.mutateAsync(broadcast.id), 'Broadcast queued.')
             }
           >
-            Запустить
+            Launch
           </Button>
         ) : null}
         {canPause && broadcast.status === 'RUNNING' ? (
           <Button
             onClick={() =>
-              void action(
-                () => mutations.pause.mutateAsync(broadcast.id),
-                'Рассылка приостановлена.',
-              )
+              void action(() => mutations.pause.mutateAsync(broadcast.id), 'Broadcast paused.')
             }
           >
-            Пауза
+            Pause
           </Button>
         ) : null}
         {canLaunch && broadcast.status === 'PAUSED' ? (
           <Button
             onClick={() =>
-              void action(() => mutations.resume.mutateAsync(broadcast.id), 'Рассылка продолжена.')
+              void action(() => mutations.resume.mutateAsync(broadcast.id), 'Broadcast resumed.')
             }
           >
-            Продолжить
+            Resume
           </Button>
         ) : null}
         {canLaunch && broadcast.status === 'RUNNING' ? (
@@ -93,11 +87,11 @@ export function BroadcastDetailPage() {
             onClick={() =>
               void action(
                 () => mutations.retryFailed.mutateAsync(broadcast.id),
-                'Неуспешные получатели снова поставлены в очередь.',
+                'Failed recipients queued again.',
               )
             }
           >
-            Повторить failed
+            Retry failed
           </Button>
         ) : null}
         {canCancel &&
@@ -106,19 +100,19 @@ export function BroadcastDetailPage() {
             danger
             onClick={() =>
               Modal.confirm({
-                title: 'Отменить рассылку?',
+                title: 'Cancel this broadcast?',
                 onOk: () =>
-                  action(() => mutations.cancel.mutateAsync(broadcast.id), 'Рассылка отменена.'),
+                  action(() => mutations.cancel.mutateAsync(broadcast.id), 'Broadcast cancelled.'),
               })
             }
           >
-            Отменить
+            Cancel
           </Button>
         ) : null}
       </Space>
-      <Typography.Title level={4}>Получатели</Typography.Title>
+      <Typography.Title level={4}>Recipients</Typography.Title>
       {recipients.isError ? (
-        <Alert message="Не удалось загрузить получателей рассылки." showIcon type="error" />
+        <Alert message="Broadcast recipients could not be loaded." showIcon type="error" />
       ) : null}
       <Table
         rowKey="id"
@@ -126,14 +120,14 @@ export function BroadcastDetailPage() {
         dataSource={recipients.data?.items ?? []}
         pagination={false}
         columns={[
-          { title: 'Контакт', dataIndex: ['contact', 'displayName'] },
+          { title: 'Contact', dataIndex: ['contact', 'displayName'] },
           {
             title: 'Telegram',
             dataIndex: ['channelIdentity', 'username'],
             render: (value) => value ?? '—',
           },
-          { title: 'Статус', dataIndex: 'status', render: (value) => <Tag>{value}</Tag> },
-          { title: 'Код ошибки', dataIndex: 'lastError', render: (value) => value ?? '—' },
+          { title: 'Status', dataIndex: 'status', render: (value) => <Tag>{value}</Tag> },
+          { title: 'Error code', dataIndex: 'lastError', render: (value) => value ?? '—' },
         ]}
       />
     </section>

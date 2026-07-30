@@ -1,5 +1,5 @@
-import { PlusOutlined } from '@ant-design/icons';
-import { Button, Drawer, Form, Input, Space, Table, Tag, Typography } from 'antd';
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Drawer, Form, Input, Space, Table, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router';
@@ -53,24 +53,43 @@ export function TagsPage() {
         columns={[
           {
             dataIndex: 'name',
-            render: (name, row) => <Tag {...(row.color ? { color: row.color } : {})}>{name}</Tag>,
+            render: (name, row) => (
+              <span className="tag-name-label">
+                <span
+                  className="tag-color-dot"
+                  style={{ backgroundColor: row.color ?? 'var(--primary)' }}
+                />
+                <strong>{name}</strong>
+              </span>
+            ),
             title: 'Name',
+            width: '30%',
           },
-          { dataIndex: 'description', title: 'Description' },
           {
+            dataIndex: 'description',
+            render: (description: string | null) => (
+              <Typography.Text type="secondary">{description || 'No description'}</Typography.Text>
+            ),
+            title: 'Description',
+          },
+          {
+            align: 'right',
             render: (_, row) => (
-              <Space>
+              <Space size={8}>
                 <Button
+                  icon={<EditOutlined />}
                   onClick={() => {
                     form.setFieldsValue(row);
                     setEditing(row);
                     setOpen(true);
                   }}
+                  size="small"
                 >
                   Edit
                 </Button>
                 <Button
                   danger
+                  icon={<DeleteOutlined />}
                   onClick={() =>
                     void apiRequest(
                       `/api/v1/projects/${projectId}/tags/${row.id}`,
@@ -78,12 +97,14 @@ export function TagsPage() {
                       accessToken,
                     ).then(reload)
                   }
+                  size="small"
                 >
                   Delete
                 </Button>
               </Space>
             ),
             title: 'Actions',
+            width: 190,
           },
         ]}
         dataSource={tags.data ?? []}

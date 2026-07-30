@@ -88,8 +88,8 @@ try {
 } catch {
   root.render(
     <main className="bootstrap-error" role="alert">
-      <h1>Конфигурация интерфейса недоступна</h1>
-      <p>Сборка не содержит обязательный адрес API.</p>
+      <h1>Interface configuration is unavailable</h1>
+      <p>The build does not contain the required API address.</p>
     </main>,
   );
 }

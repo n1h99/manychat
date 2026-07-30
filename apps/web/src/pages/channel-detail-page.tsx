@@ -16,7 +16,6 @@ import {
   Modal,
   Row,
   Select,
-  Space,
   Spin,
   Switch,
   Table,
@@ -91,7 +90,7 @@ export function ChannelDetailPage() {
         <Tag color={connectionStatusColor(connection.status)}>{connection.status}</Tag>
       </div>
 
-      <Row gutter={[18, 18]}>
+      <Row className="balanced-card-row" gutter={[18, 18]}>
         <Col lg={14} xs={24}>
           <Card title="Connection overview">
             <Descriptions
@@ -152,7 +151,21 @@ export function ChannelDetailPage() {
         <Col lg={10} xs={24}>
           <Card title="Connection actions">
             {canManage ? (
-              <Space className="channel-actions" direction="vertical">
+              <div className="channel-actions">
+                <Button
+                  block
+                  className="channel-primary-action"
+                  icon={<ApiOutlined />}
+                  onClick={() =>
+                    void action(
+                      () => mutations.connect.mutateAsync(connection.id),
+                      'Webhook connected.',
+                    )
+                  }
+                  type="primary"
+                >
+                  Connect webhook
+                </Button>
                 <Button
                   block
                   icon={<SafetyCertificateOutlined />}
@@ -164,19 +177,6 @@ export function ChannelDetailPage() {
                   }
                 >
                   Test connection
-                </Button>
-                <Button
-                  block
-                  icon={<ApiOutlined />}
-                  onClick={() =>
-                    void action(
-                      () => mutations.connect.mutateAsync(connection.id),
-                      'Webhook connected.',
-                    )
-                  }
-                  type="primary"
-                >
-                  Connect webhook
                 </Button>
                 {canRotateSecrets ? (
                   <Button
@@ -199,6 +199,7 @@ export function ChannelDetailPage() {
                 ) : null}
                 <Button
                   block
+                  className="channel-danger-action"
                   danger
                   icon={<DeleteOutlined />}
                   onClick={() =>
@@ -215,7 +216,7 @@ export function ChannelDetailPage() {
                 >
                   Disable channel
                 </Button>
-              </Space>
+              </div>
             ) : (
               <Typography.Text type="secondary">
                 You have read-only access to this channel.
@@ -226,7 +227,7 @@ export function ChannelDetailPage() {
       </Row>
 
       {canManage ? (
-        <Row className="channel-management-row" gutter={[18, 18]}>
+        <Row className="balanced-card-row channel-management-row" gutter={[18, 18]}>
           <Col lg={10} xs={24}>
             <Card title="Replace bot token">
               <Typography.Paragraph type="secondary">
