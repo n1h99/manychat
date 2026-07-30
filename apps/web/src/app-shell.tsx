@@ -5,12 +5,24 @@ import {
   MenuOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Drawer, Dropdown, Grid, Layout, Menu, Space, Typography } from 'antd';
+import {
+  Avatar,
+  Breadcrumb,
+  Button,
+  Drawer,
+  Dropdown,
+  Grid,
+  Layout,
+  Menu,
+  Space,
+  Typography,
+} from 'antd';
 import { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Outlet, useLocation, useNavigate } from 'react-router';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 
 import { useAuth } from './auth';
+import { breadcrumbsFor } from './breadcrumbs';
 import { navigationItems } from './navigation';
 import { shellActions, type AppDispatch, type RootState } from './store';
 
@@ -50,6 +62,7 @@ export function AppShell() {
   const selectedItem = navigationItems.find((item) => item.key === selectedKey);
   const avatarLabel = identity?.email?.slice(0, 1).toUpperCase() ?? 'O';
   const menuItems = navigationItems.map(({ icon, key, label }) => ({ icon, key, label }));
+  const breadcrumbs = breadcrumbsFor(location.pathname);
 
   const navigation = (
     <>
@@ -169,6 +182,19 @@ export function AppShell() {
         </Header>
         <Content className="app-content">
           <div className="page-frame">
+            {breadcrumbs.length > 1 ? (
+              <nav aria-label="Breadcrumb" className="app-breadcrumbs">
+                <Breadcrumb
+                  items={breadcrumbs.map((breadcrumb) => ({
+                    title: breadcrumb.path ? (
+                      <Link to={breadcrumb.path}>{breadcrumb.label}</Link>
+                    ) : (
+                      breadcrumb.label
+                    ),
+                  }))}
+                />
+              </nav>
+            ) : null}
             <Outlet />
           </div>
         </Content>

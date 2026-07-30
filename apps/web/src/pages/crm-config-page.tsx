@@ -51,14 +51,23 @@ export function CrmConfigPage() {
     : { enabled: true, fieldMapping: '{}' };
   return (
     <section>
-      <Typography.Title level={2}>CRM integration</Typography.Title>
+      <div className="page-heading">
+        <div>
+          <Typography.Text className="header-kicker">Integrations</Typography.Text>
+          <Typography.Title level={2}>CRM integration</Typography.Title>
+          <Typography.Text type="secondary">
+            Secure project routing, field mapping and delivery diagnostics.
+          </Typography.Text>
+        </div>
+      </div>
       <Alert
+        className="form-alert"
         showIcon
         type="info"
         message="Cyber Pulse CRM"
         description="Здесь настраиваются project routing и mapping для подключённой Cyber Pulse CRM."
       />
-      <Card size="small" title="Project CRM connection" style={{ marginBlock: 16 }}>
+      <Card className="crm-connection-card" title="Project CRM connection">
         <Descriptions
           column={2}
           items={[
@@ -135,6 +144,7 @@ export function CrmConfigPage() {
         </Popconfirm>
       </Card>
       <Form
+        className="settings-form surface crm-routing-form"
         initialValues={initialValues}
         layout="vertical"
         onFinish={async (values: {
@@ -180,8 +190,11 @@ export function CrmConfigPage() {
           Save configuration
         </Button>
       </Form>
-      <Typography.Title level={3}>CRM operation journal</Typography.Title>
+      <Typography.Title className="section-heading-title" level={3}>
+        CRM operation journal
+      </Typography.Title>
       <Alert
+        className="form-alert"
         showIcon
         type="warning"
         message="Unknown delivery requires confirmation"

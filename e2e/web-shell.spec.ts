@@ -229,6 +229,19 @@ test('opens the versioned template and visual automation workspace with mocked A
 
   await page.goto('/projects/project-a/scenarios/scenario-a');
   await expect(page.getByRole('heading', { name: 'Welcome flow' })).toBeVisible();
+  const breadcrumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
+  await expect(breadcrumbs.getByRole('link', { name: 'Projects' })).toHaveAttribute(
+    'href',
+    '/projects',
+  );
+  await expect(breadcrumbs.getByRole('link', { exact: true, name: 'Project' })).toHaveAttribute(
+    'href',
+    '/projects/project-a',
+  );
+  await expect(breadcrumbs.getByRole('link', { name: 'Automation' })).toHaveAttribute(
+    'href',
+    '/projects/project-a/scenarios',
+  );
   await expect(page.getByRole('button', { name: 'Send template' })).toBeVisible();
   await expect(page.getByLabel('Scenario canvas')).toBeVisible();
   await expect(page.getByText('Graph validation passed')).toBeVisible();

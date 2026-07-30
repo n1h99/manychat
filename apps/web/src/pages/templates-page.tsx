@@ -211,9 +211,9 @@ export function TemplatesPage() {
                 {rows.map((row, rowIndex) => (
                   <Space
                     align="start"
+                    className="template-button-row"
                     direction="vertical"
                     key={row.key}
-                    style={{ border: '1px solid #d9d9d9', padding: 12, width: '100%' }}
                   >
                     <Space>
                       <Typography.Text>Row {rowIndex + 1}</Typography.Text>

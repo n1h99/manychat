@@ -32,6 +32,23 @@ try {
       <ErrorBoundary>
         <ConfigProvider
           theme={{
+            components: {
+              Button: {
+                dangerShadow: 'none',
+                defaultShadow: 'none',
+                primaryShadow: 'none',
+              },
+              Input: {
+                activeShadow: 'none',
+              },
+              Select: {
+                activeBorderColor: '#94a3b8',
+                activeOutlineColor: 'transparent',
+                hoverBorderColor: '#94a3b8',
+                optionSelectedBg: '#eef3f8',
+                optionSelectedColor: '#0f172a',
+              },
+            },
             token: {
               borderRadius: 12,
               borderRadiusLG: 20,
