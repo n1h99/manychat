@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { flowToScenarioGraph, scenarioGraphToFlow } from './automation-editor-graph';
+import {
+  flowToScenarioGraph,
+  scenarioGraphToFlow,
+  spreadCompactFlowNodes,
+} from './automation-editor-graph';
 import type { ScenarioGraph } from './automation-api';
 
 describe('automation editor graph mapping', () => {
@@ -34,5 +38,19 @@ describe('automation editor graph mapping', () => {
     );
 
     expect(restored).toEqual(graph);
+  });
+
+  it('spreads compact nodes without moving independent lanes', () => {
+    const nodes = [
+      { data: {}, id: 'first', position: { x: 100, y: 100 } },
+      { data: {}, id: 'second', position: { x: 110, y: 140 } },
+      { data: {}, id: 'independent', position: { x: 500, y: 140 } },
+    ];
+
+    expect(spreadCompactFlowNodes(nodes).map((node) => node.position)).toEqual([
+      { x: 100, y: 100 },
+      { x: 110, y: 228 },
+      { x: 500, y: 140 },
+    ]);
   });
 });

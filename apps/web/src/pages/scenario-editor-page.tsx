@@ -61,6 +61,7 @@ import {
   type AutomationEdgeData,
   flowToScenarioGraph,
   scenarioGraphToFlow,
+  spreadCompactFlowNodes,
 } from '../automation-editor-graph';
 import {
   emptyScenarioGraph,
@@ -177,7 +178,7 @@ async function fitDefaultAutomationViewport(instance: ReactFlowInstance) {
 }
 
 function styledNodes(nodes: Node[]): Node[] {
-  return nodes.map((node) => ({ ...node, type: 'automation' }));
+  return spreadCompactFlowNodes(nodes).map((node) => ({ ...node, type: 'automation' }));
 }
 
 export function ScenarioEditorPage() {
@@ -238,7 +239,10 @@ export function ScenarioEditorPage() {
       {
         data: { label: type },
         id,
-        position: { x: 140 + current.length * 45, y: 120 + current.length * 35 },
+        position: {
+          x: 140,
+          y: current.reduce((maximum, node) => Math.max(maximum, node.position.y), 0) + 140,
+        },
         type: 'automation',
       },
     ]);

@@ -15,6 +15,29 @@ export function automationEdgeLabel(output?: string): string | undefined {
   return output.replaceAll('_', ' ');
 }
 
+export function spreadCompactFlowNodes(nodes: Node[]): Node[] {
+  const minimumVerticalStep = 128;
+  const overlappingLaneWidth = 250;
+  const placed: Node[] = [];
+  const positions = new Map<string, { x: number; y: number }>();
+
+  for (const node of [...nodes].sort(
+    (left, right) => left.position.y - right.position.y || left.position.x - right.position.x,
+  )) {
+    let y = node.position.y;
+    for (const previous of placed) {
+      const sharesLane = Math.abs(node.position.x - previous.position.x) < overlappingLaneWidth;
+      if (sharesLane && y - previous.position.y < minimumVerticalStep)
+        y = previous.position.y + minimumVerticalStep;
+    }
+    const position = { x: node.position.x, y };
+    positions.set(node.id, position);
+    placed.push({ ...node, position });
+  }
+
+  return nodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position }));
+}
+
 export function scenarioGraphToFlow(graph: ScenarioGraph): { edges: Edge[]; nodes: Node[] } {
   return {
     edges: graph.edges.map((edge, index) => ({

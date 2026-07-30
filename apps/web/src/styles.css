@@ -1088,8 +1088,13 @@ button:disabled,
 
 .automation-flow-node.is-selected {
   border-color: var(--node-accent);
-  outline: 3px solid var(--node-soft);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: none;
+}
+
+.scenario-canvas .react-flow__node:focus,
+.scenario-canvas .react-flow__node:focus-visible {
+  outline: none;
   box-shadow: none;
 }
 
