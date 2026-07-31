@@ -7,6 +7,37 @@ function service() {
 }
 
 describe('ContactsService v2', () => {
+  it('lists archived custom fields separately and restores them safely', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const findUnique = vi.fn().mockResolvedValue({ archivedAt: new Date(), id: 'field-a' });
+    const update = vi.fn().mockResolvedValue({ archivedAt: null, id: 'field-a' });
+    const audit = { record: vi.fn() };
+    const instance = new ContactsService(
+      audit as never,
+      {
+        client: { customFieldDefinition: { findMany, findUnique, update } },
+      } as never,
+    );
+
+    await instance.listCustomFields('project-a', true);
+    await expect(
+      instance.restoreCustomField('project-a', 'field-a', {
+        actorEmail: 'operator@example.test',
+        actorUserId: 'user-a',
+        correlationId: 'test',
+      }),
+    ).resolves.toMatchObject({ archivedAt: null });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { archivedAt: { not: null }, projectId: 'project-a' },
+      }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'custom_field.restored' }),
+    );
+  });
+
   it('rejects a merge request where primary and secondary are identical', async () => {
     await expect(
       service().merge(

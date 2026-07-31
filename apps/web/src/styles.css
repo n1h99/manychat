@@ -419,8 +419,16 @@ button:disabled,
 }
 
 .app-breadcrumbs a:hover {
-  color: var(--link);
-  background: transparent;
+  color: var(--link) !important;
+  background: transparent !important;
+}
+
+.app-breadcrumbs .ant-breadcrumb-link a:hover,
+.app-breadcrumbs .ant-breadcrumb-link a:focus,
+.app-breadcrumbs .ant-breadcrumb-link a:active {
+  color: var(--link) !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .app-breadcrumbs li:last-child .ant-breadcrumb-link {
@@ -509,9 +517,10 @@ button:disabled,
 .entity-status-tag {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
+  min-height: 36px;
   margin: 0;
-  padding-inline: 11px;
+  padding-inline: 15px;
+  font-size: 13px;
   font-weight: 650;
   border-radius: 999px;
 }
@@ -730,6 +739,9 @@ button:disabled,
 }
 
 .ant-modal-root .ant-modal-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding-block: 24px;
 }
 
@@ -1541,6 +1553,25 @@ button:disabled,
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   width: 100%;
+}
+
+.channel-actions-card .ant-card-body {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+}
+
+.archive-view-switch {
+  margin-bottom: 14px;
+}
+
+.stable-table-actions {
+  min-width: 218px;
+}
+
+.scenario-state-action,
+.broadcast-state-action {
+  min-width: 112px;
 }
 
 .channel-primary-action,

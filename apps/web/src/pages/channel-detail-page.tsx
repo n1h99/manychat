@@ -154,7 +154,7 @@ export function ChannelDetailPage() {
           </Card>
         </Col>
         <Col lg={10} xs={24}>
-          <Card title="Connection actions">
+          <Card className="channel-actions-card" title="Connection actions">
             {canManage ? (
               <div className="channel-actions">
                 {connection.status !== 'ACTIVE' && connection.webhookStatus !== 'CONNECTED' ? (
@@ -191,6 +191,7 @@ export function ChannelDetailPage() {
                     icon={<KeyOutlined />}
                     onClick={() =>
                       Modal.confirm({
+                        centered: true,
                         content: 'The previous webhook secret will stop working after rotation.',
                         onOk: () =>
                           action(
@@ -211,6 +212,7 @@ export function ChannelDetailPage() {
                   icon={<DeleteOutlined />}
                   onClick={() =>
                     Modal.confirm({
+                      centered: true,
                       content: 'Existing contacts and message history will not be deleted.',
                       onOk: () =>
                         action(

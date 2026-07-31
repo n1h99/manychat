@@ -30,8 +30,8 @@ export class BroadcastsController {
 
   @Get()
   @RequireProjectPermission('broadcasts:read')
-  async list(@Param('projectId') projectId: string) {
-    return { data: await this.broadcasts.list(projectId), meta: {} };
+  async list(@Param('projectId') projectId: string, @Query('archived') archived?: string) {
+    return { data: await this.broadcasts.list(projectId, archived === 'true'), meta: {} };
   }
 
   @Post()
@@ -133,6 +133,32 @@ export class BroadcastsController {
   ) {
     return {
       data: await this.broadcasts.archive(projectId, broadcastId, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Post(':broadcastId/restore')
+  @RequireProjectPermission('broadcasts:cancel')
+  async restore(
+    @Param('projectId') projectId: string,
+    @Param('broadcastId') broadcastId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.broadcasts.restore(projectId, broadcastId, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Post(':broadcastId/run-again')
+  @RequireProjectPermission('broadcasts:create')
+  async runAgain(
+    @Param('projectId') projectId: string,
+    @Param('broadcastId') broadcastId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.broadcasts.runAgain(projectId, broadcastId, this.context(request)),
       meta: {},
     };
   }

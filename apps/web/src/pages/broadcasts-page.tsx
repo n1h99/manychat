@@ -1,5 +1,23 @@
-import { DeleteOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Modal, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import {
+  DeleteOutlined,
+  PauseOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  UndoOutlined,
+} from '@ant-design/icons';
+import {
+  Alert,
+  Button,
+  Empty,
+  Modal,
+  Segmented,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
@@ -10,7 +28,8 @@ export function BroadcastsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const access = useProjectAccess(projectId);
-  const query = useBroadcasts(projectId);
+  const [view, setView] = useState<'active' | 'archived'>('active');
+  const query = useBroadcasts(projectId, view === 'archived');
   const canCreate = hasProjectPermission(access.data, 'broadcasts:create');
   const canPause = hasProjectPermission(access.data, 'broadcasts:pause');
   const canArchive = hasProjectPermission(access.data, 'broadcasts:cancel');
@@ -23,10 +42,9 @@ export function BroadcastsPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Campaigns</Typography.Text>
           <Typography.Title level={2}>Broadcasts</Typography.Title>
           <Typography.Text type="secondary">
-            Telegram campaigns with an immutable recipient snapshot.
+            Telegram broadcasts with an immutable recipient snapshot.
           </Typography.Text>
         </div>
         {canCreate ? (
@@ -39,6 +57,15 @@ export function BroadcastsPage() {
           </Button>
         ) : null}
       </div>
+      <Segmented
+        className="archive-view-switch"
+        onChange={(value) => setView(value as 'active' | 'archived')}
+        options={[
+          { label: 'Active broadcasts', value: 'active' },
+          { label: 'Archived', value: 'archived' },
+        ]}
+        value={view}
+      />
       {query.isError ? (
         <Alert
           className="form-alert"
@@ -49,22 +76,43 @@ export function BroadcastsPage() {
       ) : null}
       <Table<Broadcast>
         columns={[
-          { dataIndex: 'name', title: 'Name' },
-          { dataIndex: 'status', render: (value) => <Tag>{value}</Tag>, title: 'Status' },
-          { dataIndex: 'recipientCount', title: 'Recipients' },
+          { dataIndex: 'name', title: 'Name', width: '34%' },
+          {
+            dataIndex: 'status',
+            render: (value) => <Tag>{value}</Tag>,
+            title: 'Status',
+            width: 140,
+          },
+          { dataIndex: 'recipientCount', title: 'Recipients', width: 120 },
           {
             dataIndex: 'updatedAt',
             render: (value) => new Date(value).toLocaleString(),
             title: 'Updated',
+            width: 210,
           },
           ...(canPause || canArchive
             ? [
                 {
                   key: 'actions',
                   render: (_: unknown, broadcast: Broadcast) => (
-                    <Space onClick={(event) => event.stopPropagation()}>
+                    <Space
+                      className="stable-table-actions"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {view === 'archived' && canArchive ? (
+                        <Button
+                          icon={<UndoOutlined />}
+                          loading={mutations.restore.isPending}
+                          onClick={() => void mutations.restore.mutateAsync(broadcast.id)}
+                          size="small"
+                          type="primary"
+                        >
+                          Restore
+                        </Button>
+                      ) : null}
                       {canPause && broadcast.status === 'RUNNING' ? (
                         <Button
+                          className="broadcast-state-action"
                           icon={<PauseOutlined />}
                           onClick={() => void mutations.pause.mutateAsync(broadcast.id)}
                           size="small"
@@ -73,6 +121,7 @@ export function BroadcastsPage() {
                         </Button>
                       ) : canPause && broadcast.status === 'PAUSED' ? (
                         <Button
+                          className="broadcast-state-action"
                           icon={<PlayCircleOutlined />}
                           onClick={() => void mutations.resume.mutateAsync(broadcast.id)}
                           size="small"
@@ -80,7 +129,8 @@ export function BroadcastsPage() {
                           Resume
                         </Button>
                       ) : null}
-                      {canArchive &&
+                      {view === 'active' &&
+                      canArchive &&
                       !['PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status) ? (
                         <Button
                           danger
@@ -88,12 +138,13 @@ export function BroadcastsPage() {
                           onClick={() => setRemoving(broadcast)}
                           size="small"
                         >
-                          Delete
+                          Archive
                         </Button>
                       ) : null}
                     </Space>
                   ),
                   title: 'Actions',
+                  width: 250,
                 },
               ]
             : []),
@@ -113,17 +164,18 @@ export function BroadcastsPage() {
       />
       <Modal
         cancelText="Keep broadcast"
+        centered
         okButtonProps={{ danger: true, loading: mutations.remove.isPending }}
-        okText="Delete broadcast"
+        okText="Archive broadcast"
         onCancel={() => setRemoving(undefined)}
         onOk={async () => {
           if (!removing) return;
           await mutations.remove.mutateAsync(removing.id);
           setRemoving(undefined);
-          void message.success('Broadcast deleted.');
+          void message.success('Broadcast archived.');
         }}
         open={Boolean(removing)}
-        title="Delete this broadcast?"
+        title="Archive this broadcast?"
       >
         The broadcast will be archived and removed from this list. Delivery history remains
         available for audit.

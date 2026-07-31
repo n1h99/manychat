@@ -44,13 +44,17 @@ export interface TemplateInput {
   text?: string;
 }
 
-export function useTemplates(projectId?: string) {
+export function useTemplates(projectId?: string, archived = false) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId),
     queryFn: () =>
-      apiRequest<MessageTemplate[]>(`/api/v1/projects/${projectId}/templates`, {}, accessToken),
-    queryKey: ['templates', projectId],
+      apiRequest<MessageTemplate[]>(
+        `/api/v1/projects/${projectId}/templates?archived=${archived}`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['templates', projectId, archived],
   });
 }
 
@@ -84,6 +88,10 @@ export function useTemplateMutations(projectId?: string) {
   return {
     archive: useMutation({
       mutationFn: (id: string) => request<MessageTemplate>(`/${id}/archive`, 'POST'),
+      onSuccess: invalidate,
+    }),
+    restore: useMutation({
+      mutationFn: (id: string) => request<MessageTemplate>(`/${id}/restore`, 'POST'),
       onSuccess: invalidate,
     }),
     create: useMutation({

@@ -1,4 +1,17 @@
-import { Button, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { UndoOutlined } from '@ant-design/icons';
+import {
+  Button,
+  Form,
+  Input,
+  Modal,
+  Segmented,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
@@ -18,7 +31,8 @@ type TemplateFormInput = Omit<TemplateInput, 'inlineKeyboard'> & {
 
 export function TemplatesPage() {
   const { projectId } = useParams();
-  const templates = useTemplates(projectId);
+  const [view, setView] = useState<'active' | 'archived'>('active');
+  const templates = useTemplates(projectId, view === 'archived');
   const assets = useMediaAssets(projectId);
   const access = useProjectAccess(projectId);
   const mutations = useTemplateMutations(projectId);
@@ -95,6 +109,15 @@ export function TemplatesPage() {
           </Button>
         ) : null}
       </div>
+      <Segmented
+        className="archive-view-switch"
+        onChange={(value) => setView(value as 'active' | 'archived')}
+        options={[
+          { label: 'Active templates', value: 'active' },
+          { label: 'Archived', value: 'archived' },
+        ]}
+        value={view}
+      />
       <Table<MessageTemplate>
         dataSource={templates.data ?? []}
         loading={templates.isLoading}
@@ -119,12 +142,12 @@ export function TemplatesPage() {
                 >
                   Preview
                 </Button>
-                {canManage ? (
+                {canManage && view === 'active' ? (
                   <Button onClick={() => open(template)} size="small">
                     Edit
                   </Button>
                 ) : null}
-                {canManage && template.draftVersion ? (
+                {canManage && view === 'active' && template.draftVersion ? (
                   <Button
                     loading={mutations.publish.isPending}
                     onClick={() => void mutations.publish.mutateAsync(template.id)}
@@ -134,9 +157,20 @@ export function TemplatesPage() {
                     Publish
                   </Button>
                 ) : null}
-                {canManage ? (
+                {canManage && view === 'active' ? (
                   <Button danger onClick={() => setArchiving(template)} size="small">
                     Archive
+                  </Button>
+                ) : null}
+                {canManage && view === 'archived' ? (
+                  <Button
+                    icon={<UndoOutlined />}
+                    loading={mutations.restore.isPending}
+                    onClick={() => void mutations.restore.mutateAsync(template.id)}
+                    size="small"
+                    type="primary"
+                  >
+                    Restore
                   </Button>
                 ) : null}
               </Space>
@@ -147,6 +181,7 @@ export function TemplatesPage() {
       />
       <Modal
         cancelText="Keep template"
+        centered
         className="confirm-dialog"
         okButtonProps={{ danger: true, loading: mutations.archive.isPending }}
         okText="Archive template"

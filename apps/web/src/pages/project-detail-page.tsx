@@ -117,7 +117,7 @@ export function ProjectDetailPage() {
       visible: hasProjectPermission(access.data, 'channels:read'),
     },
     {
-      description: 'Audience campaigns and delivery',
+      description: 'Telegram broadcasts and delivery',
       icon: <SendOutlined />,
       label: 'Broadcasts',
       path: `/projects/${project.id}/broadcasts`,

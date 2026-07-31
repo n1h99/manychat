@@ -1,3 +1,4 @@
+import { CopyOutlined, InboxOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -20,6 +21,7 @@ export function BroadcastDetailPage() {
   const { projectId, broadcastId } = useParams();
   const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const query = useBroadcast(projectId, broadcastId);
   const recipients = useBroadcastRecipients(projectId, broadcastId);
   const access = useProjectAccess(projectId);
@@ -27,6 +29,7 @@ export function BroadcastDetailPage() {
   if (query.isLoading || !query.data) return <Spin className="route-loading" size="large" />;
   const broadcast = query.data;
   const canLaunch = hasProjectPermission(access.data, 'broadcasts:launch');
+  const canCreate = hasProjectPermission(access.data, 'broadcasts:create');
   const canPause = hasProjectPermission(access.data, 'broadcasts:pause');
   const canCancel = hasProjectPermission(access.data, 'broadcasts:cancel');
   const action = async (operation: () => Promise<unknown>, success: string) => {
@@ -39,7 +42,28 @@ export function BroadcastDetailPage() {
   };
   return (
     <section>
-      <Typography.Title level={2}>{broadcast.name}</Typography.Title>
+      <div className="page-heading-row broadcast-detail-heading">
+        <div>
+          <Typography.Title level={2}>{broadcast.name}</Typography.Title>
+          <Typography.Text type="secondary">
+            Delivery configuration and immutable recipient history.
+          </Typography.Text>
+        </div>
+        <Space wrap>
+          {canCreate &&
+          ['COMPLETED', 'CANCELLED', 'FAILED', 'ARCHIVED'].includes(broadcast.status) ? (
+            <Button icon={<CopyOutlined />} onClick={() => setRestarting(true)} type="primary">
+              Run again
+            </Button>
+          ) : null}
+          {canCancel &&
+          !['PREPARING', 'RUNNING', 'PAUSED', 'ARCHIVED'].includes(broadcast.status) ? (
+            <Button danger icon={<InboxOutlined />} onClick={() => setRemoving(true)}>
+              Archive
+            </Button>
+          ) : null}
+        </Space>
+      </div>
       <Descriptions
         bordered
         column={1}
@@ -103,6 +127,7 @@ export function BroadcastDetailPage() {
             danger
             onClick={() =>
               Modal.confirm({
+                centered: true,
                 title: 'Cancel this broadcast?',
                 onOk: () =>
                   action(() => mutations.cancel.mutateAsync(broadcast.id), 'Broadcast cancelled.'),
@@ -110,11 +135,6 @@ export function BroadcastDetailPage() {
             }
           >
             Cancel
-          </Button>
-        ) : null}
-        {canCancel && !['PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status) ? (
-          <Button danger onClick={() => setRemoving(true)}>
-            Delete
           </Button>
         ) : null}
       </Space>
@@ -140,8 +160,9 @@ export function BroadcastDetailPage() {
       />
       <Modal
         cancelText="Keep broadcast"
+        centered
         okButtonProps={{ danger: true, loading: mutations.remove.isPending }}
-        okText="Delete broadcast"
+        okText="Archive broadcast"
         onCancel={() => setRemoving(false)}
         onOk={async () => {
           await mutations.remove.mutateAsync(broadcast.id);
@@ -149,10 +170,28 @@ export function BroadcastDetailPage() {
           void navigate(`/projects/${projectId}/broadcasts`, { replace: true });
         }}
         open={removing}
-        title="Delete this broadcast?"
+        title="Archive this broadcast?"
       >
         The broadcast will be archived and removed from the project list. Recipient history remains
         protected for audit.
+      </Modal>
+      <Modal
+        cancelText="Cancel"
+        centered
+        okButtonProps={{ loading: mutations.runAgain.isPending }}
+        okText="Create new draft"
+        onCancel={() => setRestarting(false)}
+        onOk={async () => {
+          const copy = await mutations.runAgain.mutateAsync(broadcast.id);
+          setRestarting(false);
+          void message.success('A new broadcast draft was created.');
+          void navigate(`/projects/${projectId}/broadcasts/${copy.id}`);
+        }}
+        open={restarting}
+        title="Run this broadcast again?"
+      >
+        A new draft with the same content and audience rules will be created. Recipients will be
+        recalculated when you launch it, while this delivery history remains unchanged.
       </Modal>
     </section>
   );

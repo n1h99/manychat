@@ -30,9 +30,9 @@ export class BroadcastsService {
     @Inject(TelegramOutboundQueueService) private readonly outbound: TelegramOutboundQueueService,
   ) {}
 
-  async list(projectId: string) {
+  async list(projectId: string, archived = false) {
     const broadcasts = await this.database.client.broadcast.findMany({
-      where: { projectId, status: { not: 'ARCHIVED' } },
+      where: { projectId, status: archived ? 'ARCHIVED' : { not: 'ARCHIVED' } },
       orderBy: { createdAt: 'desc' },
       include: {
         connection: { select: { botUsername: true } },
@@ -366,6 +366,63 @@ export class BroadcastsService {
     return this.safe(archived);
   }
 
+  async restore(projectId: string, broadcastId: string, context: AuditContext) {
+    const broadcast = await this.broadcast(projectId, broadcastId);
+    if (broadcast.status !== 'ARCHIVED')
+      throw new ConflictException({
+        code: 'BROADCAST_NOT_ARCHIVED',
+        message: 'Broadcast is not archived',
+      });
+    const status = broadcast.completedAt
+      ? 'COMPLETED'
+      : broadcast.cancelledAt
+        ? 'CANCELLED'
+        : broadcast.failedAt
+          ? 'FAILED'
+          : 'DRAFT';
+    const restored = await this.database.client.broadcast.update({
+      data: { status },
+      where: { projectId_id: { id: broadcastId, projectId } },
+      include: {
+        connection: { select: { botUsername: true } },
+        _count: { select: { recipients: true } },
+      },
+    });
+    await this.auditEvent('broadcast.restore', projectId, broadcastId, context, { status });
+    return this.safe(restored);
+  }
+
+  async runAgain(projectId: string, broadcastId: string, context: AuditContext) {
+    const source = await this.broadcast(projectId, broadcastId);
+    if (!['COMPLETED', 'CANCELLED', 'FAILED', 'ARCHIVED'].includes(source.status))
+      throw new ConflictException({
+        code: 'BROADCAST_NOT_TERMINAL',
+        message: 'Only a finished broadcast can be run again',
+      });
+    const name = await this.availableCopyName(projectId, source.name);
+    const copy = await this.database.client.broadcast.create({
+      data: {
+        audience: source.audience as Prisma.InputJsonValue,
+        connectionId: source.connectionId,
+        content: source.content as Prisma.InputJsonValue,
+        createdById: context.actorUserId,
+        name,
+        projectId,
+        status: 'DRAFT',
+        templateVersionId: source.templateVersionId,
+      },
+      include: {
+        connection: { select: { botUsername: true } },
+        _count: { select: { recipients: true } },
+      },
+    });
+    await this.auditEvent('broadcast.run_again', projectId, copy.id, context, {
+      sourceBroadcastId: broadcastId,
+      status: 'DRAFT',
+    });
+    return this.safe(copy);
+  }
+
   async recipients(projectId: string, broadcastId: string, query: BroadcastRecipientsQueryDto) {
     await this.broadcast(projectId, broadcastId);
     const where = {
@@ -685,6 +742,21 @@ export class BroadcastsService {
         message: 'Broadcast was not found',
       });
     return row;
+  }
+
+  private async availableCopyName(projectId: string, sourceName: string) {
+    for (let suffix = 1; suffix <= 100; suffix += 1) {
+      const candidate = `${sourceName} (run ${suffix})`;
+      const existing = await this.database.client.broadcast.findUnique({
+        select: { id: true },
+        where: { projectId_name: { name: candidate, projectId } },
+      });
+      if (!existing) return candidate;
+    }
+    throw new ConflictException({
+      code: 'BROADCAST_COPY_NAME_UNAVAILABLE',
+      message: 'A new broadcast name could not be allocated',
+    });
   }
 
   private safe(broadcast: {

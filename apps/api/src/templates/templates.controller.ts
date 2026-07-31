@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
@@ -22,8 +33,8 @@ export class TemplatesController {
 
   @Get()
   @RequireProjectPermission('templates:read')
-  async list(@Param('projectId') projectId: string) {
-    return { data: await this.templates.list(projectId), meta: {} };
+  async list(@Param('projectId') projectId: string, @Query('archived') archived?: string) {
+    return { data: await this.templates.list(projectId, archived === 'true'), meta: {} };
   }
 
   @Post()
@@ -94,6 +105,24 @@ export class TemplatesController {
   ) {
     return {
       data: await this.templates.archive(
+        projectId,
+        templateId,
+        request.auth!,
+        this.context(request),
+      ),
+      meta: {},
+    };
+  }
+
+  @Post(':templateId/restore')
+  @RequireProjectPermission('templates:manage')
+  async restore(
+    @Param('projectId') projectId: string,
+    @Param('templateId') templateId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.templates.restore(
         projectId,
         templateId,
         request.auth!,

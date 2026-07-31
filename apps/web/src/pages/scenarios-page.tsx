@@ -47,24 +47,34 @@ export function ScenariosPage() {
       ) : null}
       <Table<ScenarioSummary>
         columns={[
-          { dataIndex: 'name', title: 'Name' },
-          { dataIndex: 'status', render: (status) => <Tag>{status}</Tag>, title: 'Status' },
+          { dataIndex: 'name', title: 'Name', width: '42%' },
+          {
+            dataIndex: 'status',
+            render: (status) => <Tag>{status}</Tag>,
+            title: 'Status',
+            width: 150,
+          },
           {
             dataIndex: 'updatedAt',
             render: (value) => new Date(value).toLocaleString(),
             title: 'Updated',
+            width: 210,
           },
           ...(canManage
             ? [
                 {
                   key: 'actions',
                   render: (_: unknown, scenario: ScenarioSummary) => (
-                    <Space onClick={(event) => event.stopPropagation()}>
+                    <Space
+                      className="stable-table-actions"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       {scenario.status === 'PUBLISHED' ? (
                         <Button
                           icon={<PauseOutlined />}
                           onClick={() => void mutations.pause.mutateAsync(scenario.id)}
                           size="small"
+                          className="scenario-state-action"
                         >
                           Deactivate
                         </Button>
@@ -73,6 +83,7 @@ export function ScenariosPage() {
                           icon={<PlayCircleOutlined />}
                           onClick={() => void mutations.resume.mutateAsync(scenario.id)}
                           size="small"
+                          className="scenario-state-action"
                         >
                           Resume
                         </Button>
@@ -83,11 +94,12 @@ export function ScenariosPage() {
                         onClick={() => setRemoving(scenario)}
                         size="small"
                       >
-                        Delete
+                        Archive
                       </Button>
                     </Space>
                   ),
                   title: 'Actions',
+                  width: 250,
                 },
               ]
             : []),
@@ -107,17 +119,18 @@ export function ScenariosPage() {
       />
       <Modal
         cancelText="Keep automation"
+        centered
         okButtonProps={{ danger: true, loading: mutations.remove.isPending }}
-        okText="Delete automation"
+        okText="Archive automation"
         onCancel={() => setRemoving(undefined)}
         onOk={async () => {
           if (!removing) return;
           await mutations.remove.mutateAsync(removing.id);
           setRemoving(undefined);
-          void message.success('Automation deleted.');
+          void message.success('Automation archived.');
         }}
         open={Boolean(removing)}
-        title="Delete this automation?"
+        title="Archive this automation?"
       >
         The automation will be archived and removed from this list. Its version and execution
         history will remain available for audit.

@@ -377,10 +377,10 @@ export class ContactsService {
     });
   }
 
-  async listCustomFields(projectId: string) {
+  async listCustomFields(projectId: string, archived = false) {
     return this.database.client.customFieldDefinition.findMany({
       orderBy: { name: 'asc' },
-      where: { archivedAt: null, projectId },
+      where: { archivedAt: archived ? { not: null } : null, projectId },
     });
   }
 
@@ -479,6 +479,37 @@ export class ContactsService {
       projectId,
       userAgent: context.userAgent,
     });
+  }
+
+  async restoreCustomField(
+    projectId: string,
+    fieldId: string,
+    context: RequestSecurityContext & { actorUserId: string; actorEmail: string },
+  ) {
+    const field = await this.database.client.customFieldDefinition.findUnique({
+      where: { projectId_id: { id: fieldId, projectId } },
+    });
+    if (!field || !field.archivedAt)
+      throw new NotFoundException({
+        code: 'ARCHIVED_CUSTOM_FIELD_NOT_FOUND',
+        message: 'Archived custom field was not found',
+      });
+    const restored = await this.database.client.customFieldDefinition.update({
+      data: { archivedAt: null },
+      where: { projectId_id: { id: fieldId, projectId } },
+    });
+    await this.audit.record({
+      action: 'custom_field.restored',
+      actorEmailSnapshot: context.actorEmail,
+      actorUserId: context.actorUserId,
+      correlationId: context.correlationId,
+      entityId: fieldId,
+      entityType: 'CustomFieldDefinition',
+      ip: context.ip,
+      projectId,
+      userAgent: context.userAgent,
+    });
+    return restored;
   }
 
   async listSegments(projectId: string) {

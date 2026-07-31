@@ -1,5 +1,16 @@
-import { EditOutlined, InboxOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Drawer, Form, Input, Select, Space, Table, Typography } from 'antd';
+import { EditOutlined, InboxOutlined, PlusOutlined, UndoOutlined } from '@ant-design/icons';
+import {
+  Button,
+  Drawer,
+  Form,
+  Input,
+  Segmented,
+  Select,
+  Space,
+  Table,
+  Typography,
+  message,
+} from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router';
@@ -14,6 +25,7 @@ interface Field {
   type: string;
   options: string[] | null;
   description: string | null;
+  archivedAt: string | null;
 }
 const fieldTypes = [
   'TEXT',
@@ -43,12 +55,17 @@ export function CustomFieldsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Field>();
   const [type, setType] = useState('TEXT');
+  const [view, setView] = useState<'active' | 'archived'>('active');
   const [form] = Form.useForm();
   const fields = useQuery({
     enabled: Boolean(projectId),
     queryFn: () =>
-      apiRequest<Field[]>(`/api/v1/projects/${projectId}/custom-fields`, {}, accessToken),
-    queryKey: ['custom-fields', projectId, accessToken],
+      apiRequest<Field[]>(
+        `/api/v1/projects/${projectId}/custom-fields?archived=${view === 'archived'}`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['custom-fields', projectId, accessToken, view],
   });
   const reload = () => cache.invalidateQueries({ queryKey: ['custom-fields', projectId] });
   return (
@@ -74,6 +91,15 @@ export function CustomFieldsPage() {
           Create field
         </Button>
       </div>
+      <Segmented
+        className="archive-view-switch"
+        onChange={(value) => setView(value as 'active' | 'archived')}
+        options={[
+          { label: 'Active fields', value: 'active' },
+          { label: 'Archived', value: 'archived' },
+        ]}
+        value={view}
+      />
       <Table<Field>
         columns={[
           {
@@ -110,32 +136,57 @@ export function CustomFieldsPage() {
             align: 'right',
             render: (_, row) => (
               <Space size={8}>
-                <Button
-                  icon={<EditOutlined />}
-                  onClick={() => {
-                    form.setFieldsValue({ ...row, options: row.options?.join(', ') });
-                    setEditing(row);
-                    setType(row.type);
-                    setOpen(true);
-                  }}
-                  size="small"
-                >
-                  Edit
-                </Button>
-                <Button
-                  danger
-                  icon={<InboxOutlined />}
-                  onClick={() =>
-                    void apiRequest(
-                      `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
-                      { method: 'DELETE' },
-                      accessToken,
-                    ).then(reload)
-                  }
-                  size="small"
-                >
-                  Archive
-                </Button>
+                {view === 'active' ? (
+                  <>
+                    <Button
+                      icon={<EditOutlined />}
+                      onClick={() => {
+                        form.setFieldsValue({ ...row, options: row.options?.join(', ') });
+                        setEditing(row);
+                        setType(row.type);
+                        setOpen(true);
+                      }}
+                      size="small"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      danger
+                      icon={<InboxOutlined />}
+                      onClick={() =>
+                        void apiRequest(
+                          `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
+                          { method: 'DELETE' },
+                          accessToken,
+                        ).then(async () => {
+                          await reload();
+                          void message.success('Custom field archived.');
+                        })
+                      }
+                      size="small"
+                    >
+                      Archive
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    icon={<UndoOutlined />}
+                    onClick={() =>
+                      void apiRequest(
+                        `/api/v1/projects/${projectId}/custom-fields/${row.id}/restore`,
+                        { method: 'POST' },
+                        accessToken,
+                      ).then(async () => {
+                        await reload();
+                        void message.success('Custom field restored.');
+                      })
+                    }
+                    size="small"
+                    type="primary"
+                  >
+                    Restore
+                  </Button>
+                )}
               </Space>
             ),
             title: 'Actions',

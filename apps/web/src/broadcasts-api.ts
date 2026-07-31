@@ -52,13 +52,17 @@ type Input = {
   text?: string;
 };
 
-export function useBroadcasts(projectId?: string) {
+export function useBroadcasts(projectId?: string, archived = false) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId),
-    queryKey: ['broadcasts', projectId],
+    queryKey: ['broadcasts', projectId, archived],
     queryFn: () =>
-      apiRequest<Broadcast[]>(`/api/v1/projects/${projectId}/broadcasts`, {}, accessToken),
+      apiRequest<Broadcast[]>(
+        `/api/v1/projects/${projectId}/broadcasts?archived=${archived}`,
+        {},
+        accessToken,
+      ),
   });
 }
 
@@ -142,6 +146,14 @@ export function useBroadcastMutations(projectId?: string) {
     }),
     remove: useMutation({
       mutationFn: (id: string) => request<Broadcast>(`/${id}`, 'DELETE'),
+      onSuccess: invalidate,
+    }),
+    restore: useMutation({
+      mutationFn: (id: string) => request<Broadcast>(`/${id}/restore`, 'POST'),
+      onSuccess: invalidate,
+    }),
+    runAgain: useMutation({
+      mutationFn: (id: string) => request<Broadcast>(`/${id}/run-again`, 'POST'),
       onSuccess: invalidate,
     }),
   };

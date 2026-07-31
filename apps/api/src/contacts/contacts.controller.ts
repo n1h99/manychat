@@ -217,8 +217,14 @@ export class ContactsController {
 
   @Get('custom-fields')
   @RequireProjectPermission('contacts:read')
-  async listCustomFields(@Param('projectId') projectId: string) {
-    return { data: await this.contacts.listCustomFields(projectId), meta: {} };
+  async listCustomFields(
+    @Param('projectId') projectId: string,
+    @Query('archived') archived?: string,
+  ) {
+    return {
+      data: await this.contacts.listCustomFields(projectId, archived === 'true'),
+      meta: {},
+    };
   }
 
   @Post('custom-fields')
@@ -259,6 +265,19 @@ export class ContactsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<void> {
     await this.contacts.archiveCustomField(projectId, fieldId, this.context(request));
+  }
+
+  @Post('custom-fields/:fieldId/restore')
+  @RequireProjectPermission('contacts:update')
+  async restoreCustomField(
+    @Param('projectId') projectId: string,
+    @Param('fieldId') fieldId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.contacts.restoreCustomField(projectId, fieldId, this.context(request)),
+      meta: {},
+    };
   }
 
   private context(

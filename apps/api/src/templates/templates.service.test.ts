@@ -77,6 +77,36 @@ describe('TemplatesService', () => {
     expect(query.include.draftVersion.include.mediaAsset.select).not.toHaveProperty('bucketKey');
   });
 
+  it('lists and restores archived templates explicitly', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const findUnique = vi.fn().mockResolvedValue({
+      activeVersionId: 'version-a',
+      status: 'ARCHIVED',
+      versions: [],
+    });
+    const update = vi.fn().mockResolvedValue({ id: 'template-a', status: 'PUBLISHED' });
+    const audit = { record: vi.fn() };
+    const service = new TemplatesService(
+      { client: { messageTemplate: { findMany, findUnique, update } } } as never,
+      audit as never,
+    );
+
+    await service.list('project-a', true);
+    await expect(service.restore('project-a', 'template-a', actor, context)).resolves.toMatchObject(
+      {
+        status: 'PUBLISHED',
+      },
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { projectId: 'project-a', status: 'ARCHIVED' } }),
+    );
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'PUBLISHED' } }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'message_template.restored' }),
+    );
+  });
+
   it('previews variables without sending or mutating data', async () => {
     const service = new TemplatesService(
       {

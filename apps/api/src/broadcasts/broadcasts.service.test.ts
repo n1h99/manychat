@@ -95,4 +95,106 @@ describe('BroadcastsService', () => {
       }),
     ).rejects.toMatchObject({ response: { code: 'BROADCAST_MUST_BE_STOPPED' } });
   });
+
+  it('restores an archived completed broadcast without changing its delivery history', async () => {
+    const update = vi.fn().mockResolvedValue({
+      audience: {},
+      cancelledAt: null,
+      completedAt: new Date(),
+      connectionId: 'connection-a',
+      content: { kind: 'TEXT', text: 'Hello' },
+      createdAt: new Date(),
+      errorCode: null,
+      failedAt: null,
+      id: 'broadcast-a',
+      name: 'Campaign',
+      pausedAt: null,
+      projectId: 'project-a',
+      recipientCount: 2,
+      scheduledAt: null,
+      startedAt: new Date(),
+      status: 'COMPLETED',
+      updatedAt: new Date(),
+      _count: { recipients: 2 },
+    });
+    const instance = service({
+      broadcast: {
+        findUnique: vi.fn().mockResolvedValue({
+          cancelledAt: null,
+          completedAt: new Date(),
+          failedAt: null,
+          status: 'ARCHIVED',
+        }),
+        update,
+      },
+    });
+
+    await expect(
+      instance.restore('project-a', 'broadcast-a', {
+        actorEmail: 'admin@example.test',
+        actorUserId: 'user-a',
+        correlationId: 'correlation-a',
+      }),
+    ).resolves.toMatchObject({ recipientCount: 2, status: 'COMPLETED' });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'COMPLETED' } }));
+  });
+
+  it('creates a new draft when a terminal broadcast is run again', async () => {
+    const create = vi.fn().mockResolvedValue({
+      audience: { mode: 'ALL_ACTIVE' },
+      cancelledAt: null,
+      completedAt: null,
+      connectionId: 'connection-a',
+      content: { kind: 'TEXT', text: 'Hello' },
+      createdAt: new Date(),
+      errorCode: null,
+      failedAt: null,
+      id: 'broadcast-copy',
+      name: 'Launch (run 1)',
+      pausedAt: null,
+      projectId: 'project-a',
+      scheduledAt: null,
+      startedAt: null,
+      status: 'DRAFT',
+      templateVersionId: null,
+      updatedAt: new Date(),
+      _count: { recipients: 0 },
+    });
+    const instance = service({
+      broadcast: {
+        create,
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({
+            audience: { mode: 'ALL_ACTIVE' },
+            connectionId: 'connection-a',
+            content: { kind: 'TEXT', text: 'Hello' },
+            createdById: 'original-user',
+            id: 'broadcast-a',
+            name: 'Launch',
+            projectId: 'project-a',
+            status: 'COMPLETED',
+            templateVersionId: null,
+          })
+          .mockResolvedValueOnce(null),
+      },
+    });
+
+    await expect(
+      instance.runAgain('project-a', 'broadcast-a', {
+        actorEmail: 'admin@example.test',
+        actorUserId: 'user-a',
+        correlationId: 'correlation-a',
+      }),
+    ).resolves.toMatchObject({ id: 'broadcast-copy', recipientCount: 0, status: 'DRAFT' });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          createdById: 'user-a',
+          name: 'Launch (run 1)',
+          status: 'DRAFT',
+        }),
+      }),
+    );
+  });
 });

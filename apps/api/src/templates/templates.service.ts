@@ -47,14 +47,14 @@ export class TemplatesService {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  async list(projectId: string) {
+  async list(projectId: string, archived = false) {
     return this.database.client.messageTemplate.findMany({
       include: {
         activeVersion: { include: { mediaAsset: { select: safeMediaAssetSelect } } },
         draftVersion: { include: { mediaAsset: { select: safeMediaAssetSelect } } },
       },
       orderBy: { updatedAt: 'desc' },
-      where: { projectId, status: { not: 'ARCHIVED' } },
+      where: { projectId, status: archived ? 'ARCHIVED' : { not: 'ARCHIVED' } },
     });
   }
 
@@ -312,6 +312,34 @@ export class TemplatesService {
       projectId,
     });
     return archived;
+  }
+
+  async restore(
+    projectId: string,
+    templateId: string,
+    actor: AuthenticatedUser,
+    context: RequestSecurityContext,
+  ) {
+    const template = await this.get(projectId, templateId);
+    if (template.status !== 'ARCHIVED')
+      throw new ConflictException({
+        code: 'MESSAGE_TEMPLATE_NOT_ARCHIVED',
+        message: 'Message template is not archived',
+      });
+    const restored = await this.database.client.messageTemplate.update({
+      data: { status: template.activeVersionId ? 'PUBLISHED' : 'DRAFT' },
+      where: { projectId_id: { id: templateId, projectId } },
+    });
+    await this.audit.record({
+      action: 'message_template.restored',
+      actorUserId: actor.userId,
+      afterSafeJson: { status: restored.status },
+      correlationId: context.correlationId,
+      entityId: templateId,
+      entityType: 'MessageTemplate',
+      projectId,
+    });
+    return restored;
   }
 
   async preview(projectId: string, templateId: string, dto: PreviewMessageTemplateDto) {

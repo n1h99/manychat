@@ -28,6 +28,26 @@ describe('workspace lifecycle UI contracts', () => {
     expect(media).toContain('Remove selected file');
   });
 
+  it('provides discoverable archive and restore views', () => {
+    const fields = source('./pages/custom-fields-page.tsx');
+    const templates = source('./pages/templates-page.tsx');
+    const broadcasts = source('./pages/broadcasts-page.tsx');
+    expect(fields).toContain("label: 'Archived'");
+    expect(fields).toContain('Restore');
+    expect(templates).toContain("label: 'Archived'");
+    expect(templates).toContain('Restore');
+    expect(broadcasts).toContain("label: 'Archived'");
+    expect(broadcasts).toContain('Restore');
+  });
+
+  it('removes campaign labels and keeps stable scenario action widths', () => {
+    const broadcasts = source('./pages/broadcasts-page.tsx');
+    const scenarios = source('./pages/scenarios-page.tsx');
+    expect(broadcasts.toLowerCase()).not.toContain('campaign');
+    expect(scenarios).toContain('scenario-state-action');
+    expect(scenarios).toContain('width: 250');
+  });
+
   it('does not show internal unknown-delivery guidance as a page banner', () => {
     expect(source('./pages/crm-config-page.tsx')).not.toContain(
       'Unknown delivery requires confirmation',
