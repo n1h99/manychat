@@ -9,12 +9,10 @@ import {
   Alert,
   Button,
   Card,
-  Col,
   Descriptions,
   Form,
   Input,
   Modal,
-  Row,
   Select,
   Spin,
   Switch,
@@ -94,69 +92,65 @@ export function ChannelDetailPage() {
         </div>
       </div>
 
-      <Row className="balanced-card-row" gutter={[18, 18]}>
-        <Col xs={24}>
-          <Card title="Connection overview">
-            <Descriptions
-              column={{ lg: 3, md: 2, xs: 1 }}
-              items={[
-                { children: connection.type, key: 'type', label: 'Type' },
-                {
-                  children: (
-                    <Tag color={connectionStatusColor(connection.status)}>{connection.status}</Tag>
-                  ),
-                  key: 'status',
-                  label: 'Status',
-                },
-                {
-                  children: connection.botUsername ? `@${connection.botUsername}` : '—',
-                  key: 'bot',
-                  label: 'Bot',
-                },
-                {
-                  children: connection.externalBotId ?? '—',
-                  key: 'external-id',
-                  label: 'External bot ID',
-                },
-                {
-                  children: connection.maskedToken ?? '—',
-                  key: 'token',
-                  label: 'Token',
-                },
-                {
-                  children: connection.webhookStatus,
-                  key: 'webhook',
-                  label: 'Webhook',
-                },
-                {
-                  children: connection.lastWebhookAt
-                    ? new Date(connection.lastWebhookAt).toLocaleString()
-                    : '—',
-                  key: 'last-webhook',
-                  label: 'Last webhook',
-                },
-                {
-                  children: connection.lastErrorAt
-                    ? new Date(connection.lastErrorAt).toLocaleString()
-                    : '—',
-                  key: 'last-error',
-                  label: 'Last error',
-                },
-                {
-                  children: new Date(connection.updatedAt).toLocaleString(),
-                  key: 'updated',
-                  label: 'Updated',
-                },
-              ]}
-              size="small"
-            />
-          </Card>
-        </Col>
-      </Row>
+      <Card className="channel-overview-card" title="Connection overview">
+        <Descriptions
+          column={{ lg: 3, md: 2, xs: 1 }}
+          items={[
+            { children: connection.type, key: 'type', label: 'Type' },
+            {
+              children: (
+                <Tag color={connectionStatusColor(connection.status)}>{connection.status}</Tag>
+              ),
+              key: 'status',
+              label: 'Status',
+            },
+            {
+              children: connection.botUsername ? `@${connection.botUsername}` : '—',
+              key: 'bot',
+              label: 'Bot',
+            },
+            {
+              children: connection.externalBotId ?? '—',
+              key: 'external-id',
+              label: 'External bot ID',
+            },
+            {
+              children: connection.maskedToken ?? '—',
+              key: 'token',
+              label: 'Token',
+            },
+            {
+              children: connection.webhookStatus,
+              key: 'webhook',
+              label: 'Webhook',
+            },
+            {
+              children: connection.lastWebhookAt
+                ? new Date(connection.lastWebhookAt).toLocaleString()
+                : '—',
+              key: 'last-webhook',
+              label: 'Last webhook',
+            },
+            {
+              children: connection.lastErrorAt
+                ? new Date(connection.lastErrorAt).toLocaleString()
+                : '—',
+              key: 'last-error',
+              label: 'Last error',
+            },
+            {
+              children: new Date(connection.updatedAt).toLocaleString(),
+              key: 'updated',
+              label: 'Updated',
+            },
+          ]}
+          size="small"
+        />
+      </Card>
 
       {canManage ? (
-        <Row className="balanced-card-row channel-management-row" gutter={[18, 18]}>
-          <Col className="channel-management-stack" lg={10} xs={24}>
+        <div className="channel-management-grid">
+          <div className="channel-management-stack">
             <Card title="Replace bot token">
               <Typography.Paragraph type="secondary">
                 The full token is validated, encrypted and never shown again.
@@ -236,6 +230,7 @@ export function ChannelDetailPage() {
                   block
                   className="channel-danger-action"
                   danger
+                  disabled={connection.status === 'DISABLED'}
                   icon={<DeleteOutlined />}
                   onClick={() =>
                     Modal.confirm({
@@ -254,80 +249,78 @@ export function ChannelDetailPage() {
                 </Button>
               </div>
             </Card>
-          </Col>
-          <Col lg={14} xs={24}>
-            <Card title="Send test message">
-              <Form
-                layout="vertical"
-                onFinish={async (values) => {
-                  retryKey.current ??= idempotencyKey();
-                  await action(
-                    () =>
-                      mutations.send.mutateAsync({
-                        id: connection.id,
-                        ...values,
-                        idempotencyKey: retryKey.current!,
-                      }),
-                    'Message queued for delivery.',
-                  );
-                  retryKey.current = undefined;
-                }}
+          </div>
+          <Card className="channel-test-message-card" title="Send test message">
+            <Form
+              layout="vertical"
+              onFinish={async (values) => {
+                retryKey.current ??= idempotencyKey();
+                await action(
+                  () =>
+                    mutations.send.mutateAsync({
+                      id: connection.id,
+                      ...values,
+                      idempotencyKey: retryKey.current!,
+                    }),
+                  'Message queued for delivery.',
+                );
+                retryKey.current = undefined;
+              }}
+            >
+              <Form.Item
+                label="Telegram contact"
+                name="channelIdentityId"
+                rules={[{ message: 'Select a Telegram contact', required: true }]}
               >
-                <Form.Item
-                  label="Telegram contact"
-                  name="channelIdentityId"
-                  rules={[{ message: 'Select a Telegram contact', required: true }]}
-                >
-                  <Select
-                    allowClear
-                    loading={identities.isLoading}
-                    notFoundContent={
-                      identities.isError
-                        ? 'Telegram contacts could not be loaded'
-                        : 'This channel has no Telegram contacts yet'
-                    }
-                    optionFilterProp="label"
-                    options={(identities.data ?? []).map((identity) => {
-                      const username = identity.username ? `@${identity.username}` : null;
-                      return {
-                        disabled: identity.status !== 'ACTIVE',
-                        label: [
-                          identity.contact.displayName,
-                          username,
-                          identity.status === 'ACTIVE' ? null : `[${identity.status}]`,
-                        ]
-                          .filter(Boolean)
-                          .join(' · '),
-                        value: identity.id,
-                      };
-                    })}
-                    placeholder="Choose a recipient"
-                    showSearch
-                  />
-                </Form.Item>
-                <Form.Item label="Message" name="text" rules={[{ required: true }]}>
-                  <Input.TextArea autoSize={{ maxRows: 6, minRows: 3 }} />
-                </Form.Item>
-                <Form.Item
-                  label="Send without notification"
-                  name="disableNotification"
-                  valuePropName="checked"
-                >
-                  <Switch />
-                </Form.Item>
-                <Button
-                  block
-                  htmlType="submit"
-                  icon={<SendOutlined />}
-                  loading={mutations.send.isPending}
-                  type="primary"
-                >
-                  Queue test message
-                </Button>
-              </Form>
-            </Card>
-          </Col>
-        </Row>
+                <Select
+                  allowClear
+                  loading={identities.isLoading}
+                  notFoundContent={
+                    identities.isError
+                      ? 'Telegram contacts could not be loaded'
+                      : 'This channel has no Telegram contacts yet'
+                  }
+                  optionFilterProp="label"
+                  options={(identities.data ?? []).map((identity) => {
+                    const username = identity.username ? `@${identity.username}` : null;
+                    return {
+                      disabled: identity.status !== 'ACTIVE',
+                      label: [
+                        identity.contact.displayName,
+                        username,
+                        identity.status === 'ACTIVE' ? null : `[${identity.status}]`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · '),
+                      value: identity.id,
+                    };
+                  })}
+                  placeholder="Choose a recipient"
+                  showSearch
+                />
+              </Form.Item>
+              <Form.Item label="Message" name="text" rules={[{ required: true }]}>
+                <Input.TextArea autoSize={{ maxRows: 6, minRows: 3 }} />
+              </Form.Item>
+              <Form.Item
+                label="Send without notification"
+                name="disableNotification"
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+              <Button
+                block
+                htmlType="submit"
+                icon={<SendOutlined />}
+                loading={mutations.send.isPending}
+                type="primary"
+              >
+                Queue test message
+              </Button>
+            </Form>
+          </Card>
+        </div>
       ) : null}
 
       <Card className="pipeline-card" title="Inbound pipeline">

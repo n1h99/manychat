@@ -166,12 +166,18 @@ export function UsersPage() {
                   </span>
                   <div>
                     <Typography.Text strong>{fullName(row)}</Typography.Text>
-                    <Typography.Text type="secondary">{row.email}</Typography.Text>
                   </div>
                 </div>
               ),
-              title: 'Account',
-              width: 280,
+              title: 'Name',
+              width: 220,
+            },
+            {
+              dataIndex: 'email',
+              ellipsis: true,
+              render: (value: string) => <Typography.Text>{value}</Typography.Text>,
+              title: 'Email',
+              width: 250,
             },
             {
               render: (_, row) => (
@@ -188,7 +194,7 @@ export function UsersPage() {
                 </Space>
               ),
               title: 'Roles',
-              width: 230,
+              width: 190,
             },
             {
               render: (_, row) => {
@@ -222,14 +228,14 @@ export function UsersPage() {
               render: (_, row) =>
                 canManage ? (
                   <Space size={8}>
-                    <Tooltip title="Edit account">
+                    <Tooltip placement="bottom" title="Edit account">
                       <Button
                         aria-label={`Edit ${fullName(row)}`}
                         icon={<EditOutlined />}
                         onClick={() => openEdit(row)}
                       />
                     </Tooltip>
-                    <Tooltip title="Revoke all sessions">
+                    <Tooltip placement="bottom" title="Revoke all sessions">
                       <Button
                         aria-label={`Revoke sessions for ${fullName(row)}`}
                         icon={<SafetyCertificateOutlined />}
@@ -244,6 +250,7 @@ export function UsersPage() {
                       />
                     </Tooltip>
                     <Tooltip
+                      placement="bottom"
                       title={row.status === 'ACTIVE' ? 'Disable account' : 'Account disabled'}
                     >
                       <Button
@@ -257,7 +264,7 @@ export function UsersPage() {
                   </Space>
                 ) : null,
               title: 'Actions',
-              width: 170,
+              width: 180,
             },
           ]}
           dataSource={users.data ?? []}
@@ -269,7 +276,7 @@ export function UsersPage() {
           }}
           pagination={{ hideOnSinglePage: true, pageSize: 10, showSizeChanger: false }}
           rowKey="id"
-          scroll={{ x: 1080 }}
+          scroll={{ x: 1220 }}
         />
       </div>
 

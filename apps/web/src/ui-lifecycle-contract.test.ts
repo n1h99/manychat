@@ -60,11 +60,17 @@ describe('workspace lifecycle UI contracts', () => {
 
   it('uses a full-width connection overview and stacked channel controls', () => {
     const channel = source('./pages/channel-detail-page.tsx');
-    expect(channel).toContain('<Col xs={24}>');
+    const styles = source('./styles.css');
+    expect(channel).toContain('className="channel-overview-card"');
+    expect(channel).toContain('className="channel-management-grid"');
     expect(channel).toContain('className="channel-management-stack"');
+    expect(channel).toContain('className="channel-actions-card"');
+    expect(channel).toContain('className="channel-test-message-card"');
     expect(channel.indexOf('Replace bot token')).toBeLessThan(
       channel.indexOf('Connection actions'),
     );
+    expect(styles).toContain('grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr)');
+    expect(styles).toMatch(/\.channel-management-grid\s*\{\s*grid-template-columns: 1fr;/);
   });
 
   it('does not show internal unknown-delivery guidance as a page banner', () => {

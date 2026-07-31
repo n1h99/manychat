@@ -259,3 +259,131 @@ test('opens the versioned template and visual automation workspace with mocked A
   await page.getByRole('button', { name: 'Render preview' }).click();
   await expect(page.getByText('Hello Eldar')).toBeVisible();
 });
+
+test('shows polished account management and the complete Telegram connection layout', async ({
+  page,
+}) => {
+  const envelope = (data: unknown) => JSON.stringify({ data, meta: {} });
+  const adminIdentity = {
+    ...browserIdentity,
+    firstName: 'Eldar',
+    globalPermissions: ['users:manage', 'users:read'],
+    globalRoleNames: ['super-admin'],
+    lastName: 'Pirmammadov',
+  };
+  await page.addInitScript(
+    ({ user }) => {
+      localStorage.setItem('omnicus-auth', JSON.stringify({ token: 'ui-review-token', user }));
+    },
+    { user: adminIdentity },
+  );
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let data: unknown;
+    if (path === '/api/v1/auth/me') data = adminIdentity;
+    else if (path === '/api/v1/users')
+      data = [
+        {
+          city: 'Baku',
+          country: 'Azerbaijan',
+          createdAt: '2026-07-28T00:00:00.000Z',
+          email: 'eldar@example.test',
+          firstName: 'Eldar',
+          globalRoles: [
+            {
+              globalRole: {
+                id: 'role-a',
+                name: 'Super Admin',
+                normalizedName: 'super-admin',
+              },
+            },
+          ],
+          id: 'user-a',
+          lastName: 'Pirmammadov',
+          region: null,
+          status: 'ACTIVE',
+        },
+      ];
+    else if (path === '/api/v1/users/roles/global')
+      data = [{ id: 'role-a', name: 'Super Admin', normalizedName: 'super-admin' }];
+    else if (path === '/api/v1/users/me')
+      data = {
+        city: 'Baku',
+        country: 'Azerbaijan',
+        email: 'eldar@example.test',
+        firstName: 'Eldar',
+        lastName: 'Pirmammadov',
+        region: null,
+      };
+    else if (path === '/api/v1/projects/project-a') data = { name: 'Omnicus Local' };
+    else if (path === '/api/v1/projects/project-a/access')
+      data = {
+        permissions: ['channels:manage', 'channels:read', 'channels:rotate_secrets'],
+        projectRoleName: 'Project Admin',
+      };
+    else if (path === '/api/v1/projects/project-a/channels/channel-a')
+      data = {
+        botUsername: 'omnicus_bot',
+        createdAt: '2026-07-28T00:00:00.000Z',
+        externalBotId: '10001',
+        id: 'channel-a',
+        lastErrorAt: null,
+        lastWebhookAt: '2026-07-31T00:00:00.000Z',
+        maskedToken: '123456:****************abcd',
+        name: 'Omnicus Telegram',
+        projectId: 'project-a',
+        status: 'ACTIVE',
+        type: 'TELEGRAM',
+        updatedAt: '2026-07-31T00:00:00.000Z',
+        webhookStatus: 'CONNECTED',
+        webhookUrl: 'https://api.example.test/webhooks/telegram/channel-a',
+      };
+    else if (
+      path.endsWith('/identities') ||
+      path.endsWith('/inbound-events') ||
+      path.endsWith('/outbound-events')
+    )
+      data = [];
+    else
+      return route.fulfill({
+        body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Not found' } }),
+        contentType: 'application/json',
+        status: 404,
+      });
+    return route.fulfill({ body: envelope(data), contentType: 'application/json', status: 200 });
+  });
+
+  await page.goto('/users');
+  await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible();
+  await expect(page.getByText('System administrators')).toBeVisible();
+  await expect(page.getByText('Eldar Pirmammadov').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Profile' }).click();
+  await expect(page.getByRole('heading', { name: 'Profile settings' })).toBeVisible();
+  await expect(page.getByText('Lead notifications')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Create user' }).click();
+  await expect(page.getByRole('heading', { name: 'Create user' })).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('Location', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  await page.setViewportSize({ height: 1000, width: 1440 });
+  await page.goto('/projects/project-a/channels/channel-a');
+  await expect(page.getByText('Connection overview')).toBeVisible();
+  await expect(page.getByText('Replace bot token')).toBeVisible();
+  await expect(page.getByText('Connection actions')).toBeVisible();
+  await expect(page.getByText('Send test message')).toBeVisible();
+  const overview = await page.locator('.channel-overview-card').boundingBox();
+  const replaceToken = await page
+    .locator('.channel-management-stack > .ant-card')
+    .first()
+    .boundingBox();
+  const actions = await page.locator('.channel-actions-card').boundingBox();
+  const testMessage = await page.locator('.channel-test-message-card').boundingBox();
+  expect(overview).not.toBeNull();
+  expect(replaceToken).not.toBeNull();
+  expect(actions).not.toBeNull();
+  expect(testMessage).not.toBeNull();
+  expect(overview!.width).toBeGreaterThan(replaceToken!.width * 1.5);
+  expect(actions!.y).toBeGreaterThan(replaceToken!.y);
+  expect(testMessage!.x).toBeGreaterThan(replaceToken!.x);
+});
