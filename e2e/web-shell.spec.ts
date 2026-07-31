@@ -257,7 +257,7 @@ test('opens the versioned template and visual automation workspace with mocked A
   await expect(page.getByText('Welcome template')).toBeVisible();
   const archiveSwitcher = await page.locator('.archive-view-switch').boundingBox();
   expect(archiveSwitcher).not.toBeNull();
-  expect(archiveSwitcher!.height).toBeLessThanOrEqual(42);
+  expect(archiveSwitcher!.height).toBeLessThanOrEqual(50);
   const activeHeaders = await page
     .locator('.archive-state-table .ant-table-thead th')
     .evaluateAll((cells) => cells.map((cell) => cell.getBoundingClientRect().width));

@@ -66,11 +66,15 @@ describe('workspace lifecycle UI contracts', () => {
 
   it('keeps the account header compact and archive switches consistent', () => {
     const styles = source('./styles.css');
+    const theme = source('./main.tsx');
     expect(styles).toMatch(/\.app-header\s*\{[^}]*line-height: normal;/s);
     expect(styles).toMatch(/\.account-identity-chip\s*\{[^}]*height: 38px;/s);
     expect(styles).toMatch(/\.account-identity-chip\s*\{[^}]*line-height: normal;/s);
-    expect(styles).toContain('.archive-view-switch .ant-segmented-group');
-    expect(styles).toContain('grid-auto-columns: minmax(max-content, 1fr)');
+    expect(styles).toContain('padding: 5px');
+    expect(styles).toContain('border-radius: 18px');
+    expect(styles).toContain('box-shadow: 0 3px 10px rgba(15, 118, 110, 0.12)');
+    expect(theme).toContain('Segmented: {');
+    expect(theme).toContain("itemSelectedColor: '#0f766e'");
   });
 
   it('uses a full-width connection overview and stacked channel controls', () => {

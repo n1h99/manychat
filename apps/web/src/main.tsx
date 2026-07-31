@@ -48,6 +48,12 @@ try {
                 optionSelectedBg: '#eef3f8',
                 optionSelectedColor: '#0f172a',
               },
+              Segmented: {
+                itemColor: '#334155',
+                itemSelectedBg: 'rgba(15, 118, 110, 0.1)',
+                itemSelectedColor: '#0f766e',
+                trackBg: '#f8fafc',
+              },
             },
             token: {
               borderRadius: 12,
