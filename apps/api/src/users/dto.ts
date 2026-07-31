@@ -1,4 +1,4 @@
-import { IsArray, IsEmail, IsOptional, IsString, Length } from 'class-validator';
+import { IsArray, IsEmail, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 
 export class CreateUserDto {
   @IsEmail()
@@ -20,9 +20,28 @@ export class CreateUserDto {
   @IsArray()
   @IsString({ each: true })
   globalRoleIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  city?: string;
 }
 
 export class UpdateUserDto {
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
   @IsOptional()
   @IsString()
   @Length(1, 100)
@@ -37,4 +56,24 @@ export class UpdateUserDto {
   @IsArray()
   @IsString({ each: true })
   globalRoleIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @Length(12, 256)
+  newPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  city?: string;
 }

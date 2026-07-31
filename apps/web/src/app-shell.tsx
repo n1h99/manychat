@@ -1,12 +1,12 @@
 import {
-  DownOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
   RightOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
-import { Avatar, Breadcrumb, Button, Drawer, Dropdown, Grid, Layout, Menu, Typography } from 'antd';
+import { Breadcrumb, Button, Drawer, Grid, Layout, Menu, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useDispatch, useSelector } from 'react-redux';
@@ -16,6 +16,7 @@ import { useAuth } from './auth';
 import { apiRequest } from './api';
 import { breadcrumbsFor } from './breadcrumbs';
 import { navigationItems } from './navigation';
+import { ProfileSettingsModal } from './profile-settings-modal';
 import { shellActions, type AppDispatch, type RootState } from './store';
 
 const { Content, Header, Sider } = Layout;
@@ -46,13 +47,19 @@ export function AppShell() {
   const screens = useBreakpoint();
   const isMobile = screens.lg === false;
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const selectedKey = useMemo(
     () =>
       navigationItems.find((item) => location.pathname.startsWith(item.path))?.key ?? 'projects',
     [location.pathname],
   );
   const selectedItem = navigationItems.find((item) => item.key === selectedKey);
-  const avatarLabel = identity?.email?.slice(0, 1).toUpperCase() ?? 'O';
+  const accountName =
+    [identity?.firstName, identity?.lastName].filter(Boolean).join(' ') || 'Account';
+  const accountRole = identity?.globalRoleNames[0]
+    ?.split('-')
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
   const menuItems = navigationItems.map(({ icon, key, label }) => ({ icon, key, label }));
   const projectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
   const project = useQuery({
@@ -148,33 +155,22 @@ export function AppShell() {
               </Typography.Text>
             </div>
           </div>
-          <Dropdown
-            overlayClassName="account-dropdown"
-            menu={{
-              items: [
-                {
-                  danger: true,
-                  icon: <LogoutOutlined />,
-                  key: 'logout',
-                  label: 'Sign out',
-                },
-              ],
-              onClick: ({ key }) => {
-                if (key === 'logout') void logout();
-              },
-            }}
-            placement="bottomRight"
-            trigger={['click']}
-          >
-            <Button className="account-menu" type="text">
-              <Avatar size={34}>{avatarLabel}</Avatar>
-              <span className="account-copy">
-                <strong>{identity?.email ?? 'Account'}</strong>
-                <small>Manage session</small>
-              </span>
-              <DownOutlined className="account-menu-chevron" />
+          <div className="account-toolbar">
+            <div className="account-identity-chip">
+              <strong>{accountName}</strong>
+              {accountRole ? <Tag>{accountRole}</Tag> : null}
+            </div>
+            <Button icon={<SettingOutlined />} onClick={() => setProfileOpen(true)}>
+              Profile
             </Button>
-          </Dropdown>
+            <Button
+              className="sign-out-button"
+              icon={<LogoutOutlined />}
+              onClick={() => void logout()}
+            >
+              Sign out
+            </Button>
+          </div>
         </Header>
         <Content className="app-content">
           <div className="page-frame">
@@ -195,6 +191,7 @@ export function AppShell() {
             <Outlet />
           </div>
         </Content>
+        <ProfileSettingsModal onClose={() => setProfileOpen(false)} open={profileOpen} />
       </Layout>
     </Layout>
   );

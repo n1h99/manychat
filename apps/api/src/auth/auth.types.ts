@@ -4,6 +4,7 @@ export interface AuthenticatedUser {
   email: string;
   globalPermissions: string[];
   globalRoleNames: string[];
+  sessionId?: string;
   userId: string;
 }
 

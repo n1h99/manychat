@@ -1,181 +1,440 @@
-import { PlusOutlined } from '@ant-design/icons';
-import { Button, Drawer, Form, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import {
+  EditOutlined,
+  EnvironmentOutlined,
+  KeyOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
+  StopOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
+import {
+  Button,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { apiRequest } from '../api';
 import { useAuth } from '../auth';
 
+interface GlobalRole {
+  id: string;
+  name: string;
+  normalizedName: string;
+}
+
 interface UserRow {
+  city: string | null;
+  country: string | null;
+  createdAt: string;
   email: string;
   firstName: string;
-  globalRoles: Array<{ globalRole: { id: string; name: string } }>;
+  globalRoles: Array<{ globalRole: GlobalRole }>;
   id: string;
   lastName: string;
-  status: string;
+  region: string | null;
+  status: 'ACTIVE' | 'DISABLED';
+}
+
+interface UserFormValues {
+  city?: string;
+  country?: string;
+  email: string;
+  firstName: string;
+  globalRoleIds?: string[];
+  lastName: string;
+  newPassword?: string;
+  region?: string;
+  temporaryPassword?: string;
+}
+
+function fullName(user: Pick<UserRow, 'firstName' | 'lastName'>): string {
+  return `${user.firstName} ${user.lastName}`.trim();
+}
+
+function locationLabel(user: Pick<UserRow, 'city' | 'country' | 'region'>): string {
+  return [user.city, user.region, user.country].filter(Boolean).join(', ') || 'Not set';
 }
 
 export function UsersPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, identity } = useAuth();
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow>();
-  const [form] = Form.useForm();
+  const [disableTarget, setDisableTarget] = useState<UserRow>();
+  const [form] = Form.useForm<UserFormValues>();
   const users = useQuery({
     queryFn: () => apiRequest<UserRow[]>('/api/v1/users', {}, accessToken),
     queryKey: ['users', accessToken],
   });
   const globalRoles = useQuery({
-    queryFn: () =>
-      apiRequest<Array<{ id: string; name: string }>>(
-        '/api/v1/users/roles/global',
-        {},
-        accessToken,
-      ),
+    queryFn: () => apiRequest<GlobalRole[]>('/api/v1/users/roles/global', {}, accessToken),
     queryKey: ['global-roles', accessToken],
   });
-  const refresh = () => client.invalidateQueries({ queryKey: ['users'] });
+  const canManage =
+    identity?.globalRoleNames.includes('super-admin') ||
+    identity?.globalPermissions.includes('users:manage');
+  const summary = useMemo(() => {
+    const rows = users.data ?? [];
+    return {
+      active: rows.filter((user) => user.status === 'ACTIVE').length,
+      admins: rows.filter((user) =>
+        user.globalRoles.some(({ globalRole }) => globalRole.normalizedName === 'super-admin'),
+      ).length,
+      total: rows.length,
+    };
+  }, [users.data]);
+  const refresh = async () => client.invalidateQueries({ queryKey: ['users'] });
+
+  const closeEditor = () => {
+    setEditing(undefined);
+    form.resetFields();
+    setOpen(false);
+  };
+
+  const openCreate = () => {
+    setEditing(undefined);
+    form.resetFields();
+    setOpen(true);
+  };
+
+  const openEdit = (user: UserRow) => {
+    setEditing(user);
+    form.setFieldsValue({
+      city: user.city ?? '',
+      country: user.country ?? '',
+      email: user.email,
+      firstName: user.firstName,
+      globalRoleIds: user.globalRoles.map(({ globalRole }) => globalRole.id),
+      lastName: user.lastName,
+      region: user.region ?? '',
+    });
+    setOpen(true);
+  };
+
   return (
-    <section>
-      <div className="page-heading-row">
-        <div>
-          <Typography.Title level={2}>Users</Typography.Title>
-          <Typography.Text type="secondary">
-            Global administration users and their system roles.
-          </Typography.Text>
+    <section className="users-page">
+      <div className="users-overview surface">
+        <div className="page-heading-row users-heading">
+          <div>
+            <Typography.Title level={2}>Users</Typography.Title>
+            <Typography.Text type="secondary">
+              Manage Omnicus accounts, profile details and assigned system roles.
+            </Typography.Text>
+          </div>
+          {canManage ? (
+            <Button icon={<PlusOutlined />} onClick={openCreate} type="primary">
+              Create user
+            </Button>
+          ) : null}
         </div>
-        <Button icon={<PlusOutlined />} onClick={() => setOpen(true)} type="primary">
-          Create user
-        </Button>
+        <div className="users-summary-grid">
+          <div className="users-summary-item">
+            <span>Total users</span>
+            <strong>{summary.total}</strong>
+          </div>
+          <div className="users-summary-item">
+            <span>Active accounts</span>
+            <strong>{summary.active}</strong>
+          </div>
+          <div className="users-summary-item">
+            <span>System administrators</span>
+            <strong>{summary.admins}</strong>
+          </div>
+        </div>
       </div>
-      <Table<UserRow>
-        dataSource={users.data ?? []}
-        loading={users.isLoading}
-        pagination={false}
-        rowKey="id"
-        columns={[
-          { render: (_, row) => `${row.firstName} ${row.lastName}`, title: 'Name' },
-          { dataIndex: 'email', title: 'Email' },
-          {
-            render: (_, row) =>
-              row.globalRoles.map(({ globalRole }) => (
-                <Tag key={globalRole.id}>{globalRole.name}</Tag>
-              )),
-            title: 'Global roles',
-          },
-          { dataIndex: 'status', title: 'Status' },
-          {
-            render: (_, row) => (
-              <Space>
-                <Button
-                  onClick={() => {
-                    setEditing(row);
-                    form.setFieldsValue({
-                      firstName: row.firstName,
-                      globalRoleIds: row.globalRoles.map(({ globalRole }) => globalRole.id),
-                      lastName: row.lastName,
-                    });
-                    setOpen(true);
-                  }}
-                  size="small"
-                >
-                  Edit
-                </Button>
-                <Button
-                  size="small"
-                  onClick={async () => {
-                    await apiRequest(
-                      `/api/v1/users/${row.id}/revoke-sessions`,
-                      { method: 'POST' },
-                      accessToken,
-                    );
-                  }}
-                >
-                  Revoke sessions
-                </Button>
-                <Button
-                  danger
-                  disabled={row.status !== 'ACTIVE'}
-                  size="small"
-                  onClick={async () => {
-                    await apiRequest(
-                      `/api/v1/users/${row.id}/disable`,
-                      { method: 'POST' },
-                      accessToken,
-                    );
-                    await refresh();
-                  }}
-                >
-                  Disable
-                </Button>
-              </Space>
+
+      <div className="users-table-card surface">
+        <Table<UserRow>
+          columns={[
+            {
+              render: (_, row) => (
+                <div className="user-name-cell">
+                  <span className="user-initials">
+                    {row.firstName.slice(0, 1)}
+                    {row.lastName.slice(0, 1)}
+                  </span>
+                  <div>
+                    <Typography.Text strong>{fullName(row)}</Typography.Text>
+                    <Typography.Text type="secondary">{row.email}</Typography.Text>
+                  </div>
+                </div>
+              ),
+              title: 'Account',
+              width: 280,
+            },
+            {
+              render: (_, row) => (
+                <Space size={[6, 6]} wrap>
+                  {row.globalRoles.length > 0 ? (
+                    row.globalRoles.map(({ globalRole }) => (
+                      <Tag className="user-role-tag" key={globalRole.id}>
+                        {globalRole.name}
+                      </Tag>
+                    ))
+                  ) : (
+                    <Typography.Text type="secondary">No global role</Typography.Text>
+                  )}
+                </Space>
+              ),
+              title: 'Roles',
+              width: 230,
+            },
+            {
+              render: (_, row) => {
+                const location = locationLabel(row);
+                return location === 'Not set' ? (
+                  <Typography.Text type="secondary">{location}</Typography.Text>
+                ) : (
+                  <Typography.Text>{location}</Typography.Text>
+                );
+              },
+              title: 'Location',
+            },
+            {
+              render: (_, row) => (
+                <Tag className={`account-status account-status--${row.status.toLowerCase()}`}>
+                  {row.status === 'ACTIVE' ? 'Active' : 'Disabled'}
+                </Tag>
+              ),
+              title: 'Status',
+              width: 120,
+            },
+            {
+              dataIndex: 'createdAt',
+              render: (value: string) => new Intl.DateTimeFormat('en-GB').format(new Date(value)),
+              title: 'Created',
+              width: 120,
+            },
+            {
+              align: 'right',
+              fixed: 'right',
+              render: (_, row) =>
+                canManage ? (
+                  <Space size={8}>
+                    <Tooltip title="Edit account">
+                      <Button
+                        aria-label={`Edit ${fullName(row)}`}
+                        icon={<EditOutlined />}
+                        onClick={() => openEdit(row)}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Revoke all sessions">
+                      <Button
+                        aria-label={`Revoke sessions for ${fullName(row)}`}
+                        icon={<SafetyCertificateOutlined />}
+                        onClick={async () => {
+                          await apiRequest(
+                            `/api/v1/users/${row.id}/revoke-sessions`,
+                            { method: 'POST' },
+                            accessToken,
+                          );
+                          void message.success('User sessions revoked.');
+                        }}
+                      />
+                    </Tooltip>
+                    <Tooltip
+                      title={row.status === 'ACTIVE' ? 'Disable account' : 'Account disabled'}
+                    >
+                      <Button
+                        aria-label={`Disable ${fullName(row)}`}
+                        danger
+                        disabled={row.status !== 'ACTIVE'}
+                        icon={<StopOutlined />}
+                        onClick={() => setDisableTarget(row)}
+                      />
+                    </Tooltip>
+                  </Space>
+                ) : null,
+              title: 'Actions',
+              width: 170,
+            },
+          ]}
+          dataSource={users.data ?? []}
+          loading={users.isLoading}
+          locale={{
+            emptyText: (
+              <Empty description="No user accounts found" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ),
-            title: 'Actions',
-          },
-        ]}
-      />
-      <Drawer
+          }}
+          pagination={{ hideOnSinglePage: true, pageSize: 10, showSizeChanger: false }}
+          rowKey="id"
+          scroll={{ x: 1080 }}
+        />
+      </div>
+
+      <Modal
+        className="user-editor-modal"
         destroyOnHidden
-        onClose={() => {
-          setEditing(undefined);
-          form.resetFields();
-          setOpen(false);
-        }}
+        footer={null}
+        onCancel={closeEditor}
         open={open}
-        title={editing ? 'Edit user' : 'Create user'}
-        width={440}
+        width={700}
       >
-        <Typography.Paragraph type="secondary">
-          The temporary password must be delivered through an approved out-of-band channel.
-        </Typography.Paragraph>
-        <Form
+        <div className="modal-title-block">
+          <span className="modal-title-icon">{editing ? <EditOutlined /> : <PlusOutlined />}</span>
+          <div>
+            <Typography.Title level={3}>
+              {editing ? `Edit user — ${fullName(editing)}` : 'Create user'}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {editing
+                ? 'Update account details, access and location.'
+                : 'Create an account and assign its system access.'}
+            </Typography.Text>
+          </div>
+        </div>
+        <Form<UserFormValues>
           form={form}
           layout="vertical"
           onFinish={async (values) => {
-            await apiRequest(
-              editing ? `/api/v1/users/${editing.id}` : '/api/v1/users',
-              { body: JSON.stringify(values), method: editing ? 'PATCH' : 'POST' },
-              accessToken,
-            );
-            setEditing(undefined);
-            form.resetFields();
-            setOpen(false);
-            await refresh();
+            const payload = editing
+              ? {
+                  city: values.city ?? '',
+                  country: values.country ?? '',
+                  email: values.email,
+                  firstName: values.firstName,
+                  globalRoleIds: values.globalRoleIds ?? [],
+                  lastName: values.lastName,
+                  ...(values.newPassword ? { newPassword: values.newPassword } : {}),
+                  region: values.region ?? '',
+                }
+              : {
+                  city: values.city ?? '',
+                  country: values.country ?? '',
+                  email: values.email,
+                  firstName: values.firstName,
+                  globalRoleIds: values.globalRoleIds ?? [],
+                  lastName: values.lastName,
+                  region: values.region ?? '',
+                  temporaryPassword: values.temporaryPassword,
+                };
+            try {
+              await apiRequest(
+                editing ? `/api/v1/users/${editing.id}` : '/api/v1/users',
+                { body: JSON.stringify(payload), method: editing ? 'PATCH' : 'POST' },
+                accessToken,
+              );
+              void message.success(editing ? 'User account updated.' : 'User account created.');
+              closeEditor();
+              await refresh();
+            } catch {
+              void message.error('The user account could not be saved.');
+            }
           }}
         >
-          {editing ? null : (
+          <section className="account-form-section">
+            <div className="account-form-section-title">
+              <UserOutlined />
+              <span>Account</span>
+            </div>
+            <div className="account-form-grid account-form-grid--two">
+              <Form.Item label="First name" name="firstName" rules={[{ required: true }]}>
+                <Input autoComplete="given-name" />
+              </Form.Item>
+              <Form.Item label="Last name" name="lastName" rules={[{ required: true }]}>
+                <Input autoComplete="family-name" />
+              </Form.Item>
+            </div>
             <Form.Item label="Email" name="email" rules={[{ required: true, type: 'email' }]}>
-              <Input />
+              <Input autoComplete="email" />
             </Form.Item>
-          )}
-          <Form.Item label="First name" name="firstName" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item label="Last name" name="lastName" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          {editing ? null : (
             <Form.Item
-              label="Temporary password"
-              name="temporaryPassword"
-              rules={[{ min: 12, required: true }]}
+              extra={editing ? 'Leave empty to keep the current password.' : undefined}
+              label={editing ? 'New password' : 'Temporary password'}
+              name={editing ? 'newPassword' : 'temporaryPassword'}
+              rules={[{ min: 12, required: !editing }]}
             >
-              <Input.Password />
+              <Input.Password autoComplete="new-password" />
             </Form.Item>
-          )}
-          <Form.Item label="Global roles" name="globalRoleIds">
-            <Select
-              mode="multiple"
-              options={globalRoles.data ?? []}
-              fieldNames={{ label: 'name', value: 'id' }}
-              placeholder="Optional global roles"
-            />
-          </Form.Item>
-          <Button block htmlType="submit" type="primary">
-            {editing ? 'Save changes' : 'Create'}
-          </Button>
+          </section>
+
+          <section className="account-form-section">
+            <div className="account-form-section-title">
+              <KeyOutlined />
+              <span>Access</span>
+            </div>
+            <Form.Item label="Global roles" name="globalRoleIds">
+              <Select
+                fieldNames={{ label: 'name', value: 'id' }}
+                loading={globalRoles.isLoading}
+                mode="multiple"
+                options={globalRoles.data ?? []}
+                placeholder="Select system roles"
+              />
+            </Form.Item>
+          </section>
+
+          <section className="account-form-section">
+            <div className="account-form-section-title">
+              <EnvironmentOutlined />
+              <span>Location</span>
+            </div>
+            <div className="account-form-grid account-form-grid--three">
+              <Form.Item label="Country" name="country">
+                <Input autoComplete="country-name" />
+              </Form.Item>
+              <Form.Item label="Region / area" name="region">
+                <Input autoComplete="address-level1" />
+              </Form.Item>
+              <Form.Item label="City" name="city">
+                <Input autoComplete="address-level2" />
+              </Form.Item>
+            </div>
+          </section>
+
+          <div className="modal-form-actions">
+            <Button onClick={closeEditor}>Cancel</Button>
+            <Button htmlType="submit" type="primary">
+              {editing ? 'Save changes' : 'Create user'}
+            </Button>
+          </div>
         </Form>
-      </Drawer>
+      </Modal>
+
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDisableTarget(undefined)}
+        open={Boolean(disableTarget)}
+        title="Disable user account?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {disableTarget
+            ? `${fullName(disableTarget)} will lose access and all active sessions will be revoked.`
+            : ''}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDisableTarget(undefined)}>Cancel</Button>
+          <Button
+            danger
+            onClick={async () => {
+              if (!disableTarget) return;
+              await apiRequest(
+                `/api/v1/users/${disableTarget.id}/disable`,
+                { method: 'POST' },
+                accessToken,
+              );
+              setDisableTarget(undefined);
+              void message.success('User account disabled.');
+              await refresh();
+            }}
+          >
+            Disable account
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -294,6 +294,9 @@ model User {
   passwordHash            String
   firstName               String
   lastName                String
+  country                 String?
+  region                  String?
+  city                    String?
   status                  UserStatus               @default(ACTIVE)
   lastLoginAt             DateTime?                @db.Timestamptz(3)
   createdAt               DateTime                 @default(now()) @db.Timestamptz(3)

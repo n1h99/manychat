@@ -27,6 +27,35 @@ import { UsersService } from './users.service';
 export class UsersController {
   constructor(@Inject(UsersService) private readonly users: UsersService) {}
 
+  @Get('me')
+  async profile(@Req() request: AuthenticatedRequest) {
+    return { data: await this.users.profile(request.auth!.userId), meta: {} };
+  }
+
+  @Patch('me')
+  @ApiBody({ type: UpdateUserDto })
+  async updateProfile(@Body() body: UpdateUserDto, @Req() request: AuthenticatedRequest) {
+    const profileInput: UpdateUserDto = {
+      ...(body.city === undefined ? {} : { city: body.city }),
+      ...(body.country === undefined ? {} : { country: body.country }),
+      ...(body.email === undefined ? {} : { email: body.email }),
+      ...(body.firstName === undefined ? {} : { firstName: body.firstName }),
+      ...(body.lastName === undefined ? {} : { lastName: body.lastName }),
+      ...(body.newPassword === undefined ? {} : { newPassword: body.newPassword }),
+      ...(body.region === undefined ? {} : { region: body.region }),
+    };
+    return {
+      data: await this.users.update(
+        request.auth!.userId,
+        profileInput,
+        request.auth!,
+        this.context(request),
+        request.auth!.sessionId,
+      ),
+      meta: {},
+    };
+  }
+
   @Get()
   @RequireGlobalPermission('users:read')
   async list() {

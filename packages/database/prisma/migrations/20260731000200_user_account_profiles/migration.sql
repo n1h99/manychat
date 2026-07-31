@@ -1,0 +1,4 @@
+ALTER TABLE "users"
+ADD COLUMN "country" TEXT,
+ADD COLUMN "region" TEXT,
+ADD COLUMN "city" TEXT;

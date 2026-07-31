@@ -14,14 +14,22 @@ function normalizeEmail(email: string): string {
 }
 
 const userSelection = {
+  city: true,
+  country: true,
   createdAt: true,
   email: true,
   firstName: true,
   id: true,
   lastName: true,
+  region: true,
   status: true,
   updatedAt: true,
 } as const;
+
+function optionalProfileField(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 @Injectable()
 export class UsersService {
@@ -66,6 +74,9 @@ export class UsersService {
           email: input.email.trim(),
           firstName: input.firstName.trim(),
           lastName: input.lastName.trim(),
+          ...(input.country === undefined ? {} : { country: optionalProfileField(input.country) }),
+          ...(input.region === undefined ? {} : { region: optionalProfileField(input.region) }),
+          ...(input.city === undefined ? {} : { city: optionalProfileField(input.city) }),
           normalizedEmail,
           passwordHash,
         },
@@ -98,13 +109,35 @@ export class UsersService {
     input: UpdateUserDto,
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
+    preserveSessionId?: string,
   ) {
     const before = await this.requireUser(userId);
+    const normalizedEmail = input.email === undefined ? undefined : normalizeEmail(input.email);
+    if (normalizedEmail !== undefined && normalizedEmail !== normalizeEmail(before.email)) {
+      const existing = await this.database.client.user.findUnique({ where: { normalizedEmail } });
+      if (existing) {
+        throw new ConflictException({
+          code: 'USER_EMAIL_EXISTS',
+          message: 'User email is already in use',
+        });
+      }
+    }
+    const passwordHash =
+      input.newPassword === undefined
+        ? undefined
+        : await argon2.hash(input.newPassword, { type: argon2.argon2id });
     const user = await this.database.client.$transaction(async (transaction) => {
       const updated = await transaction.user.update({
         data: {
+          ...(input.email === undefined
+            ? {}
+            : { email: input.email.trim(), normalizedEmail: normalizeEmail(input.email) }),
           ...(input.firstName === undefined ? {} : { firstName: input.firstName.trim() }),
           ...(input.lastName === undefined ? {} : { lastName: input.lastName.trim() }),
+          ...(input.country === undefined ? {} : { country: optionalProfileField(input.country) }),
+          ...(input.region === undefined ? {} : { region: optionalProfileField(input.region) }),
+          ...(input.city === undefined ? {} : { city: optionalProfileField(input.city) }),
+          ...(passwordHash === undefined ? {} : { passwordHash }),
         },
         select: userSelection,
         where: { id: userId },
@@ -112,20 +145,56 @@ export class UsersService {
       if (input.globalRoleIds !== undefined) {
         await this.replaceGlobalRoles(userId, input.globalRoleIds, actor.userId, transaction);
       }
+      if (passwordHash !== undefined) {
+        await transaction.session.updateMany({
+          data: { revokedAt: new Date(), status: 'REVOKED' },
+          where: {
+            ...(preserveSessionId === undefined ? {} : { id: { not: preserveSessionId } }),
+            status: 'ACTIVE',
+            userId,
+          },
+        });
+      }
       return updated;
     });
     await this.audit.record({
       action: input.globalRoleIds === undefined ? 'user.updated' : 'user.global_roles.changed',
       actorEmailSnapshot: actor.email,
       actorUserId: actor.userId,
-      afterSafeJson: { firstName: user.firstName, lastName: user.lastName },
-      beforeSafeJson: { firstName: before.firstName, lastName: before.lastName },
+      afterSafeJson: {
+        city: user.city,
+        country: user.country,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        region: user.region,
+      },
+      beforeSafeJson: {
+        city: before.city,
+        country: before.country,
+        email: before.email,
+        firstName: before.firstName,
+        lastName: before.lastName,
+        region: before.region,
+      },
       correlationId: context.correlationId,
       entityId: user.id,
       entityType: 'User',
       ip: context.ip,
       userAgent: context.userAgent,
     });
+    if (passwordHash !== undefined) {
+      await this.audit.record({
+        action: 'user.password.changed',
+        actorEmailSnapshot: actor.email,
+        actorUserId: actor.userId,
+        correlationId: context.correlationId,
+        entityId: user.id,
+        entityType: 'User',
+        ip: context.ip,
+        userAgent: context.userAgent,
+      });
+    }
     return user;
   }
 
@@ -164,6 +233,10 @@ export class UsersService {
       ip: context.ip,
       userAgent: context.userAgent,
     });
+  }
+
+  async profile(userId: string) {
+    return this.requireUser(userId);
   }
 
   private async requireUser(userId: string) {

@@ -302,6 +302,17 @@ Executable proposal использует отдельные физические
 Полная Prisma-форма этих моделей является единственным executable источником в
 `packages/database/prisma/schema.prisma`.
 
+### User account profile fields
+
+`User` stores optional `country`, `region` and `city` strings for the account
+profile. These fields are global account metadata and are not tenant-owned.
+Email changes update both `email` and the unique `normalizedEmail` in the same
+transaction. Password changes replace only the Argon2id `passwordHash`; plain
+text passwords are never persisted or included in audit records. An
+administrator-initiated password change revokes all active sessions for the
+account. A self-service profile change preserves the authenticated session that
+submitted the change and revokes the account's other active sessions.
+
 ### Отклонённая nullable-scope модель
 
 Следующий первоначальный фрагмент сохранён только как контекст review и не
