@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Omnicus API for Cyber Pulse CRM
-  version: 2.0.0
-  description: Project-scoped CRM to Omnicus Telegram text, media, reply and inline-button contract.
+  version: 3.0.0
+  description: Project-scoped CRM to Omnicus Telegram messaging, mutations, ephemeral actions and capability contract.
 security:
   - serviceBearer: []
 paths:
@@ -84,6 +84,254 @@ paths:
           $ref: '#/components/responses/SafeError'
         '503':
           $ref: '#/components/responses/SafeError'
+  /integrations/v1/crm/capabilities:
+    get:
+      operationId: getCrmTelegramCapabilities
+      summary: Read connection-scoped Telegram capabilities and limits
+      parameters:
+        - $ref: '#/components/parameters/CrmProjectId'
+        - $ref: '#/components/parameters/OmnicusProjectId'
+        - name: connectionId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: omnicusContactId
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: channelIdentityId
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Machine-readable capabilities; absent capabilities must never be inferred.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityResponse'
+        '401': { $ref: '#/components/responses/SafeError' }
+        '404': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/chat-actions:
+    post:
+      operationId: sendCrmTelegramChatAction
+      summary: Send an ephemeral five-second Telegram chat action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TelegramScope'
+                - type: object
+                  required: [action]
+                  properties:
+                    action:
+                      type: string
+                      enum:
+                        [
+                          TYPING,
+                          RECORD_VOICE,
+                          UPLOAD_PHOTO,
+                          UPLOAD_VIDEO,
+                          UPLOAD_DOCUMENT,
+                          RECORD_VIDEO_NOTE,
+                        ]
+      responses:
+        '200': { $ref: '#/components/responses/EphemeralAccepted' }
+        '401': { $ref: '#/components/responses/SafeError' }
+        '404': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/drafts:
+    post:
+      operationId: updateCrmTelegramDraft
+      summary: Update a private-chat 30-second Telegram draft preview
+      description: The preview is ephemeral and never SENT. Final content must use messages/outbound.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TelegramScope'
+                - type: object
+                  required: [draftId]
+                  properties:
+                    draftId: { type: integer, minimum: 1 }
+                    text: { type: string, maxLength: 4096 }
+                    entities:
+                      type: array
+                      maxItems: 100
+                      items: { $ref: '#/components/schemas/MessageEntity' }
+      responses:
+        '200': { $ref: '#/components/responses/EphemeralAccepted' }
+        '401': { $ref: '#/components/responses/SafeError' }
+        '404': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/messages/{messageId}:
+    parameters:
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateCrmTelegramMessage
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TelegramScope'
+                - type: object
+                  properties:
+                    text: { type: string, minLength: 1, maxLength: 4096 }
+                    caption: { type: string, maxLength: 1024 }
+                    entities:
+                      type: array
+                      maxItems: 100
+                      items: { $ref: '#/components/schemas/MessageEntity' }
+                    inlineKeyboard: { $ref: '#/components/schemas/InlineKeyboard' }
+                    linkPreviewOptions: { $ref: '#/components/schemas/LinkPreviewOptions' }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '401': { $ref: '#/components/responses/SafeError' }
+        '404': { $ref: '#/components/responses/SafeError' }
+        '409': { $ref: '#/components/responses/SafeError' }
+    delete:
+      operationId: deleteCrmTelegramMessage
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TelegramScope' }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '401': { $ref: '#/components/responses/SafeError' }
+        '404': { $ref: '#/components/responses/SafeError' }
+        '409': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/messages/{messageId}/reaction:
+    parameters:
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CorrelationId'
+    put:
+      operationId: setCrmTelegramMessageReaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TelegramScope'
+                - type: object
+                  required: [type, value]
+                  properties:
+                    type: { type: string, enum: [emoji, custom_emoji] }
+                    value: { type: string, minLength: 1, maxLength: 128 }
+                    isBig: { type: boolean }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '409': { $ref: '#/components/responses/SafeError' }
+    delete:
+      operationId: removeCrmTelegramMessageReaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TelegramScope' }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '409': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/messages/{messageId}/pin:
+    parameters:
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CorrelationId'
+    put:
+      operationId: pinCrmTelegramMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TelegramScope'
+                - type: object
+                  properties:
+                    disableNotification: { type: boolean }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '409': { $ref: '#/components/responses/SafeError' }
+    delete:
+      operationId: unpinCrmTelegramMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TelegramScope' }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '409': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/operations/{operationId}/retry:
+    post:
+      operationId: retryCrmTelegramOperation
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [crmProjectId, omnicusProjectId, retryRequestId]
+              properties:
+                crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+                omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+                retryRequestId: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '409': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/conversations/automation-state:
+    get:
+      operationId: getCrmTelegramAutomationState
+      parameters:
+        - $ref: '#/components/parameters/CrmProjectId'
+        - $ref: '#/components/parameters/OmnicusProjectId'
+        - { name: omnicusContactId, in: query, required: true, schema: { type: string } }
+        - { name: connectionId, in: query, required: true, schema: { type: string } }
+        - { name: channelIdentityId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/AutomationState' }
+    put:
+      operationId: setCrmTelegramAutomationState
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TelegramScope'
+                - type: object
+                  required: [mode]
+                  properties:
+                    mode: { type: string, enum: [AUTO, MANUAL] }
+                    reasonCode: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200': { $ref: '#/components/responses/AutomationState' }
   /integrations/v1/crm/operations/{operationId}:
     get:
       operationId: getCrmOutboundOperation
@@ -145,6 +393,16 @@ components:
         type: string
         minLength: 1
         maxLength: 128
+    CrmProjectId:
+      name: crmProjectId
+      in: query
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    OmnicusProjectId:
+      name: omnicusProjectId
+      in: query
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
   schemas:
     Identity:
       type: object
@@ -203,6 +461,27 @@ components:
           $ref: '#/components/schemas/InlineKeyboard'
         disableNotification:
           type: boolean
+        protectContent:
+          type: boolean
+        messageEffectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        entities:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/MessageEntity'
+        linkPreviewOptions:
+          $ref: '#/components/schemas/LinkPreviewOptions'
+        quote:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        quotePosition:
+          type: integer
+          minimum: 0
+          maximum: 4096
         replyToMessageId:
           type: string
           format: uuid
@@ -266,6 +545,70 @@ components:
             - callbackData
         - required:
             - url
+    TelegramScope:
+      type: object
+      required: [crmProjectId, omnicusProjectId, omnicusContactId, identity]
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+    MessageEntity:
+      type: object
+      additionalProperties: false
+      required: [type, offset, length]
+      properties:
+        type:
+          type: string
+          enum:
+            [
+              mention,
+              hashtag,
+              bot_command,
+              url,
+              email,
+              bold,
+              italic,
+              underline,
+              strikethrough,
+              spoiler,
+              blockquote,
+              expandable_blockquote,
+              code,
+              pre,
+              text_link,
+              phone_number,
+              custom_emoji,
+            ]
+        offset: { type: integer, minimum: 0, description: UTF-16 code-unit offset }
+        length: { type: integer, minimum: 1, description: UTF-16 code-unit length }
+        url: { type: string, format: uri }
+        language: { type: string }
+        customEmojiId: { type: string }
+    LinkPreviewOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        isDisabled: { type: boolean }
+        url: { type: string, format: uri }
+        preferSmallMedia: { type: boolean }
+        preferLargeMedia: { type: boolean }
+        showAboveText: { type: boolean }
+    CapabilityResponse:
+      type: object
+      required: [contractVersion, telegramBotApiVersion, capabilities]
+      properties:
+        contractVersion: { type: string, enum: [3.0.0] }
+        telegramBotApiVersion: { type: string, enum: ['10.2'] }
+        capabilities:
+          type: object
+          additionalProperties:
+            type: object
+            required: [supported]
+            properties:
+              supported: { type: boolean }
+              reasonCode: { type: string }
+              limits: { type: object, additionalProperties: true }
     UploadedMedia:
       type: object
       additionalProperties: false
@@ -328,6 +671,7 @@ components:
             - QUEUED
             - PROCESSING
             - SENT
+            - SUCCEEDED
             - FAILED
             - UNKNOWN
         errorCode:
@@ -355,6 +699,33 @@ components:
                 - object
                 - 'null'
   responses:
+    EphemeralAccepted:
+      description: Ephemeral provider signal accepted; it is not a delivered message.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [accepted, expiresAt]
+            properties:
+              accepted: { type: boolean, const: true }
+              expiresAt: { type: string, format: date-time }
+    QueuedOperationResponse:
+      description: Durable operation accepted for asynchronous execution.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/QueuedOperation' }
+    AutomationState:
+      description: Current provider-independent automation mode.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [mode, pausedSupported, revision]
+            properties:
+              mode: { type: string, enum: [AUTO, MANUAL] }
+              pausedSupported: { type: boolean, const: false }
+              revision: { type: string }
+              changedAt: { type: [string, 'null'], format: date-time }
     SafeError:
       description: Safe structured error without provider payload or credentials.
       content:

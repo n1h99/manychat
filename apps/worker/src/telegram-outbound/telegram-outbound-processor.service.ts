@@ -16,10 +16,14 @@ import {
   TELEGRAM_OUTBOUND_JOB_NAME,
   TELEGRAM_OUTBOUND_QUEUE_NAME,
   type TelegramInlineKeyboard,
+  type TelegramLinkPreviewOptions,
   type TelegramMediaKind,
+  type TelegramMessageEntity,
   type TelegramOutboundJob,
+  type TelegramReaction,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
+import type { Prisma } from '@omnicus/database';
 import {
   MediaValidationError,
   prepareMediaForTelegram,
@@ -37,6 +41,14 @@ export interface TelegramOutboundProcessorClient {
   waitUntilReady(): Promise<unknown>;
   on(event: 'error', listener: (error: Error) => void): unknown;
 }
+type MessageActionPayload = {
+  action: 'DELETE_MESSAGE' | 'EDIT_MESSAGE' | 'PIN_MESSAGE' | 'SET_REACTION';
+  channelIdentityId: string;
+  messageId: string;
+  mutation: Record<string, unknown>;
+  providerMessageId: string;
+};
+
 type Claimed = {
   id: string;
   projectId: string;
@@ -53,8 +65,15 @@ type Claimed = {
         action?: 'SEND_MESSAGE';
         messageId: string;
         channelIdentityId: string;
-      };
+      }
+    | MessageActionPayload;
 };
+
+function isMessageActionPayload(payload: Claimed['payload']): payload is MessageActionPayload {
+  return ['DELETE_MESSAGE', 'EDIT_MESSAGE', 'PIN_MESSAGE', 'SET_REACTION'].includes(
+    payload.action ?? '',
+  );
+}
 
 class TelegramOutboundPermanentError extends Error {
   constructor(readonly code: string) {
@@ -169,6 +188,17 @@ export class TelegramOutboundProcessorService
         identity.connectionId !== claimed.connectionId
       )
         return await this.finish(claimed, 'FAILED', 'telegram_outbound_invalid_relation');
+      if (isMessageActionPayload(claimed.payload)) {
+        if (message.externalMessageId !== claimed.payload.providerMessageId)
+          return await this.finish(claimed, 'FAILED', 'telegram_outbound_message_mismatch');
+        await this.executeMessageAction(
+          token,
+          { ...claimed, payload: claimed.payload },
+          message,
+          identity.externalUserId,
+        );
+        return;
+      }
       if (recipient?.broadcast.status === 'CANCELLED')
         return await this.cancelBroadcastRecipient(claimed, recipient.id);
       if (recipient?.broadcast.status === 'PAUSED')
@@ -181,7 +211,13 @@ export class TelegramOutboundProcessorService
         });
       const metadata = message.metadata as {
         disableNotification?: boolean;
+        entities?: TelegramMessageEntity[];
         inlineKeyboard?: TelegramInlineKeyboard;
+        linkPreviewOptions?: TelegramLinkPreviewOptions;
+        messageEffectId?: string;
+        protectContent?: boolean;
+        quote?: string;
+        quotePosition?: number;
         replyToMessageId?: string;
       } | null;
       const content = message.content as {
@@ -195,7 +231,18 @@ export class TelegramOutboundProcessorService
         ...((metadata?.inlineKeyboard ?? content.inlineKeyboard)
           ? { inlineKeyboard: metadata?.inlineKeyboard ?? content.inlineKeyboard }
           : {}),
-        ...(metadata?.replyToMessageId ? { replyToMessageId: metadata.replyToMessageId } : {}),
+        ...(metadata?.protectContent ? { protectContent: true } : {}),
+        ...(metadata?.replyToMessageId
+          ? {
+              reply: {
+                messageId: metadata.replyToMessageId,
+                ...(metadata.quote ? { quote: metadata.quote } : {}),
+                ...(metadata.quotePosition === undefined
+                  ? {}
+                  : { quotePosition: metadata.quotePosition }),
+              },
+            }
+          : {}),
       };
       let sent: { messageId: string };
       if (
@@ -208,6 +255,7 @@ export class TelegramOutboundProcessorService
           sent = await this.adapter.sendMedia(token, {
             ...sendOptions,
             ...(content.caption ? { caption: content.caption } : {}),
+            ...(metadata?.entities ? { captionEntities: metadata.entities } : {}),
             kind: message.type as TelegramMediaKind,
             media: await this.mediaReference(
               message.mediaAsset,
@@ -223,6 +271,11 @@ export class TelegramOutboundProcessorService
       } else {
         sent = await this.adapter.sendMessage(token, {
           ...sendOptions,
+          ...(metadata?.entities ? { entities: metadata.entities } : {}),
+          ...(metadata?.linkPreviewOptions
+            ? { linkPreviewOptions: metadata.linkPreviewOptions }
+            : {}),
+          ...(metadata?.messageEffectId ? { messageEffectId: metadata.messageEffectId } : {}),
           text: content.text ?? '',
         });
       }
@@ -260,6 +313,117 @@ export class TelegramOutboundProcessorService
       await this.fail(claimed, error);
       if (this.retryable(error)) throw error;
     }
+  }
+  private async executeMessageAction(
+    token: string,
+    claimed: Omit<Claimed, 'payload'> & { payload: MessageActionPayload },
+    message: {
+      content: unknown;
+      id: string;
+      metadata: unknown;
+      type: string;
+    },
+    chatId: string,
+  ): Promise<void> {
+    const mutation = claimed.payload.mutation;
+    if (claimed.payload.action === 'DELETE_MESSAGE')
+      await this.adapter.deleteMessage(token, {
+        chatId,
+        messageId: claimed.payload.providerMessageId,
+      });
+    else if (claimed.payload.action === 'SET_REACTION')
+      await this.adapter.setMessageReaction(token, {
+        chatId,
+        ...((mutation.reaction as TelegramReaction | undefined)
+          ? { reaction: mutation.reaction as TelegramReaction }
+          : {}),
+        ...(mutation.isBig === true ? { isBig: true } : {}),
+        messageId: claimed.payload.providerMessageId,
+      });
+    else if (claimed.payload.action === 'PIN_MESSAGE')
+      await this.adapter.setMessagePinned(token, {
+        chatId,
+        ...(mutation.disableNotification === true ? { disableNotification: true } : {}),
+        messageId: claimed.payload.providerMessageId,
+        pinned: mutation.pinned === true,
+      });
+    else if (typeof mutation.text === 'string')
+      await this.adapter.editMessageText(token, {
+        chatId,
+        ...(Array.isArray(mutation.entities)
+          ? { entities: mutation.entities as TelegramMessageEntity[] }
+          : {}),
+        ...(Array.isArray(mutation.inlineKeyboard)
+          ? { inlineKeyboard: mutation.inlineKeyboard as TelegramInlineKeyboard }
+          : {}),
+        ...(mutation.linkPreviewOptions
+          ? { linkPreviewOptions: mutation.linkPreviewOptions as TelegramLinkPreviewOptions }
+          : {}),
+        messageId: claimed.payload.providerMessageId,
+        text: mutation.text,
+      });
+    else
+      await this.adapter.editMessageCaption(token, {
+        caption: typeof mutation.caption === 'string' ? mutation.caption : '',
+        chatId,
+        ...(Array.isArray(mutation.entities)
+          ? { entities: mutation.entities as TelegramMessageEntity[] }
+          : {}),
+        ...(Array.isArray(mutation.inlineKeyboard)
+          ? { inlineKeyboard: mutation.inlineKeyboard as TelegramInlineKeyboard }
+          : {}),
+        messageId: claimed.payload.providerMessageId,
+      });
+
+    await this.database.client.$transaction(async (tx) => {
+      const done = await tx.outboxRecord.updateMany({
+        where: {
+          id: claimed.id,
+          lockedBy: claimed.lease,
+          projectId: claimed.projectId,
+          status: 'PROCESSING',
+        },
+        data: {
+          completedAt: new Date(),
+          lastError: null,
+          lockedAt: null,
+          lockedBy: null,
+          status: 'SUCCEEDED',
+        },
+      });
+      if (done.count !== 1) return;
+      const content = (message.content ?? {}) as Record<string, unknown>;
+      const metadata = (message.metadata ?? {}) as Record<string, unknown>;
+      await tx.message.updateMany({
+        where: { id: message.id, projectId: claimed.projectId },
+        data: {
+          content:
+            claimed.payload.action === 'EDIT_MESSAGE'
+              ? ({
+                  ...content,
+                  ...(typeof mutation.caption === 'string' ? { caption: mutation.caption } : {}),
+                  ...(typeof mutation.text === 'string' ? { text: mutation.text } : {}),
+                  ...(Array.isArray(mutation.inlineKeyboard)
+                    ? { inlineKeyboard: mutation.inlineKeyboard }
+                    : {}),
+                } as Prisma.InputJsonValue)
+              : (content as Prisma.InputJsonValue),
+          metadata: {
+            ...metadata,
+            ...(claimed.payload.action === 'DELETE_MESSAGE' ? { deleted: true } : {}),
+            ...(claimed.payload.action === 'EDIT_MESSAGE'
+              ? { editedAt: new Date().toISOString() }
+              : {}),
+            ...(claimed.payload.action === 'PIN_MESSAGE'
+              ? { pinned: mutation.pinned === true }
+              : {}),
+            ...(claimed.payload.action === 'SET_REACTION'
+              ? { managerReaction: mutation.reaction ?? null }
+              : {}),
+          } as Prisma.InputJsonValue,
+        },
+      });
+    });
   }
   private async mediaReference(
     asset: {
@@ -431,7 +595,7 @@ export class TelegramOutboundProcessorService
           lastError: 'broadcast_cancelled',
         },
       });
-      if (claimed.payload.action !== 'ANSWER_CALLBACK')
+      if (!claimed.payload.action || claimed.payload.action === 'SEND_MESSAGE')
         await tx.message.updateMany({
           where: {
             id: claimed.payload.messageId,
@@ -487,7 +651,7 @@ export class TelegramOutboundProcessorService
             : { completedAt: new Date(), nextAttemptAt: null }),
         },
       });
-      if (claimed.payload.action !== 'ANSWER_CALLBACK')
+      if (!claimed.payload.action || claimed.payload.action === 'SEND_MESSAGE')
         await tx.message.updateMany({
           where: {
             id: claimed.payload.messageId,

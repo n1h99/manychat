@@ -841,3 +841,35 @@ not a Railway configuration change. Railway retains only infrastructure-wide
 master encryption keys and platform resources. A lost pairing response is
 treated as an unknown provisioning result: the operator starts a new pairing,
 which rotates both credentials and invalidates the unfinished attempt.
+
+## ADR-039: Telegram Chat v3 separates durable mutations from ephemeral signals
+
+**Status:** Accepted, 2026-08-01.
+
+**Context:** The CRM Telegram workspace needs formatting, message mutations,
+reactions, pinning, typing indicators and streamed previews. Telegram Bot API
+10.2 supports these features with different guarantees. Edit/delete/reaction
+and pin calls change durable chat state, while `sendChatAction` lasts at most
+five seconds and `sendMessageDraft` is a temporary 30-second private-chat
+preview that must be finalized with a normal message.
+
+**Decision:** Durable Telegram mutations use the existing PostgreSQL outbox,
+stable CRM idempotency keys, leases, retry/backoff and `UNKNOWN` semantics.
+They reference an Omnicus message UUID; Omnicus resolves the provider message
+ID only after verifying project, connection, identity, contact and conversation
+scope. A terminal `FAILED` operation can be retried through an explicit new
+attempt. An `UNKNOWN` operation cannot be retried until reconciliation resolves
+the uncertain provider outcome.
+
+Chat actions and streamed drafts are intentionally ephemeral. They are sent
+through the Telegram adapter, are never inserted into message history and are
+never represented as `QUEUED` or `SENT`. Capability discovery is authoritative:
+CRM must hide a feature when the capability is absent or reports
+`supported=false`. Omnicus scheduling is application-owned delayed outbox work;
+it must not be described as Telegram-native scheduling.
+
+**Consequences:** Redis remains a delivery accelerator and PostgreSQL remains
+the source of truth for durable changes. Ephemeral signals may be lost during
+an outage without corrupting chat history. Bot tokens are decrypted only
+immediately before a Telegram request. Provider payloads, credentials and
+message content remain absent from operational/audit logs.

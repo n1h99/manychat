@@ -282,3 +282,24 @@ inbound messages with `crm-history-<messageId>` keys. Repeated lead updates do
 not create duplicate history. Investigate history failures through the same CRM
 operation journal; never re-import messages manually without checking the
 stable message ID and provider result.
+
+### Telegram Chat v3 operations
+
+CRM message edit/delete/reaction/pin requests create ordinary Telegram
+`OutboxRecord` rows. Inspect `status`, `attempts`, `nextAttemptAt` and the safe
+`lastError` code exactly as for outbound messages. A Redis outage after commit
+does not lose the operation; the existing Telegram outbound recovery scan
+re-enqueues it by stable outbox ID.
+
+Only a terminal `FAILED` operation may use
+`POST /integrations/v1/crm/operations/{operationId}/retry`. The caller supplies
+a new stable retry request ID, creating at most one descendant attempt. Never
+retry `UNKNOWN`: first reconcile the original operation, because Telegram may
+already have applied the mutation.
+
+Chat actions and draft previews are intentionally absent from PostgreSQL. A
+failed typing indicator can be ignored. A draft preview expires after about 30
+seconds and the final text must always be sent through the durable outbound
+message endpoint. Capability discovery is scoped to the CRM project,
+connection and optional identity; clients must not enable a feature when its
+capability is absent or false.

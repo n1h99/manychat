@@ -1,7 +1,11 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   type TelegramInlineKeyboard,
+  type TelegramLinkPreviewOptions,
+  type TelegramMessageEntity,
   validateTelegramInlineKeyboard,
+  validateTelegramLinkPreviewOptions,
+  validateTelegramMessageEntities,
 } from '@omnicus/channel-telegram';
 import { Prisma } from '@omnicus/database';
 
@@ -20,7 +24,7 @@ export interface CrmOutboundStatusResult {
   errorCode?: string;
   messageId: string;
   operationId: string;
-  status: 'FAILED' | 'PROCESSING' | 'QUEUED' | 'SENT' | 'UNKNOWN';
+  status: 'FAILED' | 'PROCESSING' | 'QUEUED' | 'SENT' | 'SUCCEEDED' | 'UNKNOWN';
 }
 
 @Injectable()
@@ -193,6 +197,29 @@ export class CrmOutboundService {
               message: 'Inline keyboard is invalid',
             });
           }
+        let entities: TelegramMessageEntity[] | undefined;
+        if (dto.entities !== undefined)
+          try {
+            entities = validateTelegramMessageEntities(
+              dto.entities,
+              dto.text ?? (dto.media ? '' : ''),
+            );
+          } catch {
+            throw new ConflictException({
+              code: 'CRM_MESSAGE_ENTITIES_INVALID',
+              message: 'Message entities are invalid',
+            });
+          }
+        let linkPreviewOptions: TelegramLinkPreviewOptions | undefined;
+        if (dto.linkPreviewOptions !== undefined)
+          try {
+            linkPreviewOptions = validateTelegramLinkPreviewOptions(dto.linkPreviewOptions);
+          } catch {
+            throw new ConflictException({
+              code: 'CRM_LINK_PREVIEW_OPTIONS_INVALID',
+              message: 'Link preview options are invalid',
+            });
+          }
         let providerReplyMessageId: string | undefined;
         if (dto.replyToMessageId) {
           const reply = await transaction.message.findFirst({
@@ -230,8 +257,14 @@ export class CrmOutboundService {
             mediaAssetId: mediaAsset?.id ?? null,
             metadata: {
               disableNotification: dto.disableNotification ?? false,
+              ...(entities ? { entities } : {}),
               ...(inlineKeyboard ? { inlineKeyboard } : {}),
+              ...(linkPreviewOptions ? { linkPreviewOptions } : {}),
+              ...(dto.messageEffectId ? { messageEffectId: dto.messageEffectId } : {}),
+              protectContent: dto.protectContent ?? false,
               replyToMessageId: providerReplyMessageId ?? null,
+              ...(dto.quote ? { quote: dto.quote } : {}),
+              ...(dto.quotePosition === undefined ? {} : { quotePosition: dto.quotePosition }),
               source: 'crm',
             } as unknown as Prisma.InputJsonValue,
             projectId: dto.omnicusProjectId,
@@ -336,16 +369,22 @@ export class CrmOutboundService {
         code: 'CRM_OUTBOUND_MESSAGE_NOT_FOUND',
         message: 'CRM outbound message was not found',
       });
+    const action = (outbox.payload as { action?: unknown }).action;
+    const isMessageMutation =
+      typeof action === 'string' &&
+      ['DELETE_MESSAGE', 'EDIT_MESSAGE', 'PIN_MESSAGE', 'SET_REACTION'].includes(action);
     const status =
       outbox.status === 'FAILED' || message.status === 'FAILED'
         ? 'FAILED'
         : outbox.status === 'UNKNOWN' || message.status === 'UNKNOWN'
           ? 'UNKNOWN'
-          : outbox.status === 'SUCCEEDED' && message.status === 'SENT'
-            ? 'SENT'
-            : outbox.status === 'PROCESSING' || message.status === 'PROCESSING'
-              ? 'PROCESSING'
-              : 'QUEUED';
+          : outbox.status === 'SUCCEEDED' && isMessageMutation
+            ? 'SUCCEEDED'
+            : outbox.status === 'SUCCEEDED' && message.status === 'SENT'
+              ? 'SENT'
+              : outbox.status === 'PROCESSING' || message.status === 'PROCESSING'
+                ? 'PROCESSING'
+                : 'QUEUED';
     return {
       ...(outbox.lastError ? { errorCode: outbox.lastError } : {}),
       messageId,

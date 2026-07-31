@@ -94,6 +94,19 @@ CRM uploads outbound files first through
 an Omnicus message UUID, not a Telegram provider message ID. Inline keyboard
 callbacks are provider-independent `{text, callbackData}` values.
 
+The version 3 extension adds capability discovery, formatted entities, quote
+and link-preview options, protected content, message effects, durable
+edit/delete/reaction/pin operations, explicit retry after terminal `FAILED`,
+ephemeral chat actions and 30-second streaming draft previews. The exact
+contract is the same versioned OpenAPI document. Draft previews never create a
+message and must be finalized through the ordinary outbound endpoint.
+
+Conversation automation control currently exposes only `AUTO` and `MANUAL`,
+mapped to the existing conversation override. `PAUSED` with automatic resume,
+application scheduling, albums, stickers, structured messages, reply
+keyboards, bot-interface configuration and rich-message blocks remain
+machine-readably unsupported; CRM must keep those controls disabled.
+
 ## Live acceptance gate
 
 Code and mock-backed contract tests do not constitute live acceptance. Before

@@ -47,6 +47,149 @@ export interface TelegramInlineKeyboardButton {
 
 export type TelegramInlineKeyboard = TelegramInlineKeyboardButton[][];
 
+export type TelegramChatAction =
+  | 'choose_sticker'
+  | 'find_location'
+  | 'record_video'
+  | 'record_video_note'
+  | 'record_voice'
+  | 'typing'
+  | 'upload_document'
+  | 'upload_photo'
+  | 'upload_video'
+  | 'upload_video_note'
+  | 'upload_voice';
+
+export interface TelegramMessageEntity {
+  customEmojiId?: string;
+  language?: string;
+  length: number;
+  offset: number;
+  type:
+    | 'blockquote'
+    | 'bold'
+    | 'bot_command'
+    | 'code'
+    | 'custom_emoji'
+    | 'email'
+    | 'expandable_blockquote'
+    | 'hashtag'
+    | 'italic'
+    | 'mention'
+    | 'phone_number'
+    | 'pre'
+    | 'spoiler'
+    | 'strikethrough'
+    | 'text_link'
+    | 'underline'
+    | 'url';
+  url?: string;
+}
+
+export interface TelegramLinkPreviewOptions {
+  isDisabled?: boolean;
+  preferLargeMedia?: boolean;
+  preferSmallMedia?: boolean;
+  showAboveText?: boolean;
+  url?: string;
+}
+
+export interface TelegramReplyOptions {
+  messageId: string;
+  quote?: string;
+  quotePosition?: number;
+}
+
+export type TelegramReaction =
+  { emoji: string; type: 'emoji' } | { customEmojiId: string; type: 'custom_emoji' };
+
+const telegramEntityTypes = new Set<TelegramMessageEntity['type']>([
+  'blockquote',
+  'bold',
+  'bot_command',
+  'code',
+  'custom_emoji',
+  'email',
+  'expandable_blockquote',
+  'hashtag',
+  'italic',
+  'mention',
+  'phone_number',
+  'pre',
+  'spoiler',
+  'strikethrough',
+  'text_link',
+  'underline',
+  'url',
+]);
+
+export function validateTelegramMessageEntities(
+  input: unknown,
+  text: string,
+): TelegramMessageEntity[] {
+  if (!Array.isArray(input) || input.length > 100) throw new Error('telegram_entities_invalid');
+  return input.map((candidate) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+      throw new Error('telegram_entity_invalid');
+    const entity = candidate as Record<string, unknown>;
+    if (
+      typeof entity.type !== 'string' ||
+      !telegramEntityTypes.has(entity.type as TelegramMessageEntity['type']) ||
+      !Number.isSafeInteger(entity.offset) ||
+      !Number.isSafeInteger(entity.length) ||
+      (entity.offset as number) < 0 ||
+      (entity.length as number) < 1 ||
+      (entity.offset as number) + (entity.length as number) > text.length
+    )
+      throw new Error('telegram_entity_invalid');
+    if (entity.url !== undefined && typeof entity.url !== 'string')
+      throw new Error('telegram_entity_invalid');
+    if (entity.customEmojiId !== undefined && typeof entity.customEmojiId !== 'string')
+      throw new Error('telegram_entity_invalid');
+    if (entity.language !== undefined && typeof entity.language !== 'string')
+      throw new Error('telegram_entity_invalid');
+    return {
+      ...(typeof entity.customEmojiId === 'string' ? { customEmojiId: entity.customEmojiId } : {}),
+      ...(typeof entity.language === 'string' ? { language: entity.language } : {}),
+      length: entity.length as number,
+      offset: entity.offset as number,
+      type: entity.type as TelegramMessageEntity['type'],
+      ...(typeof entity.url === 'string' ? { url: entity.url } : {}),
+    };
+  });
+}
+
+export function validateTelegramLinkPreviewOptions(input: unknown): TelegramLinkPreviewOptions {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('telegram_link_preview_invalid');
+  const options = input as Record<string, unknown>;
+  for (const field of ['isDisabled', 'preferLargeMedia', 'preferSmallMedia', 'showAboveText'])
+    if (options[field] !== undefined && typeof options[field] !== 'boolean')
+      throw new Error('telegram_link_preview_invalid');
+  if (options.url !== undefined) {
+    if (typeof options.url !== 'string') throw new Error('telegram_link_preview_invalid');
+    let parsed: URL;
+    try {
+      parsed = new URL(options.url);
+    } catch {
+      throw new Error('telegram_link_preview_invalid');
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol))
+      throw new Error('telegram_link_preview_invalid');
+  }
+  return {
+    ...(typeof options.isDisabled === 'boolean' ? { isDisabled: options.isDisabled } : {}),
+    ...(typeof options.preferLargeMedia === 'boolean'
+      ? { preferLargeMedia: options.preferLargeMedia }
+      : {}),
+    ...(typeof options.preferSmallMedia === 'boolean'
+      ? { preferSmallMedia: options.preferSmallMedia }
+      : {}),
+    ...(typeof options.showAboveText === 'boolean' ? { showAboveText: options.showAboveText } : {}),
+    ...(typeof options.url === 'string' ? { url: options.url } : {}),
+  };
+}
+
 export function validateTelegramInlineKeyboard(input: unknown): TelegramInlineKeyboard {
   if (!Array.isArray(input) || input.length < 1 || input.length > 8)
     throw new Error('telegram_inline_keyboard_rows_invalid');
@@ -496,9 +639,19 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
     outgoing: {
       animation: true,
       audio: true,
+      chatActions: true,
+      deleteMessage: true,
       disableNotification: true,
+      editMessage: true,
+      formattingEntities: true,
       inlineKeyboard: true,
+      linkPreviewOptions: true,
+      messageEffects: true,
+      pinMessage: true,
+      protectContent: true,
+      reactions: true,
       replyToMessageId: true,
+      streamingDraft: true,
       text: true,
       photo: true,
       document: true,
@@ -540,7 +693,12 @@ export class TelegramAdapter {
     input: {
       chatId: string;
       disableNotification?: boolean;
+      entities?: TelegramMessageEntity[];
       inlineKeyboard?: TelegramInlineKeyboard;
+      linkPreviewOptions?: TelegramLinkPreviewOptions;
+      messageEffectId?: string;
+      protectContent?: boolean;
+      reply?: TelegramReplyOptions;
       replyToMessageId?: string;
       text: string;
     },
@@ -548,11 +706,22 @@ export class TelegramAdapter {
     const response = await this.transport.request(token, 'sendMessage', {
       chat_id: input.chatId,
       disable_notification: input.disableNotification,
+      ...(input.entities ? { entities: this.telegramEntities(input.entities) } : {}),
       ...(input.inlineKeyboard
         ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
         : {}),
-      ...(input.replyToMessageId
-        ? { reply_parameters: { message_id: Number(input.replyToMessageId) } }
+      ...(input.linkPreviewOptions
+        ? { link_preview_options: this.telegramLinkPreview(input.linkPreviewOptions) }
+        : {}),
+      ...(input.messageEffectId ? { message_effect_id: input.messageEffectId } : {}),
+      ...(input.protectContent === undefined ? {} : { protect_content: input.protectContent }),
+      ...((input.reply ??
+      (input.replyToMessageId ? { messageId: input.replyToMessageId } : undefined))
+        ? {
+            reply_parameters: this.telegramReply(
+              input.reply ?? { messageId: input.replyToMessageId! },
+            ),
+          }
         : {}),
       text: input.text,
     });
@@ -583,11 +752,14 @@ export class TelegramAdapter {
     token: string,
     input: {
       caption?: string;
+      captionEntities?: TelegramMessageEntity[];
       chatId: string;
       disableNotification?: boolean;
       inlineKeyboard?: TelegramInlineKeyboard;
       kind: TelegramMediaKind;
       media: string | TelegramMediaUpload;
+      protectContent?: boolean;
+      reply?: TelegramReplyOptions;
       replyToMessageId?: string;
     },
   ): Promise<{ messageId: string }> {
@@ -604,14 +776,23 @@ export class TelegramAdapter {
     const fields = {
       chat_id: input.chatId,
       disable_notification: input.disableNotification,
+      ...(input.protectContent === undefined ? {} : { protect_content: input.protectContent }),
       ...(input.kind === 'VIDEO_NOTE' || input.caption === undefined
         ? {}
         : { caption: input.caption }),
+      ...(input.kind === 'VIDEO_NOTE' || !input.captionEntities
+        ? {}
+        : { caption_entities: this.telegramEntities(input.captionEntities) }),
       ...(input.inlineKeyboard
         ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
         : {}),
-      ...(input.replyToMessageId
-        ? { reply_parameters: { message_id: Number(input.replyToMessageId) } }
+      ...((input.reply ??
+      (input.replyToMessageId ? { messageId: input.replyToMessageId } : undefined))
+        ? {
+            reply_parameters: this.telegramReply(
+              input.reply ?? { messageId: input.replyToMessageId! },
+            ),
+          }
         : {}),
     };
     const response =
@@ -638,6 +819,118 @@ export class TelegramAdapter {
       }),
     );
   }
+  async sendChatAction(
+    token: string,
+    input: { action: TelegramChatAction; chatId: string },
+  ): Promise<void> {
+    await this.assertOk(
+      await this.transport.request(token, 'sendChatAction', {
+        action: input.action,
+        chat_id: input.chatId,
+      }),
+    );
+  }
+  async setMessageReaction(
+    token: string,
+    input: { chatId: string; isBig?: boolean; messageId: string; reaction?: TelegramReaction },
+  ): Promise<void> {
+    await this.assertOk(
+      await this.transport.request(token, 'setMessageReaction', {
+        chat_id: input.chatId,
+        is_big: input.isBig,
+        message_id: Number(input.messageId),
+        reaction: input.reaction ? [this.telegramReaction(input.reaction)] : [],
+      }),
+    );
+  }
+  async editMessageText(
+    token: string,
+    input: {
+      chatId: string;
+      entities?: TelegramMessageEntity[];
+      inlineKeyboard?: TelegramInlineKeyboard;
+      linkPreviewOptions?: TelegramLinkPreviewOptions;
+      messageId: string;
+      text: string;
+    },
+  ): Promise<void> {
+    await this.assertOk(
+      await this.transport.request(token, 'editMessageText', {
+        chat_id: input.chatId,
+        ...(input.entities ? { entities: this.telegramEntities(input.entities) } : {}),
+        ...(input.inlineKeyboard
+          ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
+          : {}),
+        ...(input.linkPreviewOptions
+          ? { link_preview_options: this.telegramLinkPreview(input.linkPreviewOptions) }
+          : {}),
+        message_id: Number(input.messageId),
+        text: input.text,
+      }),
+    );
+  }
+  async editMessageCaption(
+    token: string,
+    input: {
+      caption: string;
+      chatId: string;
+      entities?: TelegramMessageEntity[];
+      inlineKeyboard?: TelegramInlineKeyboard;
+      messageId: string;
+    },
+  ): Promise<void> {
+    await this.assertOk(
+      await this.transport.request(token, 'editMessageCaption', {
+        caption: input.caption,
+        caption_entities: input.entities ? this.telegramEntities(input.entities) : undefined,
+        chat_id: input.chatId,
+        ...(input.inlineKeyboard
+          ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
+          : {}),
+        message_id: Number(input.messageId),
+      }),
+    );
+  }
+  async deleteMessage(token: string, input: { chatId: string; messageId: string }): Promise<void> {
+    await this.assertOk(
+      await this.transport.request(token, 'deleteMessage', {
+        chat_id: input.chatId,
+        message_id: Number(input.messageId),
+      }),
+    );
+  }
+  async setMessagePinned(
+    token: string,
+    input: { chatId: string; disableNotification?: boolean; messageId: string; pinned: boolean },
+  ): Promise<void> {
+    await this.assertOk(
+      await this.transport.request(token, input.pinned ? 'pinChatMessage' : 'unpinChatMessage', {
+        chat_id: input.chatId,
+        ...(input.pinned ? { disable_notification: input.disableNotification } : {}),
+        message_id: Number(input.messageId),
+      }),
+    );
+  }
+  async sendMessageDraft(
+    token: string,
+    input: {
+      chatId: string;
+      draftId: number;
+      entities?: TelegramMessageEntity[];
+      text?: string;
+    },
+  ): Promise<void> {
+    if (!Number.isSafeInteger(input.draftId) || input.draftId === 0)
+      throw new Error('telegram_draft_id_invalid');
+    await this.assertOk(
+      await this.transport.request(token, 'sendMessageDraft', {
+        chat_id: input.chatId,
+        draft_id: input.draftId,
+        ...(input.entities ? { entities: this.telegramEntities(input.entities) } : {}),
+        text: input.text ?? '',
+      }),
+    );
+  }
   private async uploadMedia(
     token: string,
     method: string,
@@ -659,6 +952,41 @@ export class TelegramAdapter {
         ...(button.url === undefined ? {} : { url: button.url }),
       })),
     );
+  }
+  private telegramEntities(entities: TelegramMessageEntity[]) {
+    return entities.map((entity) => ({
+      ...(entity.customEmojiId ? { custom_emoji_id: entity.customEmojiId } : {}),
+      ...(entity.language ? { language: entity.language } : {}),
+      length: entity.length,
+      offset: entity.offset,
+      type: entity.type,
+      ...(entity.url ? { url: entity.url } : {}),
+    }));
+  }
+  private telegramLinkPreview(options: TelegramLinkPreviewOptions) {
+    return {
+      ...(options.isDisabled === undefined ? {} : { is_disabled: options.isDisabled }),
+      ...(options.preferLargeMedia === undefined
+        ? {}
+        : { prefer_large_media: options.preferLargeMedia }),
+      ...(options.preferSmallMedia === undefined
+        ? {}
+        : { prefer_small_media: options.preferSmallMedia }),
+      ...(options.showAboveText === undefined ? {} : { show_above_text: options.showAboveText }),
+      ...(options.url ? { url: options.url } : {}),
+    };
+  }
+  private telegramReaction(reaction: TelegramReaction) {
+    return reaction.type === 'emoji'
+      ? { emoji: reaction.emoji, type: 'emoji' }
+      : { custom_emoji_id: reaction.customEmojiId, type: 'custom_emoji' };
+  }
+  private telegramReply(reply: TelegramReplyOptions) {
+    return {
+      message_id: Number(reply.messageId),
+      ...(reply.quote ? { quote: reply.quote } : {}),
+      ...(reply.quotePosition === undefined ? {} : { quote_position: reply.quotePosition }),
+    };
   }
   parseWebhook(update: TelegramUpdate): TelegramNormalizedEvent {
     if (update.message)

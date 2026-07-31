@@ -511,3 +511,15 @@ so relational history remains intact. Archived records are excluded from normal
 workspace lists. The web application exposes project-name-aware breadcrumbs,
 modal project editing, lifecycle confirmation dialogs, consistent entity
 headers, accessible locale labels, and a canvas lock that also disables zoom.
+
+## Telegram Chat v3 provider contract
+
+The first v3 provider slice exposes connection-scoped capabilities and adds
+durable edit/delete/reaction/pin operations, explicit retry of terminal failed
+operations, rich text entities, quote/link-preview/protect-content options,
+ephemeral chat actions, ephemeral streaming drafts and conversation-level
+AUTO/MANUAL automation control. All durable changes reuse the Telegram outbox;
+ephemeral signals never create messages. Scheduling, albums, stickers,
+structured location/contact/poll messages, reply keyboards, bot-interface
+configuration, paused auto-resume and rich-message blocks remain disabled in
+the capability response until their persistence and contracts are implemented.
