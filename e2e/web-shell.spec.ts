@@ -255,6 +255,21 @@ test('opens the versioned template and visual automation workspace with mocked A
   await page.goto('/projects/project-a/templates');
   await expect(page.getByRole('heading', { name: 'Message templates' })).toBeVisible();
   await expect(page.getByText('Welcome template')).toBeVisible();
+  const archiveSwitcher = await page.locator('.archive-view-switch').boundingBox();
+  expect(archiveSwitcher).not.toBeNull();
+  expect(archiveSwitcher!.height).toBeLessThanOrEqual(42);
+  const activeHeaders = await page
+    .locator('.archive-state-table .ant-table-thead th')
+    .evaluateAll((cells) => cells.map((cell) => cell.getBoundingClientRect().width));
+  await page.getByText('Archived', { exact: true }).click();
+  await expect(page.locator('.archive-view-switch .ant-segmented-item-selected')).toContainText(
+    'Archived',
+  );
+  const archivedHeaders = await page
+    .locator('.archive-state-table .ant-table-thead th')
+    .evaluateAll((cells) => cells.map((cell) => cell.getBoundingClientRect().width));
+  expect(archivedHeaders).toEqual(activeHeaders);
+  await page.getByText('Active templates', { exact: true }).click();
   await page.getByRole('button', { name: 'Preview' }).click();
   await page.getByRole('button', { name: 'Render preview' }).click();
   await expect(page.getByText('Hello Eldar')).toBeVisible();
@@ -357,6 +372,15 @@ test('shows polished account management and the complete Telegram connection lay
   await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible();
   await expect(page.getByText('System administrators')).toBeVisible();
   await expect(page.getByText('Eldar Pirmammadov').first()).toBeVisible();
+  const appHeader = await page.locator('.app-header').boundingBox();
+  const accountPill = await page.locator('.account-identity-chip').boundingBox();
+  expect(appHeader).not.toBeNull();
+  expect(accountPill).not.toBeNull();
+  expect(accountPill!.height).toBeLessThanOrEqual(40);
+  expect(accountPill!.y).toBeGreaterThanOrEqual(appHeader!.y);
+  expect(accountPill!.y + accountPill!.height).toBeLessThanOrEqual(
+    appHeader!.y + appHeader!.height,
+  );
   await page.getByRole('button', { name: 'Profile' }).click();
   await expect(page.getByRole('heading', { name: 'Profile settings' })).toBeVisible();
   await expect(page.getByText('Lead notifications')).toHaveCount(0);
@@ -377,13 +401,16 @@ test('shows polished account management and the complete Telegram connection lay
     .locator('.channel-management-stack > .ant-card')
     .first()
     .boundingBox();
+  const managementStack = await page.locator('.channel-management-stack').boundingBox();
   const actions = await page.locator('.channel-actions-card').boundingBox();
   const testMessage = await page.locator('.channel-test-message-card').boundingBox();
   expect(overview).not.toBeNull();
   expect(replaceToken).not.toBeNull();
+  expect(managementStack).not.toBeNull();
   expect(actions).not.toBeNull();
   expect(testMessage).not.toBeNull();
   expect(overview!.width).toBeGreaterThan(replaceToken!.width * 1.5);
   expect(actions!.y).toBeGreaterThan(replaceToken!.y);
   expect(testMessage!.x).toBeGreaterThan(replaceToken!.x);
+  expect(Math.abs(managementStack!.height - testMessage!.height)).toBeLessThanOrEqual(2);
 });

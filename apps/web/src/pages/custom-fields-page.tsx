@@ -100,6 +100,7 @@ export function CustomFieldsPage() {
         value={view}
       />
       <Table<Field>
+        className="archive-state-table"
         columns={[
           {
             dataIndex: 'name',
@@ -130,6 +131,7 @@ export function CustomFieldsPage() {
                 <Typography.Text type="secondary">—</Typography.Text>
               ),
             title: 'Options',
+            width: 280,
           },
           {
             align: 'right',
@@ -189,13 +191,15 @@ export function CustomFieldsPage() {
               </Space>
             ),
             title: 'Actions',
-            width: 190,
+            width: 220,
           },
         ]}
         dataSource={fields.data ?? []}
         loading={fields.isLoading}
         pagination={false}
         rowKey="id"
+        scroll={{ x: 1100 }}
+        tableLayout="fixed"
       />
       <Drawer
         destroyOnHidden

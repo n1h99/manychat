@@ -75,8 +75,9 @@ export function BroadcastsPage() {
         />
       ) : null}
       <Table<Broadcast>
+        className="archive-state-table"
         columns={[
-          { dataIndex: 'name', title: 'Name', width: '34%' },
+          { dataIndex: 'name', ellipsis: true, title: 'Name', width: 390 },
           {
             dataIndex: 'status',
             render: (value) => <Tag>{value}</Tag>,
@@ -161,6 +162,8 @@ export function BroadcastsPage() {
         pagination={false}
         rowClassName="clickable-row"
         rowKey="id"
+        scroll={{ x: 1110 }}
+        tableLayout="fixed"
       />
       <Modal
         cancelText="Keep broadcast"

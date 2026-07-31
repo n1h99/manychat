@@ -38,6 +38,12 @@ describe('workspace lifecycle UI contracts', () => {
     expect(templates).toContain('Restore');
     expect(broadcasts).toContain("label: 'Archived'");
     expect(broadcasts).toContain('Restore');
+    expect(fields).toContain('className="archive-state-table"');
+    expect(templates).toContain('className="archive-state-table"');
+    expect(broadcasts).toContain('className="archive-state-table"');
+    expect(fields).toContain('tableLayout="fixed"');
+    expect(templates).toContain('tableLayout="fixed"');
+    expect(broadcasts).toContain('tableLayout="fixed"');
   });
 
   it('removes campaign labels and keeps stable scenario action widths', () => {
@@ -58,6 +64,15 @@ describe('workspace lifecycle UI contracts', () => {
     expect(shell).not.toContain('header-kicker');
   });
 
+  it('keeps the account header compact and archive switches consistent', () => {
+    const styles = source('./styles.css');
+    expect(styles).toMatch(/\.app-header\s*\{[^}]*line-height: normal;/s);
+    expect(styles).toMatch(/\.account-identity-chip\s*\{[^}]*height: 38px;/s);
+    expect(styles).toMatch(/\.account-identity-chip\s*\{[^}]*line-height: normal;/s);
+    expect(styles).toContain('.archive-view-switch .ant-segmented-group');
+    expect(styles).toContain('grid-auto-columns: minmax(max-content, 1fr)');
+  });
+
   it('uses a full-width connection overview and stacked channel controls', () => {
     const channel = source('./pages/channel-detail-page.tsx');
     const styles = source('./styles.css');
@@ -70,6 +85,8 @@ describe('workspace lifecycle UI contracts', () => {
       channel.indexOf('Connection actions'),
     );
     expect(styles).toContain('grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr)');
+    expect(styles).toContain('grid-template-rows: auto 1fr');
+    expect(styles).toContain('align-items: stretch');
     expect(styles).toMatch(/\.channel-management-grid\s*\{\s*grid-template-columns: 1fr;/);
   });
 

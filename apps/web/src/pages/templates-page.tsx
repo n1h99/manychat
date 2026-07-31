@@ -118,20 +118,29 @@ export function TemplatesPage() {
         value={view}
       />
       <Table<MessageTemplate>
+        className="archive-state-table"
         dataSource={templates.data ?? []}
         loading={templates.isLoading}
         rowKey="id"
+        scroll={{ x: 1040 }}
+        tableLayout="fixed"
         columns={[
-          { dataIndex: 'name', title: 'Name' },
+          { dataIndex: 'name', ellipsis: true, title: 'Name', width: 360 },
           {
             title: 'Kind',
             render: (_, template) => (template.draftVersion ?? template.activeVersion)?.kind ?? '—',
+            width: 210,
           },
-          { dataIndex: 'status', title: 'Status', render: (value) => <Tag>{value}</Tag> },
+          {
+            dataIndex: 'status',
+            render: (value) => <Tag>{value}</Tag>,
+            title: 'Status',
+            width: 150,
+          },
           {
             key: 'actions',
             render: (_, template) => (
-              <Space>
+              <Space className="archive-table-actions" size={8}>
                 <Button
                   onClick={() => {
                     setPreviewing(template);
@@ -175,6 +184,7 @@ export function TemplatesPage() {
               </Space>
             ),
             title: 'Actions',
+            width: 320,
           },
         ]}
       />
