@@ -258,6 +258,10 @@ test('opens the versioned template and visual automation workspace with mocked A
   const archiveSwitcher = await page.locator('.archive-view-switch').boundingBox();
   expect(archiveSwitcher).not.toBeNull();
   expect(archiveSwitcher!.height).toBeLessThanOrEqual(50);
+  await expect(page.locator('.archive-view-switch .ant-segmented-item-selected')).toHaveCSS(
+    'background-color',
+    'rgba(15, 118, 110, 0.1)',
+  );
   const activeHeaders = await page
     .locator('.archive-state-table .ant-table-thead th')
     .evaluateAll((cells) => cells.map((cell) => cell.getBoundingClientRect().width));

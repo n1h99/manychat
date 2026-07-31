@@ -1862,10 +1862,11 @@ button:disabled,
     box-shadow 0.18s ease;
 }
 
+.archive-view-switch .ant-segmented-thumb,
 .archive-view-switch .ant-segmented-item-selected {
   color: #0f766e;
-  background: #ffffff;
-  box-shadow: 0 3px 10px rgba(15, 118, 110, 0.12);
+  background: rgba(15, 118, 110, 0.1);
+  box-shadow: none;
 }
 
 .archive-view-switch .ant-segmented-thumb {
