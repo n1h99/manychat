@@ -594,6 +594,14 @@ components:
         preferSmallMedia: { type: boolean }
         preferLargeMedia: { type: boolean }
         showAboveText: { type: boolean }
+    Capability:
+      type: object
+      additionalProperties: false
+      required: [supported]
+      properties:
+        supported: { type: boolean }
+        reasonCode: { type: string }
+        limits: { type: object, additionalProperties: true }
     CapabilityResponse:
       type: object
       required: [contractVersion, telegramBotApiVersion, capabilities]
@@ -602,13 +610,13 @@ components:
         telegramBotApiVersion: { type: string, enum: ['10.2'] }
         capabilities:
           type: object
+          required: [quote, linkPreviewOptions, explicitRetry]
+          properties:
+            quote: { $ref: '#/components/schemas/Capability' }
+            linkPreviewOptions: { $ref: '#/components/schemas/Capability' }
+            explicitRetry: { $ref: '#/components/schemas/Capability' }
           additionalProperties:
-            type: object
-            required: [supported]
-            properties:
-              supported: { type: boolean }
-              reasonCode: { type: string }
-              limits: { type: object, additionalProperties: true }
+            $ref: '#/components/schemas/Capability'
     UploadedMedia:
       type: object
       additionalProperties: false

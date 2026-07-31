@@ -95,6 +95,9 @@ describe('CrmTelegramV3Service', () => {
       }),
     ).resolves.toMatchObject({
       capabilities: {
+        explicitRetry: { supported: true },
+        linkPreviewOptions: { supported: true },
+        quote: { supported: true },
         reactions: { supported: true },
         scheduling: { supported: false },
         streamingDraft: { supported: true },

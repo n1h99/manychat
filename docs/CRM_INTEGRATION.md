@@ -100,6 +100,9 @@ edit/delete/reaction/pin operations, explicit retry after terminal `FAILED`,
 ephemeral chat actions and 30-second streaming draft previews. The exact
 contract is the same versioned OpenAPI document. Draft previews never create a
 message and must be finalized through the ordinary outbound endpoint.
+Capability discovery explicitly exposes `quote`, `linkPreviewOptions` and
+`explicitRetry`; their request fields or retry path must not be used when the
+corresponding capability is absent or false.
 
 Conversation automation control currently exposes only `AUTO` and `MANUAL`,
 mapped to the existing conversation override. `PAUSED` with automatic resume,

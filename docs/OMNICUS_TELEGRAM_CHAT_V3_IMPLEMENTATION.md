@@ -26,6 +26,10 @@ The authoritative CRM-to-Omnicus contract is
 | G14 | Durable pin/unpin                                                                                                 |
 | G15 | Private-chat 30-second `sendMessageDraft` preview updates                                                         |
 
+The capability response explicitly publishes `quote`, `linkPreviewOptions`
+and `explicitRetry`. CRM must gate these features by those keys rather than
+inferring support from the presence of request fields or paths.
+
 Durable changes use `OutboxRecord`, stable job IDs, leases, retry/backoff and
 reconciliation. Provider success updates safe message metadata only after the
 lease-owning worker commits. Ephemeral actions never create a Message or
