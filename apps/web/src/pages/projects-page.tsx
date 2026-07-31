@@ -14,7 +14,7 @@ export interface Project {
   name: string;
   settings: Record<string, unknown>;
   slug: string;
-  status: 'ACTIVE' | 'PAUSED';
+  status: 'ACTIVE' | 'ARCHIVED' | 'DRAFT' | 'PAUSED';
   timezone: string;
 }
 
@@ -110,7 +110,12 @@ export function ProjectsPage() {
             <Input />
           </Form.Item>
           <Form.Item label="Locale" name="locale" rules={[{ required: true }]}>
-            <Select options={[{ value: 'en' }, { value: 'ru' }]} />
+            <Select
+              options={[
+                { label: 'English', value: 'en' },
+                { label: 'Русский', value: 'ru' },
+              ]}
+            />
           </Form.Item>
           <Button block htmlType="submit" type="primary">
             Create

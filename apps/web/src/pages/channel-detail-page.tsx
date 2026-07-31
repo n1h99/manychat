@@ -77,8 +77,8 @@ export function ChannelDetailPage() {
 
   return (
     <section>
-      <div className="page-heading-row">
-        <div>
+      <div className="entity-hero channel-entity-hero">
+        <div className="entity-hero-copy">
           <Typography.Text className="header-kicker">Telegram channel</Typography.Text>
           <Typography.Title level={2}>{connection.name}</Typography.Title>
           <Typography.Text type="secondary">
@@ -87,7 +87,12 @@ export function ChannelDetailPage() {
               : 'Bot details are not available'}
           </Typography.Text>
         </div>
-        <Tag color={connectionStatusColor(connection.status)}>{connection.status}</Tag>
+        <div className="entity-hero-statuses">
+          <Tag className="entity-status-tag" color={connectionStatusColor(connection.status)}>
+            {connection.status}
+          </Tag>
+          <Tag className="entity-status-tag">Webhook: {connection.webhookStatus}</Tag>
+        </div>
       </div>
 
       <Row className="balanced-card-row" gutter={[18, 18]}>
@@ -152,20 +157,22 @@ export function ChannelDetailPage() {
           <Card title="Connection actions">
             {canManage ? (
               <div className="channel-actions">
-                <Button
-                  block
-                  className="channel-primary-action"
-                  icon={<ApiOutlined />}
-                  onClick={() =>
-                    void action(
-                      () => mutations.connect.mutateAsync(connection.id),
-                      'Webhook connected.',
-                    )
-                  }
-                  type="primary"
-                >
-                  Connect webhook
-                </Button>
+                {connection.status !== 'ACTIVE' && connection.webhookStatus !== 'CONNECTED' ? (
+                  <Button
+                    block
+                    className="channel-primary-action"
+                    icon={<ApiOutlined />}
+                    onClick={() =>
+                      void action(
+                        () => mutations.connect.mutateAsync(connection.id),
+                        'Webhook connected.',
+                      )
+                    }
+                    type="primary"
+                  >
+                    Connect webhook
+                  </Button>
+                ) : null}
                 <Button
                   block
                   icon={<SafetyCertificateOutlined />}

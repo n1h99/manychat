@@ -197,13 +197,6 @@ export function CrmConfigPage() {
       <Typography.Title className="section-heading-title" level={3}>
         CRM operation journal
       </Typography.Title>
-      <Alert
-        className="form-alert"
-        showIcon
-        type="warning"
-        message="Unknown delivery requires confirmation"
-        description="Retry an UNKNOWN operation only after confirming that the external CRM did not apply the request. This prevents duplicate side effects."
-      />
       <Table<CrmOperation>
         dataSource={operations.data ?? []}
         loading={operations.isLoading}
@@ -232,7 +225,7 @@ export function CrmConfigPage() {
                   cancelText="Cancel"
                   description={
                     record.status === 'UNKNOWN'
-                      ? 'The CRM may already have applied this operation. Continue only after reconciliation.'
+                      ? 'Check the CRM first. Retrying an operation that already completed can create a duplicate.'
                       : 'Requeue this failed CRM operation?'
                   }
                   okText="Retry"

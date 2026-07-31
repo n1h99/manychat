@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -119,6 +120,19 @@ export class BroadcastsController {
   ) {
     return {
       data: await this.broadcasts.cancel(projectId, broadcastId, this.context(request)),
+      meta: {},
+    };
+  }
+
+  @Delete(':broadcastId')
+  @RequireProjectPermission('broadcasts:cancel')
+  async remove(
+    @Param('projectId') projectId: string,
+    @Param('broadcastId') broadcastId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.broadcasts.archive(projectId, broadcastId, this.context(request)),
       meta: {},
     };
   }

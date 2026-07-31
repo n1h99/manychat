@@ -1,3 +1,4 @@
+import { DeleteOutlined, FileOutlined } from '@ant-design/icons';
 import { Button, Modal, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
 import { useState } from 'react';
 import { useParams } from 'react-router';
@@ -69,14 +70,25 @@ export function MediaAssetsPage() {
               setFile(next);
               return false;
             }}
-            fileList={file ? [{ name: file.name, status: 'done', uid: file.name }] : []}
             maxCount={1}
-            onRemove={() => {
-              setFile(undefined);
-            }}
+            showUploadList={false}
           >
             <Button>Select file</Button>
           </Upload>
+          {file ? (
+            <div className="media-selected-file">
+              <FileOutlined />
+              <span title={file.name}>{file.name}</span>
+              <small>{Math.ceil(file.size / 1024)} KB</small>
+              <Button
+                aria-label="Remove selected file"
+                icon={<DeleteOutlined />}
+                onClick={() => setFile(undefined)}
+                size="small"
+                type="text"
+              />
+            </div>
+          ) : null}
           <Button
             disabled={!file}
             loading={mutations.upload.isPending}

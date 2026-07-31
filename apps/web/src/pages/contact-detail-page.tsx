@@ -69,11 +69,12 @@ export function ContactDetailPage() {
   const reload = async () =>
     cache.invalidateQueries({ queryKey: ['contact', projectId, contactId] });
   const value = contact.data;
+  const canUpdate = hasProjectPermission(access.data, 'contacts:update');
 
   return (
     <section>
-      <div className="page-heading-row">
-        <div>
+      <div className="entity-hero">
+        <div className="entity-hero-copy">
           <Typography.Text className="header-kicker">Contact profile</Typography.Text>
           <Typography.Title level={2}>{value.displayName}</Typography.Title>
           <Typography.Text type="secondary">
@@ -82,9 +83,14 @@ export function ContactDetailPage() {
               : value.email || value.phone || 'Customer record'}
           </Typography.Text>
         </div>
-        <Space>
-          <Tag color={value.status === 'ACTIVE' ? 'green' : 'orange'}>{value.status}</Tag>
-          <Tag color={value.automationMode === 'ENABLED' ? 'cyan' : 'default'}>
+        <Space className="entity-hero-statuses" wrap>
+          <Tag className="entity-status-tag" color={value.status === 'ACTIVE' ? 'green' : 'orange'}>
+            {value.status}
+          </Tag>
+          <Tag
+            className="entity-status-tag"
+            color={value.automationMode === 'ENABLED' ? 'cyan' : 'default'}
+          >
             Automation {value.automationMode.toLowerCase()}
           </Tag>
         </Space>
@@ -111,16 +117,17 @@ export function ContactDetailPage() {
                 {value.tags.length
                   ? value.tags.map((item) => (
                       <Tag
-                        closable
+                        closable={canUpdate}
                         {...(item.tag.color ? { color: item.tag.color } : {})}
                         key={item.tag.id}
-                        onClose={() =>
+                        onClose={(event) => {
+                          event.preventDefault();
                           void apiRequest(
                             `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
                             { method: 'DELETE' },
                             accessToken,
-                          ).then(reload)
-                        }
+                          ).then(reload);
+                        }}
                       >
                         {item.tag.name}
                       </Tag>

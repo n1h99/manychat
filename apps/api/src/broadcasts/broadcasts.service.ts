@@ -32,7 +32,7 @@ export class BroadcastsService {
 
   async list(projectId: string) {
     const broadcasts = await this.database.client.broadcast.findMany({
-      where: { projectId },
+      where: { projectId, status: { not: 'ARCHIVED' } },
       orderBy: { createdAt: 'desc' },
       include: {
         connection: { select: { botUsername: true } },
@@ -343,6 +343,27 @@ export class BroadcastsService {
       recipientCount: recipients.length,
     });
     return this.get(projectId, broadcastId);
+  }
+
+  async archive(projectId: string, broadcastId: string, context: AuditContext) {
+    const broadcast = await this.broadcast(projectId, broadcastId);
+    if (['PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status))
+      throw new ConflictException({
+        code: 'BROADCAST_MUST_BE_STOPPED',
+        message: 'Stop the broadcast before archiving it',
+      });
+    const archived = await this.database.client.broadcast.update({
+      data: { status: 'ARCHIVED' },
+      where: { projectId_id: { id: broadcastId, projectId } },
+      include: {
+        connection: { select: { botUsername: true } },
+        _count: { select: { recipients: true } },
+      },
+    });
+    await this.auditEvent('broadcast.archive', projectId, broadcastId, context, {
+      status: 'ARCHIVED',
+    });
+    return this.safe(archived);
   }
 
   async recipients(projectId: string, broadcastId: string, query: BroadcastRecipientsQueryDto) {

@@ -8,10 +8,12 @@ import {
 } from '@ant-design/icons';
 import { Avatar, Breadcrumb, Button, Drawer, Dropdown, Grid, Layout, Menu, Typography } from 'antd';
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 
 import { useAuth } from './auth';
+import { apiRequest } from './api';
 import { breadcrumbsFor } from './breadcrumbs';
 import { navigationItems } from './navigation';
 import { shellActions, type AppDispatch, type RootState } from './store';
@@ -40,7 +42,7 @@ export function AppShell() {
   const dispatch = useDispatch<AppDispatch>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { identity, logout } = useAuth();
+  const { accessToken, identity, logout } = useAuth();
   const screens = useBreakpoint();
   const isMobile = screens.lg === false;
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
@@ -52,7 +54,13 @@ export function AppShell() {
   const selectedItem = navigationItems.find((item) => item.key === selectedKey);
   const avatarLabel = identity?.email?.slice(0, 1).toUpperCase() ?? 'O';
   const menuItems = navigationItems.map(({ icon, key, label }) => ({ icon, key, label }));
-  const breadcrumbs = breadcrumbsFor(location.pathname);
+  const projectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
+  const project = useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () => apiRequest<{ name: string }>(`/api/v1/projects/${projectId}`, {}, accessToken),
+    queryKey: ['project', projectId, accessToken],
+  });
+  const breadcrumbs = breadcrumbsFor(location.pathname, project.data?.name);
 
   const navigation = (
     <>
@@ -142,6 +150,7 @@ export function AppShell() {
             </div>
           </div>
           <Dropdown
+            overlayClassName="account-dropdown"
             menu={{
               items: [
                 {

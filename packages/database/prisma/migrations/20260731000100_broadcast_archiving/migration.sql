@@ -1,0 +1,1 @@
+ALTER TYPE "BroadcastStatus" ADD VALUE 'ARCHIVED';

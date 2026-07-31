@@ -4,7 +4,15 @@ import { apiRequest } from './api';
 import { useAuth } from './auth';
 
 export type BroadcastStatus =
-  'DRAFT' | 'SCHEDULED' | 'PREPARING' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED' | 'FAILED';
+  | 'DRAFT'
+  | 'SCHEDULED'
+  | 'PREPARING'
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'FAILED'
+  | 'ARCHIVED';
 export type BroadcastAudience = {
   mode: 'ALL_ACTIVE' | 'SEGMENT' | 'CONTACTS';
   segmentId?: string;
@@ -130,6 +138,10 @@ export function useBroadcastMutations(projectId?: string) {
     }),
     retryFailed: useMutation({
       mutationFn: (id: string) => request<Broadcast>(`/${id}/retry-failed`, 'POST'),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => request<Broadcast>(`/${id}`, 'DELETE'),
       onSuccess: invalidate,
     }),
   };

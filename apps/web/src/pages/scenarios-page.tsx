@@ -1,8 +1,9 @@
-import { PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Spin, Table, Tag, Typography } from 'antd';
+import { DeleteOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Modal, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
-import { type ScenarioSummary, useScenarios } from '../automation-api';
+import { type ScenarioSummary, useScenarioMutations, useScenarios } from '../automation-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
 export function ScenariosPage() {
@@ -10,6 +11,9 @@ export function ScenariosPage() {
   const navigate = useNavigate();
   const scenarios = useScenarios(projectId);
   const access = useProjectAccess(projectId);
+  const mutations = useScenarioMutations(projectId);
+  const [removing, setRemoving] = useState<ScenarioSummary>();
+  const canManage = hasProjectPermission(access.data, 'automation:manage');
 
   if (scenarios.isLoading) return <Spin className="route-loading" />;
 
@@ -50,6 +54,43 @@ export function ScenariosPage() {
             render: (value) => new Date(value).toLocaleString(),
             title: 'Updated',
           },
+          ...(canManage
+            ? [
+                {
+                  key: 'actions',
+                  render: (_: unknown, scenario: ScenarioSummary) => (
+                    <Space onClick={(event) => event.stopPropagation()}>
+                      {scenario.status === 'PUBLISHED' ? (
+                        <Button
+                          icon={<PauseOutlined />}
+                          onClick={() => void mutations.pause.mutateAsync(scenario.id)}
+                          size="small"
+                        >
+                          Deactivate
+                        </Button>
+                      ) : scenario.status === 'PAUSED' ? (
+                        <Button
+                          icon={<PlayCircleOutlined />}
+                          onClick={() => void mutations.resume.mutateAsync(scenario.id)}
+                          size="small"
+                        >
+                          Resume
+                        </Button>
+                      ) : null}
+                      <Button
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => setRemoving(scenario)}
+                        size="small"
+                      >
+                        Delete
+                      </Button>
+                    </Space>
+                  ),
+                  title: 'Actions',
+                },
+              ]
+            : []),
         ]}
         dataSource={scenarios.data ?? []}
         locale={{
@@ -64,6 +105,23 @@ export function ScenariosPage() {
         rowClassName="clickable-row"
         rowKey="id"
       />
+      <Modal
+        cancelText="Keep automation"
+        okButtonProps={{ danger: true, loading: mutations.remove.isPending }}
+        okText="Delete automation"
+        onCancel={() => setRemoving(undefined)}
+        onOk={async () => {
+          if (!removing) return;
+          await mutations.remove.mutateAsync(removing.id);
+          setRemoving(undefined);
+          void message.success('Automation deleted.');
+        }}
+        open={Boolean(removing)}
+        title="Delete this automation?"
+      >
+        The automation will be archived and removed from this list. Its version and execution
+        history will remain available for audit.
+      </Modal>
     </section>
   );
 }

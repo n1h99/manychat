@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
@@ -159,6 +170,24 @@ export class AutomationController {
         projectId,
         scenarioId,
         'PUBLISHED',
+        request.auth!,
+        this.context(request),
+      ),
+      meta: {},
+    };
+  }
+
+  @Delete(':scenarioId')
+  @RequireProjectPermission('automation:manage')
+  async remove(
+    @Param('projectId') projectId: string,
+    @Param('scenarioId') scenarioId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.automation.archive(
+        projectId,
+        scenarioId,
         request.auth!,
         this.context(request),
       ),

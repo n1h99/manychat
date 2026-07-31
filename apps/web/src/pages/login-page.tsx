@@ -24,6 +24,7 @@ export function LoginPage() {
         {error ? <Alert className="form-alert" message={error} showIcon type="error" /> : null}
         <Form
           layout="vertical"
+          requiredMark={false}
           onFinish={async (values: { email: string; password: string }) => {
             setError(undefined);
             setSubmitting(true);

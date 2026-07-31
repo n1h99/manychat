@@ -19,6 +19,7 @@ describe('Telegram broadcast persistence schema', () => {
 
   it('uses PostgreSQL timestamps and status indexes for broadcast recovery', () => {
     expect(schema).toContain('enum BroadcastStatus {');
+    expect(schema).toMatch(/enum BroadcastStatus \{[\s\S]*ARCHIVED[\s\S]*\}/);
     expect(schema).toContain('enum BroadcastRecipientStatus {');
     expect(schema).toContain('@@index([projectId, status, scheduledAt])');
     expect(schema).toContain('@@index([projectId, broadcastId, status])');

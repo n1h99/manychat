@@ -503,3 +503,11 @@ creates the CRM outbox intent transactionally with `Message=SENT`; a bounded
 CRM recovery scan backfills earlier sent automation/broadcast messages.
 CRM-originated outbound messages are excluded to prevent loops. This slice does
 not add a new channel, CRM provider behavior, or UI.
+
+## Workspace lifecycle and UI consistency
+
+Project, automation, and broadcast deletion is implemented as audited archival
+so relational history remains intact. Archived records are excluded from normal
+workspace lists. The web application exposes project-name-aware breadcrumbs,
+modal project editing, lifecycle confirmation dialogs, consistent entity
+headers, accessible locale labels, and a canvas lock that also disables zoom.

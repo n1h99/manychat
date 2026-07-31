@@ -29,7 +29,7 @@ export class AutomationService {
         status: true,
         updatedAt: true,
       },
-      where: { projectId },
+      where: { projectId, status: { not: 'ARCHIVED' } },
     });
   }
 
@@ -272,6 +272,29 @@ export class AutomationService {
       afterSafeJson: { status },
     });
     return updated;
+  }
+
+  async archive(
+    projectId: string,
+    scenarioId: string,
+    actor: AuthenticatedUser,
+    context: RequestSecurityContext,
+  ) {
+    await this.get(projectId, scenarioId);
+    const archived = await this.database.client.scenario.update({
+      data: { status: 'ARCHIVED' },
+      where: { projectId_id: { id: scenarioId, projectId } },
+    });
+    await this.audit.record({
+      action: 'scenario.archived',
+      actorUserId: actor.userId,
+      correlationId: context.correlationId,
+      entityId: scenarioId,
+      entityType: 'Scenario',
+      projectId,
+      afterSafeJson: { status: archived.status },
+    });
+    return archived;
   }
 
   async duplicate(

@@ -30,7 +30,7 @@ const newLabels: Record<string, string> = {
   scenarios: 'New scenario',
 };
 
-export function breadcrumbsFor(pathname: string): AppBreadcrumb[] {
+export function breadcrumbsFor(pathname: string, projectName?: string): AppBreadcrumb[] {
   const segments = pathname.split('/').filter(Boolean);
 
   if (segments[0] === 'users') return [{ label: 'Users' }];
@@ -44,11 +44,11 @@ export function breadcrumbsFor(pathname: string): AppBreadcrumb[] {
   const projectPath = `/projects/${projectId}`;
 
   if (segments.length === 2) {
-    breadcrumbs.push({ label: 'Project overview' });
+    breadcrumbs.push({ label: projectName ?? 'Project' });
     return breadcrumbs;
   }
 
-  breadcrumbs.push({ label: 'Project', path: projectPath });
+  breadcrumbs.push({ label: projectName ?? 'Project', path: projectPath });
   const section = segments[2];
   if (!section) return breadcrumbs;
 

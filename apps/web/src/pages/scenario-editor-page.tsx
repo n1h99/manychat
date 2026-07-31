@@ -205,6 +205,7 @@ export function ScenarioEditorPage() {
   const [inspectedExecution, setInspectedExecution] = useState<ScenarioExecution>();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance>();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isCanvasInteractive, setIsCanvasInteractive] = useState(true);
   const scenarioName = Form.useWatch('name', form);
   const scenarioDescription = Form.useWatch('description', form);
 
@@ -459,6 +460,13 @@ export function ScenarioEditorPage() {
                 minZoom={0.35}
                 nodeTypes={automationNodeTypes}
                 nodes={nodes}
+                nodesConnectable={isCanvasInteractive}
+                nodesDraggable={isCanvasInteractive}
+                elementsSelectable={isCanvasInteractive}
+                panOnDrag={isCanvasInteractive}
+                zoomOnDoubleClick={isCanvasInteractive}
+                zoomOnPinch={isCanvasInteractive}
+                zoomOnScroll={isCanvasInteractive}
                 onInit={(instance) => {
                   setFlowInstance(instance);
                 }}
@@ -476,7 +484,12 @@ export function ScenarioEditorPage() {
                 proOptions={{ hideAttribution: true }}
               >
                 <Background color="#dbe5ef" gap={22} size={1.2} />
-                <Controls className="automation-flow-controls" />
+                <Controls
+                  className="automation-flow-controls"
+                  onInteractiveChange={setIsCanvasInteractive}
+                  showFitView={isCanvasInteractive}
+                  showZoom={isCanvasInteractive}
+                />
                 <MiniMap
                   className="automation-flow-minimap"
                   maskColor="rgba(241, 245, 249, 0.78)"

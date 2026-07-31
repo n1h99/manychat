@@ -40,12 +40,14 @@ export class ProjectsService {
 
   async list(auth: AuthenticatedUser) {
     const superAdmin = auth.globalRoleNames.includes(SUPER_ADMIN_ROLE);
+    const where: Prisma.ProjectWhereInput = {
+      status: { not: 'ARCHIVED' },
+      ...(superAdmin ? {} : { memberships: { some: { status: 'ACTIVE', userId: auth.userId } } }),
+    };
     return this.database.client.project.findMany({
       orderBy: { createdAt: 'desc' },
       select: projectSelection,
-      ...(superAdmin
-        ? {}
-        : { where: { memberships: { some: { status: 'ACTIVE', userId: auth.userId } } } }),
+      where,
     });
   }
 
@@ -180,6 +182,29 @@ export class ProjectsService {
     });
     await this.audit.record({
       action: status === 'ACTIVE' ? 'project.activated' : 'project.paused',
+      actorEmailSnapshot: auth.email,
+      actorUserId: auth.userId,
+      afterSafeJson: { status: project.status },
+      beforeSafeJson: { status: before.status },
+      correlationId: context.correlationId,
+      entityId: project.id,
+      entityType: 'Project',
+      ip: context.ip,
+      projectId,
+      userAgent: context.userAgent,
+    });
+    return project;
+  }
+
+  async archive(projectId: string, auth: AuthenticatedUser, context: RequestSecurityContext) {
+    const before = await this.get(projectId, auth);
+    const project = await this.database.client.project.update({
+      data: { status: 'ARCHIVED' },
+      select: projectSelection,
+      where: { id: projectId },
+    });
+    await this.audit.record({
+      action: 'project.archived',
       actorEmailSnapshot: auth.email,
       actorUserId: auth.userId,
       afterSafeJson: { status: project.status },

@@ -197,6 +197,11 @@ enum ScenarioStatus {
   ARCHIVED
 }
 
+Broadcasts use a terminal `ARCHIVED` status for recoverable UI deletion. Archived
+broadcasts and their immutable recipient history remain tenant-bound in PostgreSQL
+and are excluded from the normal project list. A running or paused broadcast must
+be stopped before it can be archived.
+
 enum ScenarioVersionStatus {
   DRAFT
   PUBLISHED

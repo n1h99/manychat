@@ -25,6 +25,7 @@ export function TemplatesPage() {
   const canManage = hasProjectPermission(access.data, 'templates:manage');
   const [editing, setEditing] = useState<MessageTemplate | 'new'>();
   const [previewing, setPreviewing] = useState<MessageTemplate>();
+  const [archiving, setArchiving] = useState<MessageTemplate>();
   const [previewVariables, setPreviewVariables] = useState(
     JSON.stringify({ contact: { firstName: 'Eldar' } }, null, 2),
   );
@@ -134,16 +135,7 @@ export function TemplatesPage() {
                   </Button>
                 ) : null}
                 {canManage ? (
-                  <Button
-                    danger
-                    onClick={() =>
-                      Modal.confirm({
-                        onOk: () => mutations.archive.mutateAsync(template.id),
-                        title: 'Archive this template?',
-                      })
-                    }
-                    size="small"
-                  >
+                  <Button danger onClick={() => setArchiving(template)} size="small">
                     Archive
                   </Button>
                 ) : null}
@@ -153,6 +145,26 @@ export function TemplatesPage() {
           },
         ]}
       />
+      <Modal
+        cancelText="Keep template"
+        className="confirm-dialog"
+        okButtonProps={{ danger: true, loading: mutations.archive.isPending }}
+        okText="Archive template"
+        onCancel={() => setArchiving(undefined)}
+        onOk={async () => {
+          if (!archiving) return;
+          await mutations.archive.mutateAsync(archiving.id);
+          setArchiving(undefined);
+          void message.success('Template archived.');
+        }}
+        open={Boolean(archiving)}
+        title="Archive this template?"
+      >
+        <Typography.Paragraph type="secondary">
+          {archiving?.name} will be removed from the active template library. Published scenario
+          versions keep their existing content snapshot.
+        </Typography.Paragraph>
+      </Modal>
       <Modal
         destroyOnHidden
         footer={null}

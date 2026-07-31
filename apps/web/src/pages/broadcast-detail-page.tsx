@@ -10,13 +10,16 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useParams } from 'react-router';
+import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
 
 import { useBroadcast, useBroadcastMutations, useBroadcastRecipients } from '../broadcasts-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
 export function BroadcastDetailPage() {
   const { projectId, broadcastId } = useParams();
+  const navigate = useNavigate();
+  const [removing, setRemoving] = useState(false);
   const query = useBroadcast(projectId, broadcastId);
   const recipients = useBroadcastRecipients(projectId, broadcastId);
   const access = useProjectAccess(projectId);
@@ -109,6 +112,11 @@ export function BroadcastDetailPage() {
             Cancel
           </Button>
         ) : null}
+        {canCancel && !['PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status) ? (
+          <Button danger onClick={() => setRemoving(true)}>
+            Delete
+          </Button>
+        ) : null}
       </Space>
       <Typography.Title level={4}>Recipients</Typography.Title>
       {recipients.isError ? (
@@ -130,6 +138,22 @@ export function BroadcastDetailPage() {
           { title: 'Error code', dataIndex: 'lastError', render: (value) => value ?? '—' },
         ]}
       />
+      <Modal
+        cancelText="Keep broadcast"
+        okButtonProps={{ danger: true, loading: mutations.remove.isPending }}
+        okText="Delete broadcast"
+        onCancel={() => setRemoving(false)}
+        onOk={async () => {
+          await mutations.remove.mutateAsync(broadcast.id);
+          setRemoving(false);
+          void navigate(`/projects/${projectId}/broadcasts`, { replace: true });
+        }}
+        open={removing}
+        title="Delete this broadcast?"
+      >
+        The broadcast will be archived and removed from the project list. Recipient history remains
+        protected for audit.
+      </Modal>
     </section>
   );
 }

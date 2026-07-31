@@ -225,6 +225,7 @@ enum BroadcastStatus {
   COMPLETED
   CANCELLED
   FAILED
+  ARCHIVED
 }
 
 enum BroadcastRecipientStatus {

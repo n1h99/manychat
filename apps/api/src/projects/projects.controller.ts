@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 
 import { RequireGlobalPermission, RequireProjectPermission } from '../access/access.decorators';
@@ -86,6 +97,15 @@ export class ProjectsController {
         request.auth!,
         this.context(request),
       ),
+      meta: {},
+    };
+  }
+
+  @Delete(':projectId')
+  @RequireProjectPermission('project:manage')
+  async remove(@Param('projectId') projectId: string, @Req() request: AuthenticatedRequest) {
+    return {
+      data: await this.projects.archive(projectId, request.auth!, this.context(request)),
       meta: {},
     };
   }

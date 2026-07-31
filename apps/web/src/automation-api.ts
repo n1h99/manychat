@@ -123,6 +123,18 @@ export function useScenarioMutations(projectId?: string) {
       mutationFn: (scenarioId: string) => request<Scenario>(`/${scenarioId}/publish`, 'POST'),
       onSuccess: invalidate,
     }),
+    pause: useMutation({
+      mutationFn: (scenarioId: string) => request<Scenario>(`/${scenarioId}/pause`, 'POST'),
+      onSuccess: invalidate,
+    }),
+    resume: useMutation({
+      mutationFn: (scenarioId: string) => request<Scenario>(`/${scenarioId}/resume`, 'POST'),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({
+      mutationFn: (scenarioId: string) => request<Scenario>(`/${scenarioId}`, 'DELETE'),
+      onSuccess: invalidate,
+    }),
     restoreVersion: useMutation({
       mutationFn: ({ scenarioId, versionId }: { scenarioId: string; versionId: string }) =>
         request<Scenario>(`/${scenarioId}/versions/${versionId}/restore`, 'POST'),
