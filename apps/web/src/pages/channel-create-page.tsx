@@ -14,7 +14,6 @@ export function ChannelCreatePage() {
     <section className="narrow-page">
       <div className="page-heading">
         <div>
-          <Typography.Text className="header-kicker">New connection</Typography.Text>
           <Typography.Title level={2}>Connect Telegram</Typography.Title>
           <Typography.Text type="secondary">
             Add a bot to begin receiving contacts and messages.

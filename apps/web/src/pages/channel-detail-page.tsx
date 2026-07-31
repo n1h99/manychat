@@ -79,7 +79,6 @@ export function ChannelDetailPage() {
     <section>
       <div className="entity-hero channel-entity-hero">
         <div className="entity-hero-copy">
-          <Typography.Text className="header-kicker">Telegram channel</Typography.Text>
           <Typography.Title level={2}>{connection.name}</Typography.Title>
           <Typography.Text type="secondary">
             {connection.botUsername
@@ -96,10 +95,10 @@ export function ChannelDetailPage() {
       </div>
 
       <Row className="balanced-card-row" gutter={[18, 18]}>
-        <Col lg={14} xs={24}>
+        <Col xs={24}>
           <Card title="Connection overview">
             <Descriptions
-              column={{ md: 2, xs: 1 }}
+              column={{ lg: 3, md: 2, xs: 1 }}
               items={[
                 { children: connection.type, key: 'type', label: 'Type' },
                 {
@@ -153,9 +152,37 @@ export function ChannelDetailPage() {
             />
           </Card>
         </Col>
-        <Col lg={10} xs={24}>
-          <Card className="channel-actions-card" title="Connection actions">
-            {canManage ? (
+      </Row>
+
+      {canManage ? (
+        <Row className="balanced-card-row channel-management-row" gutter={[18, 18]}>
+          <Col className="channel-management-stack" lg={10} xs={24}>
+            <Card title="Replace bot token">
+              <Typography.Paragraph type="secondary">
+                The full token is validated, encrypted and never shown again.
+              </Typography.Paragraph>
+              <Form
+                layout="vertical"
+                onFinish={async (values: { botToken: string }) => {
+                  await action(
+                    () =>
+                      mutations.update.mutateAsync({
+                        botToken: values.botToken,
+                        id: connection.id,
+                      }),
+                    'Bot token replaced.',
+                  );
+                }}
+              >
+                <Form.Item label="New bot token" name="botToken" rules={[{ required: true }]}>
+                  <Input.Password autoComplete="new-password" />
+                </Form.Item>
+                <Button block htmlType="submit">
+                  Replace token
+                </Button>
+              </Form>
+            </Card>
+            <Card className="channel-actions-card" title="Connection actions">
               <div className="channel-actions">
                 {connection.status !== 'ACTIVE' && connection.webhookStatus !== 'CONNECTED' ? (
                   <Button
@@ -226,42 +253,6 @@ export function ChannelDetailPage() {
                   Disable channel
                 </Button>
               </div>
-            ) : (
-              <Typography.Text type="secondary">
-                You have read-only access to this channel.
-              </Typography.Text>
-            )}
-          </Card>
-        </Col>
-      </Row>
-
-      {canManage ? (
-        <Row className="balanced-card-row channel-management-row" gutter={[18, 18]}>
-          <Col lg={10} xs={24}>
-            <Card title="Replace bot token">
-              <Typography.Paragraph type="secondary">
-                The full token is validated, encrypted and never shown again.
-              </Typography.Paragraph>
-              <Form
-                layout="vertical"
-                onFinish={async (values: { botToken: string }) => {
-                  await action(
-                    () =>
-                      mutations.update.mutateAsync({
-                        botToken: values.botToken,
-                        id: connection.id,
-                      }),
-                    'Bot token replaced.',
-                  );
-                }}
-              >
-                <Form.Item label="New bot token" name="botToken" rules={[{ required: true }]}>
-                  <Input.Password autoComplete="new-password" />
-                </Form.Item>
-                <Button block htmlType="submit">
-                  Replace token
-                </Button>
-              </Form>
             </Card>
           </Col>
           <Col lg={14} xs={24}>

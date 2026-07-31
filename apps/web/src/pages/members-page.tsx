@@ -41,7 +41,6 @@ export function MembersPage() {
     <section>
       <div className="page-heading">
         <div>
-          <Typography.Text className="header-kicker">Access control</Typography.Text>
           <Typography.Title level={2}>Project members</Typography.Title>
           <Typography.Text type="secondary">
             Assign users to project roles and manage workspace access.

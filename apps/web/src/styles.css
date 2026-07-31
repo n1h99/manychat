@@ -299,17 +299,6 @@ button:disabled,
   line-height: 1.25;
 }
 
-.header-kicker {
-  display: block;
-  margin-bottom: 1px;
-  color: var(--primary) !important;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
 .navigation-toggle {
   width: 42px;
   height: 42px;
@@ -466,11 +455,6 @@ button:disabled,
   letter-spacing: -0.025em;
 }
 
-.page-heading .header-kicker,
-.page-heading-row .header-kicker {
-  margin: 0 0 2px !important;
-}
-
 .page-heading .ant-typography-secondary,
 .page-heading-row .ant-typography-secondary {
   margin: 0;
@@ -511,16 +495,16 @@ button:disabled,
   flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
 }
 
 .entity-status-tag {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  min-height: 42px;
   margin: 0;
-  padding-inline: 15px;
-  font-size: 13px;
+  padding-inline: 19px;
+  font-size: 14px;
   font-weight: 650;
   border-radius: 999px;
 }
@@ -1097,10 +1081,6 @@ button:disabled,
   line-height: 1.2;
 }
 
-.automation-fullscreen-title .header-kicker {
-  margin-bottom: 2px;
-}
-
 .automation-fullscreen-title strong,
 .automation-fullscreen-title small {
   overflow: hidden;
@@ -1555,14 +1535,43 @@ button:disabled,
   width: 100%;
 }
 
-.channel-actions-card .ant-card-body {
-  display: flex;
-  flex: 1;
-  align-items: flex-end;
+.archive-view-switch.ant-segmented {
+  margin-bottom: 14px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: none;
 }
 
-.archive-view-switch {
-  margin-bottom: 14px;
+.archive-view-switch .ant-segmented-item {
+  min-height: 40px;
+  padding-inline: 4px;
+  color: var(--text-soft);
+  border-radius: 12px;
+}
+
+.archive-view-switch .ant-segmented-item-label {
+  min-height: 40px;
+  padding-inline: 12px;
+  line-height: 40px;
+}
+
+.archive-view-switch .ant-segmented-item-selected {
+  color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: none;
+}
+
+.channel-management-stack {
+  flex-direction: column;
+  gap: 18px;
+}
+
+.balanced-card-row > .channel-management-stack > .ant-card {
+  width: 100%;
+  height: auto;
+  flex: 0 0 auto;
 }
 
 .stable-table-actions {

@@ -19,7 +19,6 @@ export function BroadcastCreatePage() {
     <section className="narrow-page">
       <div className="page-heading">
         <div>
-          <Typography.Text className="header-kicker">New campaign</Typography.Text>
           <Typography.Title level={2}>New Telegram broadcast</Typography.Title>
           <Typography.Text type="secondary">
             The audience and published template version are snapshotted at launch.

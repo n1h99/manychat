@@ -30,7 +30,6 @@ export function MediaAssetsPage() {
     <section>
       <div className="page-heading">
         <div>
-          <Typography.Text className="header-kicker">Content library</Typography.Text>
           <Typography.Title level={2}>Media assets</Typography.Title>
           <Typography.Text type="secondary">
             Validated private files for Telegram templates and automated messages.

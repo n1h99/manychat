@@ -2,7 +2,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { Button, Drawer, Empty, Form, Input, Select, Table, Tag, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { useNavigate } from 'react-router';
 
 import { apiRequest } from '../api';
 import { useAuth } from '../auth';
@@ -19,6 +19,7 @@ export interface Project {
 }
 
 export function ProjectsPage() {
+  const navigate = useNavigate();
   const { accessToken, identity } = useAuth();
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -33,7 +34,6 @@ export function ProjectsPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Workspace</Typography.Text>
           <Typography.Title level={2}>Projects</Typography.Title>
           <Typography.Text type="secondary">
             Manage customer workspaces and their operational settings.
@@ -61,7 +61,7 @@ export function ProjectsPage() {
         columns={[
           {
             dataIndex: 'name',
-            render: (name: string, record) => <Link to={`/projects/${record.id}`}>{name}</Link>,
+            render: (name: string) => <Typography.Text strong>{name}</Typography.Text>,
             title: 'Name',
           },
           { dataIndex: 'slug', title: 'Slug' },
@@ -74,6 +74,18 @@ export function ProjectsPage() {
             title: 'Status',
           },
         ]}
+        onRow={(project) => ({
+          onClick: () => void navigate(`/projects/${project.id}`),
+          onKeyDown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              void navigate(`/projects/${project.id}`);
+            }
+          },
+          role: 'link',
+          tabIndex: 0,
+        })}
+        rowClassName="clickable-row"
       />
       <Drawer
         destroyOnHidden

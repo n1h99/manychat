@@ -143,7 +143,6 @@ export function AppShell() {
               type="text"
             />
             <div>
-              <Typography.Text className="header-kicker">Workspace</Typography.Text>
               <Typography.Text className="header-title">
                 {selectedItem?.label ?? 'Omnicus'}
               </Typography.Text>

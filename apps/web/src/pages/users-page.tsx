@@ -39,7 +39,6 @@ export function UsersPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Administration</Typography.Text>
           <Typography.Title level={2}>Users</Typography.Title>
           <Typography.Text type="secondary">
             Global administration users and their system roles.

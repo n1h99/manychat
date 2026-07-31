@@ -69,7 +69,6 @@ export function ContactsPage() {
     <section>
       <div className="page-heading">
         <div>
-          <Typography.Text className="header-kicker">Audience</Typography.Text>
           <Typography.Title level={2}>Contacts</Typography.Title>
           <Typography.Text type="secondary">
             Search, filter and manage the people connected to this project.

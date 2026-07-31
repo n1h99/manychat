@@ -346,7 +346,6 @@ export function ScenarioEditorPage() {
     <section>
       <div className="page-heading">
         <div>
-          <Typography.Text className="header-kicker">Automation editor</Typography.Text>
           <Typography.Title level={2}>
             {scenarioQuery.data?.name ?? 'New scenario'}
           </Typography.Title>
@@ -364,7 +363,6 @@ export function ScenarioEditorPage() {
       >
         <div className="automation-fullscreen-toolbar">
           <div className="automation-fullscreen-title">
-            <Typography.Text className="header-kicker">Automation workspace</Typography.Text>
             <strong>{scenarioName || scenarioQuery.data?.name || 'New scenario'}</strong>
             {scenarioDescription ? <small>{scenarioDescription}</small> : null}
           </div>

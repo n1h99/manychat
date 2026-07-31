@@ -75,7 +75,6 @@ export function ContactDetailPage() {
     <section>
       <div className="entity-hero">
         <div className="entity-hero-copy">
-          <Typography.Text className="header-kicker">Contact profile</Typography.Text>
           <Typography.Title level={2}>{value.displayName}</Typography.Title>
           <Typography.Text type="secondary">
             {value.username

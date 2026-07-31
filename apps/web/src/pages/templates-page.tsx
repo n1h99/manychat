@@ -97,7 +97,6 @@ export function TemplatesPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Content library</Typography.Text>
           <Typography.Title level={2}>Message templates</Typography.Title>
           <Typography.Text type="secondary">
             Reusable, versioned content for scenarios and broadcasts.

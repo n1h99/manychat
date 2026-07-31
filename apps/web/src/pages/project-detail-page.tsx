@@ -143,7 +143,6 @@ export function ProjectDetailPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Project overview</Typography.Text>
           <Typography.Title level={2}>{project.name}</Typography.Title>
           <Typography.Text type="secondary">{project.slug}</Typography.Text>
         </div>
@@ -198,7 +197,6 @@ export function ProjectDetailPage() {
 
       <div className="page-heading project-sections-heading">
         <div>
-          <Typography.Text className="header-kicker">Tools</Typography.Text>
           <Typography.Title level={3}>Project sections</Typography.Title>
           <Typography.Text type="secondary">
             Open the workspace area you want to manage.

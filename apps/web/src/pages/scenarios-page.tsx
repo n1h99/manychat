@@ -21,7 +21,6 @@ export function ScenariosPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Automation</Typography.Text>
           <Typography.Title level={2}>Scenarios</Typography.Title>
           <Typography.Text type="secondary">
             Build and manage deterministic customer journeys for this project.

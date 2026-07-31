@@ -17,7 +17,6 @@ export function ChannelsPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Messaging</Typography.Text>
           <Typography.Title level={2}>Channels</Typography.Title>
           <Typography.Text type="secondary">
             Telegram connections for the current project.

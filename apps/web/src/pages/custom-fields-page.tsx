@@ -72,7 +72,6 @@ export function CustomFieldsPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Data model</Typography.Text>
           <Typography.Title level={2}>Custom fields</Typography.Title>
           <Typography.Text type="secondary">
             Typed, project-specific data available on every contact.

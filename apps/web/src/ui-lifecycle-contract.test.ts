@@ -48,6 +48,25 @@ describe('workspace lifecycle UI contracts', () => {
     expect(scenarios).toContain('width: 250');
   });
 
+  it('uses fully clickable project rows and removes page kickers', () => {
+    const projects = source('./pages/projects-page.tsx');
+    const shell = source('./app-shell.tsx');
+    expect(projects).toContain('onRow={(project) =>');
+    expect(projects).toContain('rowClassName="clickable-row"');
+    expect(projects).toContain("role: 'link'");
+    expect(projects).not.toContain('header-kicker');
+    expect(shell).not.toContain('header-kicker');
+  });
+
+  it('uses a full-width connection overview and stacked channel controls', () => {
+    const channel = source('./pages/channel-detail-page.tsx');
+    expect(channel).toContain('<Col xs={24}>');
+    expect(channel).toContain('className="channel-management-stack"');
+    expect(channel.indexOf('Replace bot token')).toBeLessThan(
+      channel.indexOf('Connection actions'),
+    );
+  });
+
   it('does not show internal unknown-delivery guidance as a page banner', () => {
     expect(source('./pages/crm-config-page.tsx')).not.toContain(
       'Unknown delivery requires confirmation',

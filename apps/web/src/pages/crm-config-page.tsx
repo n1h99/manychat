@@ -63,7 +63,6 @@ export function CrmConfigPage() {
     <section>
       <div className="page-heading">
         <div>
-          <Typography.Text className="header-kicker">Integrations</Typography.Text>
           <Typography.Title level={2}>CRM integration</Typography.Title>
           <Typography.Text type="secondary">
             Secure project routing, field mapping and delivery diagnostics.

@@ -31,7 +31,6 @@ export function TagsPage() {
     <section>
       <div className="page-heading-row">
         <div>
-          <Typography.Text className="header-kicker">Audience</Typography.Text>
           <Typography.Title level={2}>Tags</Typography.Title>
           <Typography.Text type="secondary">
             Organize contacts with project-specific labels.
