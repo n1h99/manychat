@@ -262,6 +262,7 @@ export class CrmOutboundService {
               ...(linkPreviewOptions ? { linkPreviewOptions } : {}),
               ...(dto.messageEffectId ? { messageEffectId: dto.messageEffectId } : {}),
               protectContent: dto.protectContent ?? false,
+              ...(dto.replyToMessageId ? { replyToOmnicusMessageId: dto.replyToMessageId } : {}),
               replyToMessageId: providerReplyMessageId ?? null,
               ...(dto.quote ? { quote: dto.quote } : {}),
               ...(dto.quotePosition === undefined ? {} : { quotePosition: dto.quotePosition }),

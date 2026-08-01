@@ -523,3 +523,13 @@ ephemeral signals never create messages. Scheduling, albums, stickers,
 structured location/contact/poll messages, reply keyboards, bot-interface
 configuration, paused auto-resume and rich-message blocks remain disabled in
 the capability response until their persistence and contracts are implemented.
+
+The provider follow-up adds transactional normalization and CRM outbox delivery
+for private-chat Telegram user reaction events, but keeps the advertised
+capability disabled until the paired CRM endpoint passes live E2E. Outbound
+automation/broadcast history now preserves entities, link preview, protected
+content, message effect, reply and quote metadata. Empty streaming drafts are
+ignored to avoid Telegram's Thinking placeholder. Edit capability limits
+explicitly distinguish editable and immutable fields. Since Bot API 10.2 has
+no effect-catalog discovery method for bots, Omnicus advertises an empty catalog
+with a stable reason code instead of inventing effect identifiers.

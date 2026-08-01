@@ -303,3 +303,20 @@ seconds and the final text must always be sent through the durable outbound
 message endpoint. Capability discovery is scoped to the CRM project,
 connection and optional identity; clients must not enable a feature when its
 capability is absent or false.
+
+An empty draft update is ignored by both the API service and Telegram adapter:
+Bot API treats empty text as a Thinking placeholder (`...`) and provides no
+explicit cancellation method. Final outbound delivery completes the user flow,
+while Telegram expires the ephemeral preview automatically.
+
+Inbound reaction events are visible as `NormalizedEvent.type = REACTION` and,
+when CRM integration is active, as `CrmOperation.type =
+FORWARD_REACTION_EVENT`. `telegram_inbound_reaction_target_pending` means the
+reaction arrived before the target message mapping and will be retried. A
+terminal identity mismatch is stored only as the safe code
+`telegram_inbound_reaction_identity_mismatch`.
+
+Existing Telegram connections must run **Connect webhook** once after the
+reaction-event release. This re-registers the webhook with
+`message_reaction` in `allowed_updates`; rotating secrets is not required.
+New connections include this update type automatically.

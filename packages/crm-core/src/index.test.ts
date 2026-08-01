@@ -182,9 +182,16 @@ describe('HttpCrmClient', () => {
       deliveryStatus: 'SENT',
       identity: leadInput.identity,
       inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+      entities: [{ length: 4, offset: 0, type: 'bold' }],
+      linkPreviewOptions: { isDisabled: true },
       messageId: '11111111-1111-4111-8111-111111111111',
+      messageEffectId: 'effect-known-by-caller',
       occurredAt: '2026-07-29T00:00:00.000Z',
+      protectContent: true,
       providerMessageId: 'telegram-42',
+      quote: 'Earlier text',
+      quotePosition: 0,
+      replyToMessageId: '33333333-3333-4333-8333-333333333333',
       scenarioExecutionId: '22222222-2222-4222-8222-222222222222',
       source: 'AUTOMATION',
       text: 'What is your budget?',
@@ -199,11 +206,64 @@ describe('HttpCrmClient', () => {
       crmProjectId: 'cyber-pulse-staging',
       deliveryStatus: 'SENT',
       inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+      entities: [{ length: 4, offset: 0, type: 'bold' }],
+      linkPreviewOptions: { isDisabled: true },
       messageId: '11111111-1111-4111-8111-111111111111',
+      messageEffectId: 'effect-known-by-caller',
       omnicusContactId: 'contact-a',
       omnicusProjectId: 'project-a',
       providerMessageId: 'telegram-42',
+      protectContent: true,
+      quote: 'Earlier text',
+      quotePosition: 0,
+      replyToMessageId: '33333333-3333-4333-8333-333333333333',
       source: 'AUTOMATION',
+    });
+  });
+
+  it('sends normalized user reaction events to their versioned CRM endpoint', async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      Response.json({
+        crmLeadId: 'crm-lead-a',
+        crmReactionEventId: 'crm-reaction-a',
+        mode: 'created',
+        operationId: 'operation-provider-a',
+      }),
+    );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.forwardReactionEvent(context, {
+        actor: {
+          displayName: 'Test',
+          externalUserId: '123',
+          type: 'user',
+        },
+        contactId: 'contact-a',
+        identity: leadInput.identity,
+        messageId: '11111111-1111-4111-8111-111111111111',
+        newReactions: [{ emoji: '👍', type: 'emoji' }],
+        normalizedEventId: '22222222-2222-4222-8222-222222222222',
+        occurredAt: '2026-08-01T10:00:00.000Z',
+        oldReactions: [],
+      }),
+    ).resolves.toMatchObject({ providerReference: 'crm-reaction-a' });
+
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      'https://crm.example.test/integrations/v1/omnicus/reactions/inbound',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const request = fetchImplementation.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      messageId: '11111111-1111-4111-8111-111111111111',
+      newReactions: [{ emoji: '👍', type: 'emoji' }],
+      normalizedEventId: '22222222-2222-4222-8222-222222222222',
+      oldReactions: [],
     });
   });
 

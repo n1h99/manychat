@@ -7,7 +7,7 @@ messages created from its own composer. It must now also store outbound
 Telegram messages created by Omnicus automation and broadcasts.
 
 The authoritative request schema is
-`docs/OMNICUS_TO_CRM_OPENAPI.yaml`, version `2.1.0`.
+`docs/OMNICUS_TO_CRM_OPENAPI.yaml`, version `3.0.0`.
 
 ## Required endpoint
 
@@ -43,8 +43,9 @@ the existing reconciliation endpoint by `crmProjectId + Idempotency-Key`.
 - Deduplicate by both `Idempotency-Key` and stable Omnicus `messageId`.
 - Store direction as outbound and preserve `providerMessageId`.
 - Preserve `occurredAt`; do not replace it with CRM receipt time.
-- Preserve `source`, `scenarioExecutionId`, `broadcastId`, media kind and inline
-  keyboard.
+- Preserve `source`, `scenarioExecutionId`, `broadcastId`, media kind, inline
+  keyboard, entities, link-preview options, protected-content state, message
+  effect ID, reply target UUID and quote metadata.
 - Never store Omnicus signed media URLs. Download an available URL immediately
   into CRM storage and persist the CRM-owned URL/status, using the same guarded
   media ingestion policy as inbound messages.
@@ -70,6 +71,22 @@ the existing reconciliation endpoint by `crmProjectId + Idempotency-Key`.
 9. reconciliation returns the stored terminal result;
 10. tokens, signed URLs and raw payloads are absent from logs and persisted
     operation metadata.
+
+## Inbound reaction endpoint
+
+Version `3.0.0` also defines:
+
+```text
+POST /integrations/v1/omnicus/reactions/inbound
+```
+
+The event is idempotent by `normalizedEventId` and the request
+`Idempotency-Key`. `messageId` is always the Omnicus UUID of the target message,
+never the Telegram provider ID. The CRM must accept add/change/remove as the
+complete `oldReactions` and `newReactions` sets. It must preserve project,
+connection and identity isolation and tolerate the source history message being
+inserted later. Omnicus will keep the advertised `userReactionEvents`
+capability disabled until this endpoint is deployed and verified end to end.
 
 ## Deployment order
 

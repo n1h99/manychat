@@ -16,6 +16,7 @@ interface HarnessOptions {
   payload?: unknown;
   projectId?: string;
   maxAttempts?: number;
+  reactionTarget?: { contactId: string; id: string } | null;
   status?: 'COMPLETED' | 'DEAD_LETTER' | 'FAILED' | 'PENDING' | 'PROCESSING' | 'RETRY';
 }
 
@@ -46,7 +47,15 @@ function createHarness(options: HarnessOptions = {}) {
   const conversationUpsert = vi.fn().mockResolvedValue({ id: 'conversation-a' });
   const messageUpsert = vi.fn().mockResolvedValue({ id: 'message-a' });
   const messageUpdate = vi.fn().mockResolvedValue({ id: 'message-a' });
+  const messageFindFirst = vi.fn().mockResolvedValue(options.reactionTarget ?? null);
   const mediaAssetUpsert = vi.fn().mockResolvedValue({ id: 'media-a' });
+  const crmOperationCreate = vi.fn().mockResolvedValue({ id: 'crm-reaction-operation-a' });
+  const crmOutboxCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+  const crmOutboxFindUnique = vi.fn().mockResolvedValue({
+    crmOperation: null,
+    id: 'crm-reaction-outbox-a',
+  });
+  const crmOutboxUpdate = vi.fn().mockResolvedValue({});
   const inboxUpdate = vi
     .fn()
     .mockImplementation(async ({ data }: { data: { status: typeof record.status } }) => {
@@ -77,11 +86,20 @@ function createHarness(options: HarnessOptions = {}) {
     },
     contact: { create: contactCreate, update: contactUpdate, updateMany: contactUpdateMany },
     conversation: { upsert: conversationUpsert },
+    crmOperation: { create: crmOperationCreate },
+    crmProjectConfig: {
+      findUnique: vi.fn().mockResolvedValue({ enabled: true, status: 'ACTIVE' }),
+    },
     inboxRecord: { update: inboxUpdate, updateMany: transactionInboxUpdateMany },
     mediaAsset: { upsert: mediaAssetUpsert },
-    message: { update: messageUpdate, upsert: messageUpsert },
+    message: { findFirst: messageFindFirst, update: messageUpdate, upsert: messageUpsert },
     normalizedEvent: { upsert: normalizedUpsert },
-    outboxRecord: { upsert: vi.fn().mockResolvedValue({ id: 'callback-outbox-a' }) },
+    outboxRecord: {
+      createMany: crmOutboxCreateMany,
+      findUnique: crmOutboxFindUnique,
+      update: crmOutboxUpdate,
+      upsert: vi.fn().mockResolvedValue({ id: 'callback-outbox-a' }),
+    },
   };
   const inboxUpdateMany = vi
     .fn()
@@ -140,9 +158,12 @@ function createHarness(options: HarnessOptions = {}) {
     identityUpdate,
     inboxUpdateMany,
     messageUpsert,
+    messageFindFirst,
     messageUpdate,
     mediaAssetUpsert,
     normalizedUpsert,
+    crmOperationCreate,
+    crmOutboxCreateMany,
     record,
     service,
     transactionInboxUpdateMany,
@@ -303,6 +324,67 @@ describe('TelegramInboundProcessorService', () => {
     );
     expect(contactCreate).not.toHaveBeenCalled();
     expect(messageUpsert).not.toHaveBeenCalled();
+  });
+
+  it('persists a reaction without creating a synthetic message and queues a stable CRM event', async () => {
+    const harness = createHarness({
+      existingContactId: 'contact-a',
+      payload: telegramInboundFixtures.reaction.payload,
+      reactionTarget: { contactId: 'contact-a', id: 'target-message-uuid' },
+    });
+
+    await harness.service.process({ inboxRecordId: 'inbox-a' });
+
+    expect(harness.normalizedUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          payload: expect.objectContaining({
+            chatId: '1001',
+            content: expect.objectContaining({ messageId: 'target-message-uuid' }),
+          }),
+          type: 'REACTION',
+        }),
+      }),
+    );
+    expect(harness.messageUpsert).not.toHaveBeenCalled();
+    expect(harness.contactCreate).not.toHaveBeenCalled();
+    expect(harness.crmOutboxCreateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ idempotencyKey: 'crm-reaction-normalized-a' })],
+        skipDuplicates: true,
+      }),
+    );
+    expect(harness.crmOperationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: 'contact-a',
+          normalizedEventId: 'normalized-a',
+          type: 'FORWARD_REACTION_EVENT',
+        }),
+      }),
+    );
+  });
+
+  it('schedules a safe retry when a reaction arrives before its target message', async () => {
+    const harness = createHarness({
+      existingContactId: 'contact-a',
+      payload: telegramInboundFixtures.reaction.payload,
+      reactionTarget: null,
+    });
+
+    await expect(harness.service.process({ inboxRecordId: 'inbox-a' })).rejects.toThrow(
+      'Telegram reaction target message is not available yet',
+    );
+
+    expect(harness.record.status).toBe('RETRY');
+    expect(harness.inboxUpdateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastError: 'telegram_inbound_reaction_target_pending',
+          status: 'RETRY',
+        }),
+      }),
+    );
   });
 
   it('dead-letters malformed events without logging raw payload', async () => {

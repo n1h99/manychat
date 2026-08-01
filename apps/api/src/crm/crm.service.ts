@@ -24,7 +24,11 @@ type SafeCrmOperation = {
   lastError: string | null;
   resultSafe: unknown;
   status: 'FAILED' | 'PENDING' | 'PROCESSING' | 'RETRY' | 'SUCCEEDED' | 'UNKNOWN';
-  type: 'CREATE_OR_UPDATE_LEAD' | 'FORWARD_INBOUND_MESSAGE' | 'FORWARD_OUTBOUND_MESSAGE';
+  type:
+    | 'CREATE_OR_UPDATE_LEAD'
+    | 'FORWARD_INBOUND_MESSAGE'
+    | 'FORWARD_OUTBOUND_MESSAGE'
+    | 'FORWARD_REACTION_EVENT';
   updatedAt: Date;
 };
 
@@ -436,7 +440,11 @@ export class CrmService {
     createdAt: Date;
     id: string;
     resultSafe: unknown;
-    type: 'CREATE_OR_UPDATE_LEAD' | 'FORWARD_INBOUND_MESSAGE' | 'FORWARD_OUTBOUND_MESSAGE';
+    type:
+      | 'CREATE_OR_UPDATE_LEAD'
+      | 'FORWARD_INBOUND_MESSAGE'
+      | 'FORWARD_OUTBOUND_MESSAGE'
+      | 'FORWARD_REACTION_EVENT';
     updatedAt: Date;
     outbox: {
       attempts: number;

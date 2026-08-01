@@ -49,6 +49,35 @@ export interface CrmInlineKeyboardButtonInput {
 
 export type CrmInlineKeyboardInput = CrmInlineKeyboardButtonInput[][];
 
+export interface CrmMessageEntityInput {
+  customEmojiId?: string;
+  language?: string;
+  length: number;
+  offset: number;
+  type: string;
+  url?: string;
+}
+
+export interface CrmLinkPreviewOptionsInput {
+  isDisabled?: boolean;
+  preferLargeMedia?: boolean;
+  preferSmallMedia?: boolean;
+  showAboveText?: boolean;
+  url?: string;
+}
+
+export type CrmReactionInput =
+  | { emoji: string; type: 'emoji' }
+  | { customEmojiId: string; type: 'custom_emoji' }
+  | { type: 'paid' };
+
+export interface CrmReactionActorInput {
+  displayName: string;
+  externalUserId: string;
+  type: 'user';
+  username?: string;
+}
+
 export interface CreateOrUpdateLeadInput {
   contactId: string;
   contactStatus?: string;
@@ -79,14 +108,32 @@ export interface ForwardOutboundMessageInput {
   deliveryStatus: 'SENT';
   identity: CrmIdentityInput;
   inlineKeyboard?: CrmInlineKeyboardInput;
+  entities?: CrmMessageEntityInput[];
+  linkPreviewOptions?: CrmLinkPreviewOptionsInput;
   media?: CrmMediaInput;
   messageId: string;
+  messageEffectId?: string;
   occurredAt: string;
+  protectContent?: boolean;
   providerMessageId: string;
+  quote?: string;
+  quotePosition?: number;
+  replyToMessageId?: string;
   scenarioExecutionId?: string;
   senderName?: string;
   source: 'AUTOMATION' | 'BROADCAST' | 'SYSTEM';
   text?: string;
+}
+
+export interface ForwardReactionEventInput {
+  actor: CrmReactionActorInput;
+  contactId: string;
+  identity: CrmIdentityInput;
+  messageId: string;
+  newReactions: CrmReactionInput[];
+  normalizedEventId: string;
+  occurredAt: string;
+  oldReactions: CrmReactionInput[];
 }
 
 export interface CrmResult {
@@ -114,6 +161,10 @@ export interface CrmClient {
     context: CrmCallContext,
     input: ForwardOutboundMessageInput,
   ): Promise<CrmResult>;
+  forwardReactionEvent(
+    context: CrmCallContext,
+    input: ForwardReactionEventInput,
+  ): Promise<CrmResult>;
   reconcile(context: CrmCallContext): Promise<CrmReconciliationResult>;
 }
 
@@ -139,6 +190,13 @@ const leadResultSchema = z.object({
 const messageResultSchema = z.object({
   crmLeadId: z.string().min(1),
   crmMessageId: z.string().min(1),
+  mode: z.enum(['created', 'duplicate']),
+  operationId: z.string().min(1),
+});
+
+const reactionResultSchema = z.object({
+  crmLeadId: z.string().min(1),
+  crmReactionEventId: z.string().min(1),
   mode: z.enum(['created', 'duplicate']),
   operationId: z.string().min(1),
 });
@@ -245,12 +303,19 @@ export class HttpCrmClient implements CrmClient {
       deliveryStatus: input.deliveryStatus,
       identity: input.identity,
       inlineKeyboard: input.inlineKeyboard,
+      entities: input.entities,
+      linkPreviewOptions: input.linkPreviewOptions,
       media: input.media,
       messageId: input.messageId,
+      messageEffectId: input.messageEffectId,
       occurredAt: input.occurredAt,
       omnicusContactId: input.contactId,
       omnicusProjectId: context.projectId,
       providerMessageId: input.providerMessageId,
+      protectContent: input.protectContent,
+      quote: input.quote,
+      quotePosition: input.quotePosition,
+      replyToMessageId: input.replyToMessageId,
       scenarioExecutionId: input.scenarioExecutionId,
       senderName: input.senderName,
       source: input.source,
@@ -266,6 +331,35 @@ export class HttpCrmClient implements CrmClient {
       mode: result.mode,
       operationId: result.operationId,
       providerReference: result.crmMessageId,
+    };
+  }
+
+  async forwardReactionEvent(
+    context: CrmCallContext,
+    input: ForwardReactionEventInput,
+  ): Promise<CrmResult> {
+    const payload = {
+      actor: input.actor,
+      crmProjectId: context.crmProjectId,
+      identity: input.identity,
+      messageId: input.messageId,
+      newReactions: input.newReactions,
+      normalizedEventId: input.normalizedEventId,
+      occurredAt: input.occurredAt,
+      oldReactions: input.oldReactions,
+      omnicusContactId: input.contactId,
+      omnicusProjectId: context.projectId,
+    };
+    const result = await this.postAndReconcile(
+      '/integrations/v1/omnicus/reactions/inbound',
+      context,
+      payload,
+      reactionResultSchema,
+    );
+    return {
+      mode: result.mode,
+      operationId: result.operationId,
+      providerReference: result.crmReactionEventId,
     };
   }
 
@@ -390,7 +484,10 @@ export class CrmMockError extends CrmClientError {
 
 export class MockCrmClient implements CrmClient {
   private readonly results = new Map<string, CrmResult>();
-  private readonly resultKinds = new Map<string, 'lead' | 'message' | 'outbound-message'>();
+  private readonly resultKinds = new Map<
+    string,
+    'lead' | 'message' | 'outbound-message' | 'reaction'
+  >();
 
   constructor(private readonly outcomeFor: (key: string) => MockCrmOutcome = () => 'SUCCESS') {}
 
@@ -415,6 +512,13 @@ export class MockCrmClient implements CrmClient {
     return this.perform(context, 'outbound-message');
   }
 
+  async forwardReactionEvent(
+    context: CrmCallContext,
+    _input: ForwardReactionEventInput,
+  ): Promise<CrmResult> {
+    return this.perform(context, 'reaction');
+  }
+
   async reconcile(context: CrmCallContext): Promise<CrmReconciliationResult> {
     const result = this.results.get(context.idempotencyKey);
     const kind = this.resultKinds.get(context.idempotencyKey);
@@ -424,7 +528,9 @@ export class MockCrmClient implements CrmClient {
           result: {
             ...(kind === 'lead'
               ? { crmLeadId: result.providerReference }
-              : { crmMessageId: result.providerReference }),
+              : kind === 'reaction'
+                ? { crmLeadId: 'mock-lead', crmReactionEventId: result.providerReference }
+                : { crmMessageId: result.providerReference }),
             mode: result.mode,
             operationId: result.operationId,
           },
@@ -435,7 +541,7 @@ export class MockCrmClient implements CrmClient {
 
   private perform(
     context: CrmCallContext,
-    kind: 'lead' | 'message' | 'outbound-message',
+    kind: 'lead' | 'message' | 'outbound-message' | 'reaction',
   ): CrmResult {
     const known = this.results.get(context.idempotencyKey);
     if (known) return known;

@@ -14,6 +14,20 @@ export class TelegramInboundLeaseConflictError extends Error {
   }
 }
 
+export class TelegramInboundReactionIdentityMismatchError extends Error {
+  constructor() {
+    super('Telegram reaction actor does not match the target conversation identity');
+    this.name = 'TelegramInboundReactionIdentityMismatchError';
+  }
+}
+
+export class TelegramInboundReactionTargetPendingError extends Error {
+  constructor() {
+    super('Telegram reaction target message is not available yet');
+    this.name = 'TelegramInboundReactionTargetPendingError';
+  }
+}
+
 const retryablePrismaCodes = new Set(['P1001', 'P1002', 'P1008', 'P1017']);
 const permanentPrismaCodes = new Set(['P2002', 'P2003', 'P2025']);
 const retryableNetworkCodes = new Set([
@@ -28,6 +42,12 @@ const retryableNetworkCodes = new Set([
 export function classifyTelegramInboundFailure(error: unknown): TelegramInboundFailure {
   if (error instanceof TelegramInboundLeaseConflictError) {
     return { code: 'telegram_inbound_lease_conflict', kind: 'RETRYABLE' };
+  }
+  if (error instanceof TelegramInboundReactionTargetPendingError) {
+    return { code: 'telegram_inbound_reaction_target_pending', kind: 'RETRYABLE' };
+  }
+  if (error instanceof TelegramInboundReactionIdentityMismatchError) {
+    return { code: 'telegram_inbound_reaction_identity_mismatch', kind: 'PERMANENT' };
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {

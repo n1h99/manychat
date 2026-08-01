@@ -42,10 +42,17 @@ OutboxRecord and are never represented as delivered content.
 - Message deletion is generally limited to messages younger than 48 hours and
   depends on chat permissions. Bot API does not provide a general message
   deletion update, so external deletion synchronization is unsupported.
-- Message effects are private-chat only.
+- Message effects are private-chat only. Bot API exposes no effect catalog to
+  bots, so `availableEffects` is empty with
+  `BOT_API_EFFECT_CATALOG_UNAVAILABLE`; known IDs remain pass-through only.
 - `sendChatAction` lasts at most five seconds.
-- `sendMessageDraft` is a private-chat, ephemeral 30-second preview. The final
-  content must be sent with the durable outbound message endpoint.
+- `sendMessageDraft` is a private-chat, ephemeral 30-second preview. Empty text
+  is ignored because Telegram renders it as a Thinking placeholder rather than
+  cancellation. The final content must be sent with the durable outbound
+  message endpoint.
+- Edit capability limits explicitly list text, caption, entities, inline
+  keyboard and link-preview options as editable. Protected-content, message
+  effect, reply and quote state are immutable and preserved.
 - Telegram's scheduled-message API is not a Bot API facility. Omnicus will
   expose scheduling only after its own delayed-outbox lifecycle is implemented.
 
@@ -54,7 +61,9 @@ OutboxRecord and are never represented as delivered content.
 Capability discovery returns `supported=false` with a stable reason code for:
 
 - G03 media groups and stickers;
-- G05 inbound user-reaction normalization;
+- G05 inbound user-reaction advertisement remains disabled until the published
+  Omnicus-to-CRM reaction endpoint passes live E2E; normalization, persistence
+  and transactional delivery are implemented;
 - G07 application scheduling and recurrence;
 - G08 location/contact/poll structured messages;
 - G09 reply keyboards and Force Reply;

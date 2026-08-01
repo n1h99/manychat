@@ -1305,3 +1305,23 @@ A bounded recovery query covers earlier `SENT` automation/broadcast messages
 that predate this migration. The journal stores only internal IDs and safe
 source metadata; signed download URLs are generated immediately before the CRM
 request and are not persisted.
+
+## Telegram reaction events
+
+Migration `20260801000100_telegram_reaction_events` extends the existing enums
+with `NormalizedEventType.REACTION` and
+`CrmOperationType.FORWARD_REACTION_EVENT`. It does not rewrite prior messages
+or webhook rows.
+
+A Telegram `message_reaction` update remains an ordinary deduplicated
+`RawWebhookEvent`/`InboxRecord`. The processor creates exactly one
+`NormalizedEvent` and resolves the reacted-to Telegram provider message inside
+the same project and connection before storing its Omnicus message UUID in the
+normalized JSONB payload. Reactions do not create synthetic `Message` rows.
+
+When a CRM connection is enabled, the same transaction creates one CRM outbox
+intent using `crm-reaction-<normalizedEventId>`. `CrmOperation` references the
+normalized event and target contact through existing tenant-safe composite
+foreign keys. A reaction that races ahead of its source message stays
+retryable until the source mapping exists; after exhaustion the raw webhook is
+retained in dead-letter state for safe replay.

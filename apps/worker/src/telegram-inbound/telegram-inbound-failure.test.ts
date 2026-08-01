@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyTelegramInboundFailure,
   TelegramInboundLeaseConflictError,
+  TelegramInboundReactionIdentityMismatchError,
+  TelegramInboundReactionTargetPendingError,
   telegramInboundRetryDelayMaximumMilliseconds,
   telegramInboundRetryDelayMilliseconds,
 } from './telegram-inbound-failure';
@@ -11,6 +13,21 @@ describe('Telegram inbound failure classification', () => {
   it('classifies malformed payloads as permanent without retaining payload details', () => {
     expect(classifyTelegramInboundFailure(new Error('Telegram update is malformed'))).toEqual({
       code: 'telegram_inbound_malformed_update',
+      kind: 'PERMANENT',
+    });
+  });
+
+  it('classifies reaction target races as retryable and identity mismatches as permanent', () => {
+    expect(classifyTelegramInboundFailure(new TelegramInboundReactionTargetPendingError())).toEqual(
+      {
+        code: 'telegram_inbound_reaction_target_pending',
+        kind: 'RETRYABLE',
+      },
+    );
+    expect(
+      classifyTelegramInboundFailure(new TelegramInboundReactionIdentityMismatchError()),
+    ).toEqual({
+      code: 'telegram_inbound_reaction_identity_mismatch',
       kind: 'PERMANENT',
     });
   });

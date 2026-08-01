@@ -12,6 +12,7 @@ import {
   type CreateOrUpdateLeadInput,
   type ForwardInboundMessageInput,
   type ForwardOutboundMessageInput,
+  type ForwardReactionEventInput,
 } from '@omnicus/crm-core';
 import { DatabaseService } from '../database/database.service';
 
@@ -47,6 +48,13 @@ export class ProjectCrmClient implements CrmClient {
     input: ForwardOutboundMessageInput,
   ): Promise<CrmResult> {
     return (await this.resolve(context)).forwardOutboundMessage(context, input);
+  }
+
+  async forwardReactionEvent(
+    context: CrmCallContext,
+    input: ForwardReactionEventInput,
+  ): Promise<CrmResult> {
+    return (await this.resolve(context)).forwardReactionEvent(context, input);
   }
 
   async reconcile(context: CrmCallContext): Promise<CrmReconciliationResult> {

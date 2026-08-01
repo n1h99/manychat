@@ -29,6 +29,8 @@ import { redisConnectionFromUrl } from '../queue/redis-connection';
 import {
   classifyTelegramInboundFailure,
   TelegramInboundLeaseConflictError,
+  TelegramInboundReactionIdentityMismatchError,
+  TelegramInboundReactionTargetPendingError,
   telegramInboundRetryDelayMilliseconds,
 } from './telegram-inbound-failure';
 
@@ -221,14 +223,28 @@ export class TelegramInboundProcessorService
   }
 
   private async persist(claimed: ClaimedInboxRecord, event: TelegramInboundEvent): Promise<void> {
-    const eventAt = claimed.rawWebhookEvent.receivedAt;
+    const occurredAt =
+      typeof event.content.occurredAt === 'string'
+        ? new Date(event.content.occurredAt)
+        : claimed.rawWebhookEvent.receivedAt;
+    const eventAt = Number.isNaN(occurredAt.getTime())
+      ? claimed.rawWebhookEvent.receivedAt
+      : occurredAt;
     await this.database.client.$transaction(async (transaction) => {
+      const reactionTarget =
+        event.type === 'REACTION'
+          ? await this.resolveReactionTarget(transaction, claimed, event)
+          : undefined;
       const normalized = await transaction.normalizedEvent.upsert({
         create: {
           connectionId: claimed.connectionId,
           inboxRecordId: claimed.id,
           payload: {
-            content: event.content,
+            ...(event.chatId ? { chatId: event.chatId } : {}),
+            content: reactionTarget
+              ? { ...event.content, messageId: reactionTarget.messageId }
+              : event.content,
+            ...(event.externalUserId ? { externalUserId: event.externalUserId } : {}),
             metadata: event.metadata,
           } as Prisma.InputJsonValue,
           projectId: claimed.projectId,
@@ -262,9 +278,19 @@ export class TelegramInboundProcessorService
           },
         });
 
-      const contact = event.externalUserId
-        ? await this.resolveContact(transaction, claimed, event, eventAt)
-        : undefined;
+      if (reactionTarget)
+        await this.queueReactionForCrm(
+          transaction,
+          claimed,
+          normalized.id,
+          reactionTarget.contactId,
+          reactionTarget.messageId,
+        );
+
+      const contact =
+        event.type !== 'REACTION' && event.externalUserId
+          ? await this.resolveContact(transaction, claimed, event, eventAt)
+          : undefined;
 
       let conversationId: string | undefined;
       if (
@@ -407,6 +433,86 @@ export class TelegramInboundProcessorService
         },
       });
       if (completed.count !== 1) throw new TelegramInboundLeaseConflictError();
+    });
+  }
+
+  private async resolveReactionTarget(
+    transaction: Prisma.TransactionClient,
+    claimed: ClaimedInboxRecord,
+    event: TelegramInboundEvent,
+  ): Promise<{ contactId: string; messageId: string }> {
+    const targetExternalMessageId = event.content.targetExternalMessageId;
+    if (typeof targetExternalMessageId !== 'string' || !event.externalUserId || !event.chatId)
+      throw new TelegramInboundReactionIdentityMismatchError();
+    const target = await transaction.message.findFirst({
+      select: { contactId: true, id: true },
+      where: {
+        connectionId: claimed.connectionId,
+        conversation: { externalChatId: event.chatId },
+        externalMessageId: targetExternalMessageId,
+        projectId: claimed.projectId,
+      },
+    });
+    if (!target) throw new TelegramInboundReactionTargetPendingError();
+    const actorIdentity = await transaction.channelIdentity.findUnique({
+      select: { contactId: true },
+      where: {
+        projectId_connectionId_externalUserId: {
+          connectionId: claimed.connectionId,
+          externalUserId: event.externalUserId,
+          projectId: claimed.projectId,
+        },
+      },
+    });
+    if (!actorIdentity || actorIdentity.contactId !== target.contactId)
+      throw new TelegramInboundReactionIdentityMismatchError();
+    return { contactId: target.contactId, messageId: target.id };
+  }
+
+  private async queueReactionForCrm(
+    transaction: Prisma.TransactionClient,
+    claimed: ClaimedInboxRecord,
+    normalizedEventId: string,
+    contactId: string,
+    messageId: string,
+  ): Promise<void> {
+    const crmConfig = await transaction.crmProjectConfig.findUnique({
+      select: { enabled: true, status: true },
+      where: { projectId: claimed.projectId },
+    });
+    if (!crmConfig?.enabled || crmConfig.status !== 'ACTIVE') return;
+    const idempotencyKey = `crm-reaction-${normalizedEventId}`;
+    await transaction.outboxRecord.createMany({
+      data: [
+        {
+          idempotencyKey,
+          kind: 'CRM',
+          payload: {},
+          projectId: claimed.projectId,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    const outbox = await transaction.outboxRecord.findUnique({
+      include: { crmOperation: { select: { id: true } } },
+      where: {
+        projectId_idempotencyKey: { idempotencyKey, projectId: claimed.projectId },
+      },
+    });
+    if (!outbox || outbox.crmOperation) return;
+    const operation = await transaction.crmOperation.create({
+      data: {
+        contactId,
+        inputSafe: { source: 'telegram_reaction', targetMessageId: messageId },
+        normalizedEventId,
+        outboxRecordId: outbox.id,
+        projectId: claimed.projectId,
+        type: 'FORWARD_REACTION_EVENT',
+      },
+    });
+    await transaction.outboxRecord.update({
+      data: { payload: { crmOperationId: operation.id } },
+      where: { projectId_id: { id: outbox.id, projectId: claimed.projectId } },
     });
   }
 

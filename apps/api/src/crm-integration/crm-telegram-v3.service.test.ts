@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { ChannelSecretsService } from '@omnicus/channel-secrets';
+import { TelegramAdapter } from '@omnicus/channel-telegram';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CrmTelegramV3Service } from './crm-telegram-v3.service';
@@ -95,16 +96,52 @@ describe('CrmTelegramV3Service', () => {
       }),
     ).resolves.toMatchObject({
       capabilities: {
+        editMessage: {
+          limits: expect.objectContaining({
+            editableFields: ['text', 'caption', 'entities', 'inlineKeyboard', 'linkPreviewOptions'],
+            immutableFields: expect.arrayContaining(['protectContent', 'messageEffectId']),
+          }),
+          supported: true,
+        },
         explicitRetry: { supported: true },
         linkPreviewOptions: { supported: true },
+        messageEffects: {
+          limits: expect.objectContaining({
+            availableEffects: [],
+            catalogAvailable: false,
+            catalogReasonCode: 'BOT_API_EFFECT_CATALOG_UNAVAILABLE',
+            editable: false,
+          }),
+          supported: true,
+        },
         quote: { supported: true },
         reactions: { supported: true },
         scheduling: { supported: false },
         streamingDraft: { supported: true },
+        userReactionEvents: {
+          reasonCode: 'CRM_REACTION_ENDPOINT_NOT_LIVE_VERIFIED',
+          supported: false,
+        },
       },
       contractVersion: '3.0.0',
       telegramBotApiVersion: '10.2',
     });
+  });
+
+  it('ignores an empty draft without calling Telegram or creating a placeholder message', async () => {
+    const test = fixture();
+    const sendMessageDraft = vi
+      .spyOn(TelegramAdapter.prototype, 'sendMessageDraft')
+      .mockResolvedValue(undefined);
+
+    await expect(test.service.draft({ ...scope, draftId: 7, text: '' })).resolves.toEqual({
+      accepted: false,
+      expiresAt: null,
+      reasonCode: 'EMPTY_DRAFT_IGNORED',
+    });
+
+    expect(sendMessageDraft).not.toHaveBeenCalled();
+    expect(test.database.client.channelIdentity.findUnique).not.toHaveBeenCalled();
   });
 
   it('durably queues a scoped edit with a stable operation', async () => {

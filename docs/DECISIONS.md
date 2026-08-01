@@ -873,3 +873,42 @@ the source of truth for durable changes. Ephemeral signals may be lost during
 an outage without corrupting chat history. Bot tokens are decrypted only
 immediately before a Telegram request. Provider payloads, credentials and
 message content remain absent from operational/audit logs.
+
+## ADR-040: Telegram reactions are normalized events, effects have no invented catalog
+
+**Status:** Accepted, 2026-08-01.
+
+**Context:** Telegram reaction changes arrive as separate webhook updates and
+may race with the source-message history operation. CRM also needs a selectable
+message-effect catalog, but Telegram Bot API 10.2 accepts
+`message_effect_id` without exposing a bot method that lists effect IDs. The
+similarly named `messages.getAvailableEffects` belongs to the user MTProto API
+and is explicitly unavailable to bots. Empty `sendMessageDraft` text is an
+official “Thinking…” placeholder, not a cancellation operation.
+
+**Decision:** A user reaction is persisted as a `REACTION`
+`NormalizedEvent`, never as a synthetic message. Its CRM event references the
+stable Omnicus UUID of the reacted-to message and uses its own normalized event
+UUID for idempotency. If the provider message mapping is not yet present, the
+inbox attempt is retryable. Omnicus-to-CRM delivery uses the ordinary CRM
+transactional outbox and can therefore arrive before the separate source
+history operation without losing its stable reference.
+
+Omnicus publishes an empty `availableEffects` list plus a stable
+`BOT_API_EFFECT_CATALOG_UNAVAILABLE` reason instead of fabricating provider
+IDs, labels or emoji. A known effect ID can still be passed through the
+provider API, but CRM must not expose a free-form production selector.
+
+Omnicus treats an empty draft update as a local no-op and never calls Telegram
+with it. Bot API exposes no explicit draft-cancel method; stopping updates lets
+the preview expire within 30 seconds, while the final ordinary outbound
+message is the documented finalization operation. Message edits expose only
+fields accepted by `editMessageText`/`editMessageCaption`; protection, effect,
+reply and quote state are immutable through the edit endpoint and remain
+preserved provider state.
+
+**Consequences:** Reactions keep at-least-once/recovery guarantees and cannot
+cross project or connection boundaries. Capability discovery remains honest
+when Telegram exposes a send feature but withholds catalog discovery. CRM can
+render explicit edit semantics without attempting unsupported mutations or
+creating a lingering “…” preview during draft cleanup.

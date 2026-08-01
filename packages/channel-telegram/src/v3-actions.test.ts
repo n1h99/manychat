@@ -11,6 +11,23 @@ function adapter() {
 }
 
 describe('Telegram v3 adapter actions', () => {
+  it('subscribes the webhook to user reaction updates', async () => {
+    const fixture = adapter();
+
+    await fixture.adapter.configureWebhook('secret', {
+      secretToken: 'webhook-secret',
+      url: 'https://example.test/webhooks/telegram/connection-a',
+    });
+
+    expect(fixture.request).toHaveBeenCalledWith(
+      'secret',
+      'setWebhook',
+      expect.objectContaining({
+        allowed_updates: expect.arrayContaining(['message_reaction']),
+      }),
+    );
+  });
+
   it('maps rich text, quote and presentation options to Bot API fields', async () => {
     const fixture = adapter();
     await fixture.adapter.sendMessage('secret', {
@@ -74,5 +91,8 @@ describe('Telegram v3 adapter actions', () => {
     await expect(
       fixture.adapter.sendMessageDraft('secret', { chatId: '123', draftId: 0 }),
     ).rejects.toThrow('telegram_draft_id_invalid');
+    fixture.request.mockClear();
+    await fixture.adapter.sendMessageDraft('secret', { chatId: '123', draftId: 8, text: '' });
+    expect(fixture.request).not.toHaveBeenCalled();
   });
 });

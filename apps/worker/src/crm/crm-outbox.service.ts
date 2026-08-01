@@ -17,7 +17,11 @@ import {
   type CrmIdentityInput,
   type CrmInteractiveInput,
   type CrmInlineKeyboardInput,
+  type CrmLinkPreviewOptionsInput,
+  type CrmMessageEntityInput,
   type CrmMediaInput,
+  type CrmReactionActorInput,
+  type CrmReactionInput,
 } from '@omnicus/crm-core';
 import { Prisma } from '@omnicus/database';
 import { prepareMediaForTelegram, S3MediaStorage, type MediaKind } from '@omnicus/media-core';
@@ -223,7 +227,8 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
 
     const externalChatId =
       operation.normalizedEvent?.message?.conversation.externalChatId ??
-      operation.message?.conversation.externalChatId;
+      operation.message?.conversation.externalChatId ??
+      this.stringProperty(operation.normalizedEvent?.payload, 'chatId');
     const identity: CrmIdentityInput = {
       channel: 'telegram',
       channelIdentityId: identityRow.id,
@@ -286,7 +291,23 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           senderName: operation.contact.displayName,
           ...(inboundText === undefined ? {} : { text: inboundText }),
         });
-      else {
+      else if (operation.type === 'FORWARD_REACTION_EVENT') {
+        const reaction = this.reactionEvent(operation.normalizedEvent?.payload);
+        if (!reaction) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_reaction_event_invalid');
+          return;
+        }
+        result = await this.client.forwardReactionEvent(context, {
+          actor: reaction.actor,
+          contactId: operation.contact.id,
+          identity,
+          messageId: reaction.messageId,
+          newReactions: reaction.newReactions,
+          normalizedEventId: operation.normalizedEventId ?? operation.id,
+          occurredAt: reaction.occurredAt,
+          oldReactions: reaction.oldReactions,
+        });
+      } else {
         const message = operation.message;
         const source = crmOutboundHistorySource(message?.metadata);
         if (!message?.externalMessageId || !source) {
@@ -296,15 +317,35 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
         const metadata = this.jsonRecord(message.metadata);
         const text = this.messageText(message.content);
         const inlineKeyboard = this.inlineKeyboard(message.content, message.metadata);
+        const entities = this.messageEntities(metadata?.entities);
+        const linkPreviewOptions = this.linkPreviewOptions(metadata?.linkPreviewOptions);
+        const replyToMessageId = await this.replyToMessageId(
+          operation.projectId,
+          connectionId,
+          metadata,
+        );
         result = await this.client.forwardOutboundMessage(context, {
           contactId: operation.contact.id,
           deliveryStatus: 'SENT',
           identity,
+          ...(entities ? { entities } : {}),
           ...(inlineKeyboard ? { inlineKeyboard } : {}),
+          ...(linkPreviewOptions ? { linkPreviewOptions } : {}),
           ...(await this.media(operation.projectId, connectionId, message.mediaAsset)),
           messageId: message.id,
+          ...(typeof metadata?.messageEffectId === 'string'
+            ? { messageEffectId: metadata.messageEffectId }
+            : {}),
           occurredAt: (message.sentAt ?? message.createdAt).toISOString(),
           providerMessageId: message.externalMessageId,
+          ...(typeof metadata?.protectContent === 'boolean'
+            ? { protectContent: metadata.protectContent }
+            : {}),
+          ...(typeof metadata?.quote === 'string' ? { quote: metadata.quote } : {}),
+          ...(typeof metadata?.quotePosition === 'number'
+            ? { quotePosition: metadata.quotePosition }
+            : {}),
+          ...(replyToMessageId ? { replyToMessageId } : {}),
           ...(message.connection.botUsername
             ? { senderName: `@${message.connection.botUsername}` }
             : {}),
@@ -373,7 +414,11 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       contactId: string | null;
       id: string;
       projectId: string;
-      type: 'CREATE_OR_UPDATE_LEAD' | 'FORWARD_INBOUND_MESSAGE' | 'FORWARD_OUTBOUND_MESSAGE';
+      type:
+        | 'CREATE_OR_UPDATE_LEAD'
+        | 'FORWARD_INBOUND_MESSAGE'
+        | 'FORWARD_OUTBOUND_MESSAGE'
+        | 'FORWARD_REACTION_EVENT';
     },
     outboxRecordId: string,
     leaseToken: string,
@@ -537,6 +582,129 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : undefined;
+  }
+
+  private stringProperty(value: Prisma.JsonValue | undefined, key: string): string | undefined {
+    const candidate = this.jsonRecord(value)?.[key];
+    return typeof candidate === 'string' ? candidate : undefined;
+  }
+
+  private reactionEvent(payload: Prisma.JsonValue | undefined):
+    | {
+        actor: CrmReactionActorInput;
+        messageId: string;
+        newReactions: CrmReactionInput[];
+        occurredAt: string;
+        oldReactions: CrmReactionInput[];
+      }
+    | undefined {
+    const content = this.jsonRecord(this.jsonRecord(payload)?.content as Prisma.JsonValue);
+    const actor = this.jsonRecord(content?.actor as Prisma.JsonValue);
+    const oldReactions = this.reactions(content?.oldReactions);
+    const newReactions = this.reactions(content?.newReactions);
+    if (
+      !content ||
+      !actor ||
+      actor.type !== 'user' ||
+      typeof actor.displayName !== 'string' ||
+      typeof actor.externalUserId !== 'string' ||
+      typeof content.messageId !== 'string' ||
+      typeof content.occurredAt !== 'string' ||
+      !oldReactions ||
+      !newReactions
+    )
+      return undefined;
+    return {
+      actor: {
+        displayName: actor.displayName,
+        externalUserId: actor.externalUserId,
+        type: 'user',
+        ...(typeof actor.username === 'string' ? { username: actor.username } : {}),
+      },
+      messageId: content.messageId,
+      newReactions,
+      occurredAt: content.occurredAt,
+      oldReactions,
+    };
+  }
+
+  private reactions(value: unknown): CrmReactionInput[] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const output: CrmReactionInput[] = [];
+    for (const candidate of value) {
+      const reaction =
+        candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+          ? (candidate as Record<string, unknown>)
+          : undefined;
+      if (!reaction) return undefined;
+      if (reaction.type === 'paid') output.push({ type: 'paid' });
+      else if (reaction.type === 'emoji' && typeof reaction.emoji === 'string')
+        output.push({ emoji: reaction.emoji, type: 'emoji' });
+      else if (reaction.type === 'custom_emoji' && typeof reaction.customEmojiId === 'string')
+        output.push({ customEmojiId: reaction.customEmojiId, type: 'custom_emoji' });
+      else return undefined;
+    }
+    return output;
+  }
+
+  private messageEntities(value: unknown): CrmMessageEntityInput[] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const entities: CrmMessageEntityInput[] = [];
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined;
+      const entity = candidate as Record<string, unknown>;
+      if (
+        typeof entity.type !== 'string' ||
+        typeof entity.offset !== 'number' ||
+        typeof entity.length !== 'number'
+      )
+        return undefined;
+      entities.push({
+        length: entity.length,
+        offset: entity.offset,
+        type: entity.type,
+        ...(typeof entity.customEmojiId === 'string'
+          ? { customEmojiId: entity.customEmojiId }
+          : {}),
+        ...(typeof entity.language === 'string' ? { language: entity.language } : {}),
+        ...(typeof entity.url === 'string' ? { url: entity.url } : {}),
+      });
+    }
+    return entities;
+  }
+
+  private linkPreviewOptions(value: unknown): CrmLinkPreviewOptionsInput | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const input = value as Record<string, unknown>;
+    const output: CrmLinkPreviewOptionsInput = {};
+    for (const key of [
+      'isDisabled',
+      'preferLargeMedia',
+      'preferSmallMedia',
+      'showAboveText',
+    ] as const)
+      if (typeof input[key] === 'boolean') output[key] = input[key];
+    if (typeof input.url === 'string') output.url = input.url;
+    return Object.keys(output).length ? output : undefined;
+  }
+
+  private async replyToMessageId(
+    projectId: string,
+    connectionId: string | null | undefined,
+    metadata: Record<string, unknown> | undefined,
+  ): Promise<string | undefined> {
+    if (typeof metadata?.replyToOmnicusMessageId === 'string')
+      return metadata.replyToOmnicusMessageId;
+    if (!connectionId || typeof metadata?.replyToMessageId !== 'string') return undefined;
+    const target = await this.database.client.message.findFirst({
+      select: { id: true },
+      where: {
+        connectionId,
+        externalMessageId: metadata.replyToMessageId,
+        projectId,
+      },
+    });
+    return target?.id;
   }
 
   private inlineKeyboard(

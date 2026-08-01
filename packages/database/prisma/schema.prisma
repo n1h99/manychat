@@ -111,6 +111,7 @@ enum CrmOperationType {
   CREATE_OR_UPDATE_LEAD
   FORWARD_INBOUND_MESSAGE
   FORWARD_OUTBOUND_MESSAGE
+  FORWARD_REACTION_EVENT
 }
 
 enum CrmProvider {
@@ -136,6 +137,7 @@ enum NormalizedEventType {
   VIDEO_NOTE
   ANIMATION
   CALLBACK_QUERY
+  REACTION
   CHAT_MEMBER
   UNSUPPORTED
 }
@@ -1173,27 +1175,27 @@ model BroadcastRecipient {
 }
 
 model CrmProjectConfig {
-  id                       String              @id @default(uuid())
-  projectId                String              @unique
-  provider                 CrmProvider         @default(CYBER_PULSE)
-  status                   CrmConnectionStatus @default(DRAFT)
-  crmProjectId             String
-  baseUrl                  String?
-  credentialsEncrypted     Json?
-  inboundTokenHash         String?             @unique
-  pairingCodeHash          String?             @unique
-  pairingExpiresAt         DateTime?           @db.Timestamptz(3)
-  capabilities             Json                @default("{}")
-  fieldMapping             Json                @default("{}")
-  defaultPipeline          String?
-  defaultStage             String?
-  additionalParameters     Json                @default("{}")
-  enabled                  Boolean             @default(true)
-  lastTestedAt             DateTime?           @db.Timestamptz(3)
-  lastErrorAt              DateTime?           @db.Timestamptz(3)
-  createdAt                DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt                DateTime             @updatedAt @db.Timestamptz(3)
-  project                  Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id                   String              @id @default(uuid())
+  projectId            String              @unique
+  provider             CrmProvider         @default(CYBER_PULSE)
+  status               CrmConnectionStatus @default(DRAFT)
+  crmProjectId         String
+  baseUrl              String?
+  credentialsEncrypted Json?
+  inboundTokenHash     String?             @unique
+  pairingCodeHash      String?             @unique
+  pairingExpiresAt     DateTime?           @db.Timestamptz(3)
+  capabilities         Json                @default("{}")
+  fieldMapping         Json                @default("{}")
+  defaultPipeline      String?
+  defaultStage         String?
+  additionalParameters Json                @default("{}")
+  enabled              Boolean             @default(true)
+  lastTestedAt         DateTime?           @db.Timestamptz(3)
+  lastErrorAt          DateTime?           @db.Timestamptz(3)
+  createdAt            DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime            @updatedAt @db.Timestamptz(3)
+  project              Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
 
   @@unique([projectId, id])
   @@unique([projectId, crmProjectId])

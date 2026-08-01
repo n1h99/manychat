@@ -121,6 +121,17 @@ export const telegramInboundFixtures = {
     },
     update_id: 102,
   }),
+  reaction: defineSafeFixture('telegram-reaction', {
+    message_reaction: {
+      chat: { id: 1001, type: 'private' },
+      date: 1_785_535_200,
+      message_id: 42,
+      new_reaction: [{ emoji: '👍', type: 'emoji' }],
+      old_reaction: [],
+      user: telegramUser,
+    },
+    update_id: 114,
+  }),
   text: defineSafeFixture('telegram-text', {
     message: {
       chat: { id: 1001, type: 'private' },

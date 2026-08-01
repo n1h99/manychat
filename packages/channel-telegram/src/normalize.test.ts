@@ -1,7 +1,7 @@
 import { telegramInboundFixtures } from '@omnicus/test-fixtures';
 import { describe, expect, it } from 'vitest';
 
-import { normalizeTelegramUpdate } from './index';
+import { normalizeTelegramUpdate, type TelegramUpdate } from './index';
 
 describe('normalizeTelegramUpdate', () => {
   it('preserves command text and separates command arguments', () => {
@@ -71,6 +71,22 @@ describe('normalizeTelegramUpdate', () => {
     });
     expect(normalizeTelegramUpdate(telegramInboundFixtures.unsupported.payload)).toMatchObject({
       type: 'UNSUPPORTED',
+    });
+  });
+
+  it('normalizes a private-chat user reaction with a stable provider target', () => {
+    expect(
+      normalizeTelegramUpdate(telegramInboundFixtures.reaction.payload as TelegramUpdate),
+    ).toMatchObject({
+      chatId: '1001',
+      content: {
+        actor: { externalUserId: '1001', type: 'user' },
+        newReactions: [{ emoji: '👍', type: 'emoji' }],
+        oldReactions: [],
+        targetExternalMessageId: '42',
+      },
+      externalUserId: '1001',
+      type: 'REACTION',
     });
   });
 });

@@ -162,4 +162,92 @@ integrationDescribe('Telegram inbound persistence integration', () => {
     expect(job?.data).toEqual({ inboxRecordId: inboxId });
     await job?.remove();
   });
+
+  it('persists a reaction against the stable Omnicus message UUID without a synthetic message', async () => {
+    if (!handle || !service) throw new Error('Telegram integration setup did not complete');
+    const sourceRawId = randomUUID();
+    const sourceInboxId = randomUUID();
+    const sourcePayload = {
+      ...telegramInboundFixtures.text.payload,
+      message: {
+        ...telegramInboundFixtures.text.payload.message,
+        message_id: 555,
+        text: 'reaction source',
+      },
+      update_id: 555,
+    };
+    await handle.client.rawWebhookEvent.create({
+      data: {
+        connectionId,
+        correlationId: `test-${sourceRawId}`,
+        externalUpdateId: `reaction-source-${sourceRawId}`,
+        id: sourceRawId,
+        payload: sourcePayload as Prisma.InputJsonValue,
+        projectId,
+        purgeAfter: new Date(Date.now() + 60_000),
+      },
+    });
+    await handle.client.inboxRecord.create({
+      data: {
+        connectionId,
+        id: sourceInboxId,
+        nextAttemptAt: new Date(),
+        projectId,
+        rawWebhookEventId: sourceRawId,
+      },
+    });
+    await service.process({ inboxRecordId: sourceInboxId });
+    const source = await handle.client.message.findFirstOrThrow({
+      where: { connectionId, externalMessageId: '555', projectId },
+    });
+    const messageCountBefore = await handle.client.message.count({ where: { projectId } });
+
+    const reactionRawId = randomUUID();
+    const reactionInboxId = randomUUID();
+    const reactionPayload = {
+      ...telegramInboundFixtures.reaction.payload,
+      message_reaction: {
+        ...telegramInboundFixtures.reaction.payload.message_reaction,
+        message_id: 555,
+      },
+      update_id: 556,
+    };
+    await handle.client.rawWebhookEvent.create({
+      data: {
+        connectionId,
+        correlationId: `test-${reactionRawId}`,
+        externalUpdateId: `reaction-${reactionRawId}`,
+        id: reactionRawId,
+        payload: reactionPayload as Prisma.InputJsonValue,
+        projectId,
+        purgeAfter: new Date(Date.now() + 60_000),
+      },
+    });
+    await handle.client.inboxRecord.create({
+      data: {
+        connectionId,
+        id: reactionInboxId,
+        nextAttemptAt: new Date(),
+        projectId,
+        rawWebhookEventId: reactionRawId,
+      },
+    });
+
+    await service.process({ inboxRecordId: reactionInboxId });
+
+    const normalized = await handle.client.normalizedEvent.findFirstOrThrow({
+      where: { inboxRecordId: reactionInboxId, projectId },
+    });
+    expect(normalized.type).toBe('REACTION');
+    expect(normalized.payload).toMatchObject({
+      content: {
+        messageId: source.id,
+        newReactions: [{ emoji: '👍', type: 'emoji' }],
+        oldReactions: [],
+      },
+    });
+    await expect(handle.client.message.count({ where: { projectId } })).resolves.toBe(
+      messageCountBefore,
+    );
+  });
 });

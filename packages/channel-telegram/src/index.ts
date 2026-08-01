@@ -234,6 +234,7 @@ export function validateTelegramInlineKeyboard(input: unknown): TelegramInlineKe
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  message_reaction?: TelegramMessageReactionUpdated;
   callback_query?: { id: string; data?: string; from: TelegramUser; message?: TelegramMessage };
   my_chat_member?: {
     chat: { id: number; type: string };
@@ -241,6 +242,27 @@ export interface TelegramUpdate {
     new_chat_member: { status: string };
   };
   [key: string]: unknown;
+}
+export type TelegramInboundReaction =
+  | { emoji: string; type: 'emoji' }
+  | { customEmojiId: string; type: 'custom_emoji' }
+  | { type: 'paid' };
+export interface TelegramMessageReactionUpdated {
+  actor_chat?: { id: number; title?: string; type: string; username?: string };
+  chat: { id: number; type: string };
+  date: number;
+  message_id: number;
+  new_reaction: (
+    | { custom_emoji_id: string; type: 'custom_emoji' }
+    | { emoji: string; type: 'emoji' }
+    | { type: 'paid' }
+  )[];
+  old_reaction: (
+    | { custom_emoji_id: string; type: 'custom_emoji' }
+    | { emoji: string; type: 'emoji' }
+    | { type: 'paid' }
+  )[];
+  user?: TelegramUser;
 }
 export interface TelegramUser {
   id: number;
@@ -441,6 +463,7 @@ export type TelegramInboundEventType =
   | 'DOCUMENT'
   | 'MESSAGE'
   | 'PHOTO'
+  | 'REACTION'
   | 'UNSUPPORTED'
   | 'VIDEO'
   | 'VIDEO_NOTE'
@@ -575,11 +598,76 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
   return { ...base, content: {}, type: 'UNSUPPORTED' };
 }
 
+function inboundReactions(
+  reactions: TelegramMessageReactionUpdated['new_reaction'],
+): TelegramInboundReaction[] {
+  return reactions.map((reaction) => {
+    if (reaction.type === 'emoji' && typeof reaction.emoji === 'string')
+      return { emoji: reaction.emoji, type: 'emoji' };
+    if (reaction.type === 'custom_emoji' && typeof reaction.custom_emoji_id === 'string')
+      return { customEmojiId: reaction.custom_emoji_id, type: 'custom_emoji' };
+    if (reaction.type === 'paid') return { type: 'paid' };
+    throw new Error('Telegram update is malformed');
+  });
+}
+
 export function normalizeTelegramUpdate(update: TelegramUpdate): TelegramInboundEvent {
   if (!Number.isSafeInteger(update.update_id) || update.update_id < 0) {
     throw new Error('Telegram update is malformed');
   }
   if (update.message) return messageEvent(update.message);
+  if (update.message_reaction) {
+    const reaction = update.message_reaction;
+    if (
+      !Number.isSafeInteger(reaction.chat?.id) ||
+      !Number.isSafeInteger(reaction.message_id) ||
+      !Number.isSafeInteger(reaction.date) ||
+      !Array.isArray(reaction.old_reaction) ||
+      !Array.isArray(reaction.new_reaction)
+    )
+      throw new Error('Telegram update is malformed');
+    const actor = reaction.user
+      ? {
+          displayName: [reaction.user.first_name, reaction.user.last_name]
+            .filter(Boolean)
+            .join(' '),
+          externalUserId: String(reaction.user.id),
+          type: 'user',
+          ...(reaction.user.username ? { username: reaction.user.username } : {}),
+        }
+      : reaction.actor_chat
+        ? {
+            displayName:
+              reaction.actor_chat.title ?? reaction.actor_chat.username ?? 'Telegram chat',
+            externalChatId: String(reaction.actor_chat.id),
+            type: 'chat',
+            ...(reaction.actor_chat.username ? { username: reaction.actor_chat.username } : {}),
+          }
+        : undefined;
+    if (reaction.chat.type !== 'private' || !reaction.user || !actor)
+      return {
+        content: {
+          reasonCode: 'REACTION_CHAT_SCOPE_NOT_SUPPORTED',
+          targetExternalMessageId: String(reaction.message_id),
+        },
+        metadata: { telegramMessageReaction: reaction },
+        type: 'UNSUPPORTED',
+      };
+    return {
+      chatId: String(reaction.chat.id),
+      content: {
+        actor,
+        newReactions: inboundReactions(reaction.new_reaction),
+        occurredAt: new Date(reaction.date * 1_000).toISOString(),
+        oldReactions: inboundReactions(reaction.old_reaction),
+        targetExternalMessageId: String(reaction.message_id),
+      },
+      externalUserId: String(reaction.user.id),
+      metadata: { telegramMessageReaction: reaction },
+      type: 'REACTION',
+      user: reaction.user,
+    };
+  }
   if (update.callback_query) {
     return {
       ...(update.callback_query.message
@@ -630,6 +718,7 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
       documentMetadata: true,
       myChatMember: true,
       photoMetadata: true,
+      reaction: true,
       text: true,
       unsupported: true,
       videoMetadata: true,
@@ -679,7 +768,7 @@ export class TelegramAdapter {
   ): Promise<void> {
     await this.assertOk(
       await this.transport.request(token, 'setWebhook', {
-        allowed_updates: ['message', 'callback_query', 'my_chat_member'],
+        allowed_updates: ['message', 'callback_query', 'my_chat_member', 'message_reaction'],
         secret_token: input.secretToken,
         url: input.url,
       }),
@@ -922,12 +1011,13 @@ export class TelegramAdapter {
   ): Promise<void> {
     if (!Number.isSafeInteger(input.draftId) || input.draftId === 0)
       throw new Error('telegram_draft_id_invalid');
+    if (!input.text) return;
     await this.assertOk(
       await this.transport.request(token, 'sendMessageDraft', {
         chat_id: input.chatId,
         draft_id: input.draftId,
         ...(input.entities ? { entities: this.telegramEntities(input.entities) } : {}),
-        text: input.text ?? '',
+        text: input.text,
       }),
     );
   }

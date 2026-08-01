@@ -179,6 +179,7 @@ describe('CrmOutboxService', () => {
         .mockRejectedValue(new CrmClientError('UNKNOWN', 'crm_transport_outcome_unknown')),
       forwardInboundMessage: vi.fn(),
       forwardOutboundMessage: vi.fn(),
+      forwardReactionEvent: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -232,6 +233,7 @@ describe('CrmOutboxService', () => {
         providerReference: 'crm-message-a',
       }),
       forwardOutboundMessage: vi.fn(),
+      forwardReactionEvent: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -278,6 +280,13 @@ describe('CrmOutboxService', () => {
         id: 'outbound-message-a',
         mediaAsset: null,
         metadata: {
+          entities: [{ length: 4, offset: 0, type: 'bold' }],
+          linkPreviewOptions: { isDisabled: true },
+          messageEffectId: 'effect-known-by-caller',
+          protectContent: true,
+          quote: 'Earlier text',
+          quotePosition: 0,
+          replyToMessageId: '41',
           scenarioExecutionId: 'execution-a',
           source: 'automation',
         },
@@ -285,6 +294,7 @@ describe('CrmOutboxService', () => {
       },
       type: 'FORWARD_OUTBOUND_MESSAGE',
     });
+    database.client.message.findFirst.mockResolvedValue({ id: 'reply-message-uuid' });
     const client = {
       createOrUpdateLead: vi.fn(),
       forwardInboundMessage: vi.fn(),
@@ -293,6 +303,7 @@ describe('CrmOutboxService', () => {
         operationId: 'operation-provider-a',
         providerReference: 'crm-message-a',
       }),
+      forwardReactionEvent: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -307,14 +318,89 @@ describe('CrmOutboxService', () => {
       expect.objectContaining({
         contactId: 'contact-a',
         deliveryStatus: 'SENT',
+        entities: [{ length: 4, offset: 0, type: 'bold' }],
         inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
+        linkPreviewOptions: { isDisabled: true },
         messageId: 'outbound-message-a',
+        messageEffectId: 'effect-known-by-caller',
+        protectContent: true,
         providerMessageId: '42',
+        quote: 'Earlier text',
+        quotePosition: 0,
+        replyToMessageId: 'reply-message-uuid',
         scenarioExecutionId: 'execution-a',
         senderName: '@omnicus_test_bot',
         source: 'AUTOMATION',
         text: 'What is your budget?',
       }),
+    );
+  });
+
+  it('forwards a normalized user reaction with the Omnicus target message UUID', async () => {
+    const database = createDatabase();
+    Object.assign(database.operation, {
+      normalizedEvent: {
+        connectionId: 'connection-a',
+        inboxRecord: { rawWebhookEvent: { correlationId: 'correlation-reaction-a' } },
+        message: null,
+        payload: {
+          chatId: '123',
+          content: {
+            actor: {
+              displayName: 'Contact A',
+              externalUserId: '123',
+              type: 'user',
+            },
+            messageId: 'target-message-uuid',
+            newReactions: [{ emoji: '👍', type: 'emoji' }],
+            occurredAt: '2026-08-01T10:00:00.000Z',
+            oldReactions: [],
+            targetExternalMessageId: '42',
+          },
+          externalUserId: '123',
+          metadata: {},
+        },
+      },
+      normalizedEventId: 'normalized-reaction-a',
+      type: 'FORWARD_REACTION_EVENT',
+    });
+    const client = {
+      createOrUpdateLead: vi.fn(),
+      forwardInboundMessage: vi.fn(),
+      forwardOutboundMessage: vi.fn(),
+      forwardReactionEvent: vi.fn().mockResolvedValue({
+        mode: 'created',
+        operationId: 'provider-reaction-operation-a',
+        providerReference: 'crm-reaction-a',
+      }),
+      reconcile: vi.fn(),
+    };
+    const service = new CrmOutboxService(config as never, database as never, client);
+
+    await service.scanOnce(new Date());
+
+    expect(client.forwardReactionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correlationId: 'correlation-reaction-a',
+        projectId: 'project-a',
+      }),
+      {
+        actor: {
+          displayName: 'Contact A',
+          externalUserId: '123',
+          type: 'user',
+        },
+        contactId: 'contact-a',
+        identity: expect.objectContaining({
+          channelIdentityId: 'identity-a',
+          connectionId: 'connection-a',
+        }),
+        messageId: 'target-message-uuid',
+        newReactions: [{ emoji: '👍', type: 'emoji' }],
+        normalizedEventId: 'normalized-reaction-a',
+        occurredAt: '2026-08-01T10:00:00.000Z',
+        oldReactions: [],
+      },
     );
   });
 });

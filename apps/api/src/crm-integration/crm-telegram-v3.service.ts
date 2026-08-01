@@ -80,7 +80,7 @@ export class CrmTelegramV3Service {
         throw new NotFoundException({ code: 'CHANNEL_IDENTITY_NOT_FOUND' });
     }
     const unavailable = connection.status !== 'ACTIVE';
-    const supported = (limits?: Record<string, boolean | number | string>) => ({
+    const supported = (limits?: Record<string, unknown>) => ({
       supported: !unavailable,
       ...(unavailable ? { reasonCode: 'CONNECTION_NOT_ACTIVE' } : {}),
       ...(limits ? { limits } : {}),
@@ -94,7 +94,29 @@ export class CrmTelegramV3Service {
         },
         chatActions: supported({ ttlSeconds: 5 }),
         deleteMessage: supported({ maximumAgeHours: 48 }),
-        editMessage: supported({ maximumTextLength: 4096 }),
+        editMessage: supported({
+          editableFields: ['text', 'caption', 'entities', 'inlineKeyboard', 'linkPreviewOptions'],
+          immutableFields: [
+            'protectContent',
+            'messageEffectId',
+            'replyToMessageId',
+            'quote',
+            'quotePosition',
+          ],
+          maximumTextLength: 4096,
+          omissionSemantics: {
+            entities: 'cleared_when_text_or_caption_is_replaced_without_entities',
+            inlineKeyboard: 'preserved_when_omitted',
+            linkPreviewOptions: 'telegram_default_when_omitted',
+          },
+          preservedFields: [
+            'protectContent',
+            'messageEffectId',
+            'replyToMessageId',
+            'quote',
+            'quotePosition',
+          ],
+        }),
         explicitRetry: supported({ terminalStatus: 'FAILED', unknownRequires: 'reconciliation' }),
         externalDeletionEvents: {
           supported: false,
@@ -104,7 +126,14 @@ export class CrmTelegramV3Service {
         inlineKeyboard: supported({ maximumButtonsPerRow: 8, maximumRows: 8 }),
         linkPreviewOptions: supported({ allowedProtocols: 'http,https' }),
         mediaGroups: { supported: false, reasonCode: 'MEDIA_GROUP_NOT_RELEASED' },
-        messageEffects: supported({ privateChatsOnly: true }),
+        messageEffects: supported({
+          availableEffects: [],
+          catalogAvailable: false,
+          catalogReasonCode: 'BOT_API_EFFECT_CATALOG_UNAVAILABLE',
+          editable: false,
+          privateChatsOnly: true,
+          repeatableOnNewMessages: true,
+        }),
         botInterface: { supported: false, reasonCode: 'BOT_INTERFACE_NOT_RELEASED' },
         externalActions: { supported: false, reasonCode: 'EXTERNAL_ACTIONS_NOT_RELEASED' },
         pinMessage: supported(),
@@ -113,7 +142,8 @@ export class CrmTelegramV3Service {
         reactions: supported({ maximumBotReactions: 1, paidReactions: false }),
         userReactionEvents: {
           supported: false,
-          reasonCode: 'INBOUND_REACTION_NORMALIZATION_NOT_RELEASED',
+          reasonCode: 'CRM_REACTION_ENDPOINT_NOT_LIVE_VERIFIED',
+          limits: { contractPublished: true, privateChatsOnly: true },
         },
         scheduling: { supported: false, reasonCode: 'APPLICATION_SCHEDULER_NOT_RELEASED' },
         stickers: { supported: false, reasonCode: 'STICKER_NOT_RELEASED' },
@@ -208,12 +238,16 @@ export class CrmTelegramV3Service {
   }
 
   async draft(dto: CrmDraftDto, authenticatedProjectId?: string) {
+    if (!dto.text)
+      return {
+        accepted: false,
+        expiresAt: null,
+        reasonCode: 'EMPTY_DRAFT_IGNORED',
+      };
     const route = await this.resolveIdentity(dto, authenticatedProjectId);
     let entities: TelegramMessageEntity[] | undefined;
     try {
-      entities = dto.entities
-        ? validateTelegramMessageEntities(dto.entities, dto.text ?? '')
-        : undefined;
+      entities = dto.entities ? validateTelegramMessageEntities(dto.entities, dto.text) : undefined;
     } catch {
       throw new ConflictException({ code: 'MESSAGE_ENTITIES_INVALID' });
     }
@@ -221,7 +255,7 @@ export class CrmTelegramV3Service {
       chatId: route.externalChatId,
       draftId: dto.draftId,
       ...(entities ? { entities } : {}),
-      text: dto.text ?? '',
+      text: dto.text,
     });
     return { accepted: true, expiresAt: new Date(Date.now() + 30_000).toISOString() };
   }

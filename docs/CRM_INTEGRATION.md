@@ -104,6 +104,19 @@ Capability discovery explicitly exposes `quote`, `linkPreviewOptions` and
 `explicitRetry`; their request fields or retry path must not be used when the
 corresponding capability is absent or false.
 
+Telegram user reactions are normalized as standalone `REACTION` events and
+forwarded through a transactional CRM outbox to the versioned endpoint in
+`OMNICUS_TO_CRM_OPENAPI.yaml`. They do not create synthetic messages. A
+reaction received before its target message is available remains retryable.
+The advertised capability remains disabled until the paired CRM deployment is
+live-verified.
+
+Bot API 10.2 does not expose a bot method for discovering available message
+effects. Capability discovery therefore publishes an empty
+`availableEffects` list with `BOT_API_EFFECT_CATALOG_UNAVAILABLE`; Omnicus never
+invents effect IDs. Empty streaming draft updates are ignored because Telegram
+uses them as a Thinking placeholder, not as cancellation.
+
 Conversation automation control currently exposes only `AUTO` and `MANUAL`,
 mapped to the existing conversation override. `PAUSED` with automatic resume,
 application scheduling, albums, stickers, structured messages, reply

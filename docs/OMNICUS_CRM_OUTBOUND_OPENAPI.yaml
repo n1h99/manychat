@@ -88,6 +88,11 @@ paths:
     get:
       operationId: getCrmTelegramCapabilities
       summary: Read connection-scoped Telegram capabilities and limits
+      description: >-
+        messageEffects.limits.availableEffects is intentionally empty because Telegram Bot API
+        10.2 has no bot method for discovering effect IDs. editMessage.limits defines editable,
+        immutable, preserved, and omission semantics. userReactionEvents remains false until the
+        Omnicus-to-CRM reaction contract is live-verified end to end.
       parameters:
         - $ref: '#/components/parameters/CrmProjectId'
         - $ref: '#/components/parameters/OmnicusProjectId'
@@ -143,7 +148,11 @@ paths:
     post:
       operationId: updateCrmTelegramDraft
       summary: Update a private-chat 30-second Telegram draft preview
-      description: The preview is ephemeral and never SENT. Final content must use messages/outbound.
+      description: >-
+        The preview is ephemeral and never SENT. Empty text is ignored because Telegram interprets
+        it as a Thinking placeholder rather than cancellation. Bot API 10.2 has no explicit draft
+        cancellation call; final content must use messages/outbound and the preview expires within
+        30 seconds.
       requestBody:
         required: true
         content:
@@ -161,7 +170,7 @@ paths:
                       maxItems: 100
                       items: { $ref: '#/components/schemas/MessageEntity' }
       responses:
-        '200': { $ref: '#/components/responses/EphemeralAccepted' }
+        '200': { $ref: '#/components/responses/DraftUpdate' }
         '401': { $ref: '#/components/responses/SafeError' }
         '404': { $ref: '#/components/responses/SafeError' }
   /integrations/v1/crm/messages/{messageId}:
@@ -172,6 +181,11 @@ paths:
         schema: { type: string, format: uuid }
     patch:
       operationId: updateCrmTelegramMessage
+      description: >-
+        Only text, caption, entities, inlineKeyboard and linkPreviewOptions are editable.
+        protectContent, messageEffectId, reply/quote metadata are immutable and preserved locally.
+        Omitting inlineKeyboard preserves it; replacing text/caption without entities clears prior
+        formatting; omitted linkPreviewOptions uses Telegram edit defaults.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/CorrelationId'
@@ -717,6 +731,25 @@ components:
             properties:
               accepted: { type: boolean, const: true }
               expiresAt: { type: string, format: date-time }
+    DraftUpdate:
+      description: Draft preview accepted, or an empty placeholder was safely ignored.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required: [accepted, expiresAt]
+                properties:
+                  accepted: { type: boolean, const: true }
+                  expiresAt: { type: string, format: date-time }
+              - type: object
+                additionalProperties: false
+                required: [accepted, expiresAt, reasonCode]
+                properties:
+                  accepted: { type: boolean, const: false }
+                  expiresAt: { type: 'null' }
+                  reasonCode: { type: string, enum: [EMPTY_DRAFT_IGNORED] }
     QueuedOperationResponse:
       description: Durable operation accepted for asynchronous execution.
       content:
