@@ -320,3 +320,21 @@ Existing Telegram connections must run **Connect webhook** once after the
 reaction-event release. This re-registers the webhook with
 `message_reaction` in `allowed_updates`; rotating secrets is not required.
 New connections include this update type automatically.
+
+### Telegram stickers and media spoilers
+
+Contract 3.1.0 treats a sticker as a typed `MediaAsset` and `Message`, not as a
+document with UI-only metadata. Static WEBP is limited to 512 KiB and must have
+one 512-pixel side; animated TGS is limited to 64 KiB; video WEBM is limited to
+256 KiB. Validation rejects MIME/extension/signature mismatches before an
+outbox operation is created. Telegram remains the final validator for the full
+TGS/VP9 encoding profile.
+
+Spoilers are accepted only for PHOTO, VIDEO and ANIMATION. A safe
+`CRM_MEDIA_SPOILER_UNSUPPORTED` or `telegram_media_spoiler_not_supported` code
+indicates that the caller used another kind. Stickers never accept captions.
+Do not diagnose failures by logging file bytes, captions or provider payloads.
+
+Inbound `mediaGroupId` is grouping metadata only. `mediaGroups.supported=false`
+means CRM must not construct outbound albums; multiple independent sends do not
+have Telegram album atomicity or reconciliation semantics.

@@ -239,6 +239,12 @@ describe('Telegram outbound media references', () => {
       kind: 'ANIMATION' as const,
       mimeType: 'image/gif',
     },
+    {
+      bytes: Uint8Array.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0, 0]),
+      extension: 'tgs',
+      kind: 'STICKER' as const,
+      mimeType: 'application/x-tgsticker',
+    },
   ])('loads and validates $kind .$extension uploads from private storage', async (fixture) => {
     const internals = service() as unknown as {
       storage: {

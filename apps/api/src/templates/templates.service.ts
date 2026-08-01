@@ -27,7 +27,16 @@ import type {
 type TemplateInput = {
   caption?: string;
   inlineKeyboard?: TelegramInlineKeyboard;
-  kind: 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+  kind:
+    | 'ANIMATION'
+    | 'AUDIO'
+    | 'DOCUMENT'
+    | 'PHOTO'
+    | 'STICKER'
+    | 'TEXT'
+    | 'VIDEO'
+    | 'VIDEO_NOTE'
+    | 'VOICE';
   mediaAssetId?: string;
   text?: string;
 };
@@ -371,10 +380,10 @@ export class TemplatesService {
         code: 'MESSAGE_TEMPLATE_MEDIA_REQUIRED',
         message: 'Media template requires an asset',
       });
-    if (dto.kind === 'VIDEO_NOTE' && dto.caption)
+    if (['STICKER', 'VIDEO_NOTE'].includes(dto.kind) && dto.caption)
       throw new BadRequestException({
-        code: 'MESSAGE_TEMPLATE_VIDEO_NOTE_CAPTION_UNSUPPORTED',
-        message: 'Video note templates cannot have a caption',
+        code: 'MESSAGE_TEMPLATE_MEDIA_CAPTION_UNSUPPORTED',
+        message: 'This media template cannot have a caption',
       });
     let inlineKeyboard: TelegramInlineKeyboard | undefined;
     if (dto.inlineKeyboard !== undefined)
@@ -392,7 +401,7 @@ export class TemplatesService {
       ...(dto.kind === 'TEXT'
         ? { text: dto.text! }
         : {
-            caption: dto.caption ?? '',
+            caption: ['STICKER', 'VIDEO_NOTE'].includes(dto.kind) ? '' : (dto.caption ?? ''),
             mediaAssetId: dto.mediaAssetId!,
           }),
     };

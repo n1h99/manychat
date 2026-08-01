@@ -37,7 +37,7 @@ export interface TelegramMediaUpload {
   filename: string;
 }
 export type TelegramMediaKind =
-  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'STICKER' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
 
 export interface TelegramInlineKeyboardButton {
   callbackData?: string;
@@ -278,6 +278,8 @@ export interface TelegramMessage {
   date?: number;
   text?: string;
   caption?: string;
+  has_media_spoiler?: boolean;
+  media_group_id?: string;
   photo?: {
     file_id: string;
     file_unique_id: string;
@@ -295,6 +297,14 @@ export interface TelegramMessage {
   animation?: TelegramFileMedia & {
     duration: number;
     height: number;
+    width: number;
+  };
+  sticker?: TelegramFileMedia & {
+    emoji?: string;
+    height: number;
+    is_animated: boolean;
+    is_video: boolean;
+    set_name?: string;
     width: number;
   };
   audio?: TelegramFileMedia & {
@@ -464,6 +474,7 @@ export type TelegramInboundEventType =
   | 'MESSAGE'
   | 'PHOTO'
   | 'REACTION'
+  | 'STICKER'
   | 'UNSUPPORTED'
   | 'VIDEO'
   | 'VIDEO_NOTE'
@@ -498,6 +509,13 @@ function selectedPhoto(
   )[0]!;
 }
 
+function mediaPresentation(message: TelegramMessage): Record<string, unknown> {
+  return {
+    ...(message.has_media_spoiler === undefined ? {} : { hasSpoiler: message.has_media_spoiler }),
+    ...(message.media_group_id ? { mediaGroupId: message.media_group_id } : {}),
+  };
+}
+
 function messageEvent(message: TelegramMessage): TelegramInboundEvent {
   const metadata = { telegramMessage: message };
   const base = {
@@ -527,6 +545,7 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
         fileSize: photo.file_size ?? null,
         fileUniqueId: photo.file_unique_id,
         height: photo.height,
+        ...mediaPresentation(message),
         width: photo.width,
       },
       type: 'PHOTO',
@@ -545,10 +564,30 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
         fileSize: message.animation.file_size ?? null,
         fileUniqueId: message.animation.file_unique_id,
         height: message.animation.height,
+        ...mediaPresentation(message),
         mimeType: message.animation.mime_type ?? null,
         width: message.animation.width,
       },
       type: 'ANIMATION',
+    };
+  }
+  if (message.sticker) {
+    return {
+      ...base,
+      content: {
+        emoji: message.sticker.emoji ?? null,
+        fileId: message.sticker.file_id,
+        fileName: message.sticker.file_name ?? null,
+        fileSize: message.sticker.file_size ?? null,
+        fileUniqueId: message.sticker.file_unique_id,
+        height: message.sticker.height,
+        isAnimated: message.sticker.is_animated,
+        isVideo: message.sticker.is_video,
+        mimeType: message.sticker.mime_type ?? null,
+        setName: message.sticker.set_name ?? null,
+        width: message.sticker.width,
+      },
+      type: 'STICKER',
     };
   }
   if (message.document) {
@@ -560,6 +599,7 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
         fileName: message.document.file_name ?? null,
         fileSize: message.document.file_size ?? null,
         fileUniqueId: message.document.file_unique_id,
+        ...mediaPresentation(message),
         mimeType: message.document.mime_type ?? null,
       },
       type: 'DOCUMENT',
@@ -586,6 +626,7 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
         fileSize: value.file_size ?? null,
         fileUniqueId: value.file_unique_id,
         mimeType: value.mime_type ?? null,
+        ...mediaPresentation(message),
         ...('height' in value ? { height: value.height } : {}),
         ...('length' in value ? { length: value.length } : {}),
         ...('performer' in value ? { performer: value.performer ?? null } : {}),
@@ -719,6 +760,7 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
       myChatMember: true,
       photoMetadata: true,
       reaction: true,
+      stickerMetadata: true,
       text: true,
       unsupported: true,
       videoMetadata: true,
@@ -736,11 +778,13 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
       inlineKeyboard: true,
       linkPreviewOptions: true,
       messageEffects: true,
+      mediaSpoiler: true,
       pinMessage: true,
       protectContent: true,
       reactions: true,
       replyToMessageId: true,
       streamingDraft: true,
+      sticker: true,
       text: true,
       photo: true,
       document: true,
@@ -847,6 +891,7 @@ export class TelegramAdapter {
       inlineKeyboard?: TelegramInlineKeyboard;
       kind: TelegramMediaKind;
       media: string | TelegramMediaUpload;
+      hasSpoiler?: boolean;
       protectContent?: boolean;
       reply?: TelegramReplyOptions;
       replyToMessageId?: string;
@@ -857,19 +902,23 @@ export class TelegramAdapter {
       AUDIO: { field: 'audio', method: 'sendAudio' },
       DOCUMENT: { field: 'document', method: 'sendDocument' },
       PHOTO: { field: 'photo', method: 'sendPhoto' },
+      STICKER: { field: 'sticker', method: 'sendSticker' },
       VIDEO: { field: 'video', method: 'sendVideo' },
       VIDEO_NOTE: { field: 'video_note', method: 'sendVideoNote' },
       VOICE: { field: 'voice', method: 'sendVoice' },
     };
+    if (input.hasSpoiler && !['ANIMATION', 'PHOTO', 'VIDEO'].includes(input.kind))
+      throw new Error('telegram_media_spoiler_not_supported');
     const selected = mediaMethods[input.kind];
     const fields = {
       chat_id: input.chatId,
       disable_notification: input.disableNotification,
       ...(input.protectContent === undefined ? {} : { protect_content: input.protectContent }),
-      ...(input.kind === 'VIDEO_NOTE' || input.caption === undefined
+      ...(input.hasSpoiler ? { has_spoiler: true } : {}),
+      ...(['STICKER', 'VIDEO_NOTE'].includes(input.kind) || input.caption === undefined
         ? {}
         : { caption: input.caption }),
-      ...(input.kind === 'VIDEO_NOTE' || !input.captionEntities
+      ...(['STICKER', 'VIDEO_NOTE'].includes(input.kind) || !input.captionEntities
         ? {}
         : { caption_entities: this.telegramEntities(input.captionEntities) }),
       ...(input.inlineKeyboard

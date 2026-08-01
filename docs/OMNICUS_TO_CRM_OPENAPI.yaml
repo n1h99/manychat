@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Omnicus to CRM messaging contract
-  version: 3.0.0
+  version: 3.1.0
   description: Exact contract implemented by Omnicus for normalized Telegram inbound messages, user reactions, and confirmed outbound history.
 security:
   - serviceBearer: []
@@ -139,6 +139,7 @@ components:
             - VOICE
             - VIDEO_NOTE
             - ANIMATION
+            - STICKER
         type:
           type: string
           enum:
@@ -146,8 +147,12 @@ components:
             - file
             - audio
             - video
+            - sticker
         fileName:
           type: string
+        emoji:
+          type: string
+          description: Telegram sticker emoji when kind is STICKER and the provider supplied it.
         mimeType:
           type: string
         size:
@@ -160,6 +165,15 @@ components:
         downloadUrlExpiresAt:
           type: string
           format: date-time
+        hasSpoiler:
+          type: boolean
+          description: Original Telegram spoiler presentation flag for photo, video or animation.
+        mediaGroupId:
+          type: string
+          description: Stable Telegram media_group_id for inbound album grouping; not an outbound album operation.
+        setName:
+          type: string
+          description: Telegram sticker set name when kind is STICKER and the provider supplied it.
     Interactive:
       type: object
       additionalProperties: false
@@ -416,6 +430,9 @@ components:
           $ref: '#/components/schemas/LinkPreviewOptions'
         protectContent:
           type: boolean
+        hasSpoiler:
+          type: boolean
+          description: Outbound Telegram spoiler presentation flag for photo, video or animation.
         messageEffectId:
           type: string
           minLength: 1

@@ -21,7 +21,9 @@ describe('normalizeTelegramUpdate', () => {
       content: {
         fileId: 'large-file-id',
         fileUniqueId: 'large-unique-id',
+        hasSpoiler: true,
         height: 900,
+        mediaGroupId: 'album-1',
         width: 900,
       },
       type: 'PHOTO',
@@ -53,6 +55,17 @@ describe('normalizeTelegramUpdate', () => {
     expect(normalizeTelegramUpdate(telegramInboundFixtures.animation.payload)).toMatchObject({
       content: { fileId: 'animation-file-id', fileName: 'welcome.gif' },
       type: 'ANIMATION',
+    });
+    expect(normalizeTelegramUpdate(telegramInboundFixtures.sticker.payload)).toMatchObject({
+      content: {
+        emoji: '👋',
+        fileId: 'sticker-file-id',
+        fileUniqueId: 'sticker-unique-id',
+        isAnimated: false,
+        isVideo: false,
+        setName: 'omnicus_demo',
+      },
+      type: 'STICKER',
     });
   });
 

@@ -50,6 +50,7 @@ describe('Telegram media adapter', () => {
     ['VOICE', 'sendVoice', 'voice'],
     ['VIDEO_NOTE', 'sendVideoNote', 'video_note'],
     ['ANIMATION', 'sendAnimation', 'animation'],
+    ['STICKER', 'sendSticker', 'sticker'],
   ] as const)('sends %s using the matching Telegram method', async (kind, method, field) => {
     const mock = transport();
     mock.request.mockResolvedValue({ ok: true, result: { message_id: 42 } });
@@ -67,6 +68,50 @@ describe('Telegram media adapter', () => {
       method,
       expect.objectContaining({ [field]: 'provider-file-id', chat_id: '100' }),
     );
+  });
+
+  it('does not send captions for stickers and forwards supported media spoilers', async () => {
+    const mock = transport();
+    mock.request.mockResolvedValue({ ok: true, result: { message_id: 45 } });
+    const adapter = new TelegramAdapter(mock);
+
+    await adapter.sendMedia('token', {
+      caption: 'must not be sent',
+      chatId: '100',
+      kind: 'STICKER',
+      media: 'sticker-file-id',
+    });
+    expect(mock.request).toHaveBeenLastCalledWith('token', 'sendSticker', {
+      chat_id: '100',
+      disable_notification: undefined,
+      sticker: 'sticker-file-id',
+    });
+
+    await adapter.sendMedia('token', {
+      chatId: '100',
+      hasSpoiler: true,
+      kind: 'PHOTO',
+      media: 'photo-file-id',
+    });
+    expect(mock.request).toHaveBeenLastCalledWith(
+      'token',
+      'sendPhoto',
+      expect.objectContaining({ has_spoiler: true, photo: 'photo-file-id' }),
+    );
+  });
+
+  it('rejects spoilers for unsupported media before calling Telegram', async () => {
+    const mock = transport();
+
+    await expect(
+      new TelegramAdapter(mock).sendMedia('token', {
+        chatId: '100',
+        hasSpoiler: true,
+        kind: 'DOCUMENT',
+        media: 'document-file-id',
+      }),
+    ).rejects.toThrow('telegram_media_spoiler_not_supported');
+    expect(mock.request).not.toHaveBeenCalled();
   });
 
   it('uses Telegram reply parameters and validates inline callback buttons', async () => {

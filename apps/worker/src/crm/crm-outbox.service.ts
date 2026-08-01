@@ -329,6 +329,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           deliveryStatus: 'SENT',
           identity,
           ...(entities ? { entities } : {}),
+          ...(metadata?.hasSpoiler === true ? { hasSpoiler: true } : {}),
           ...(inlineKeyboard ? { inlineKeyboard } : {}),
           ...(linkPreviewOptions ? { linkPreviewOptions } : {}),
           ...(await this.media(operation.projectId, connectionId, message.mediaAsset)),
@@ -781,6 +782,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       current.providerMediaId
     )
       current = await this.materializeTelegramMedia(projectId, connectionId, current);
+    const providerMetadata = this.jsonRecord(current.providerMetadata);
     const size =
       current.sizeBytes !== null && current.sizeBytes <= BigInt(Number.MAX_SAFE_INTEGER)
         ? Number(current.sizeBytes)
@@ -806,15 +808,25 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           ? { mimeType: current.detectedMimeType ?? current.declaredMimeType! }
           : {}),
         ...(size === undefined ? {} : { size }),
+        ...(typeof providerMetadata?.emoji === 'string' ? { emoji: providerMetadata.emoji } : {}),
+        ...(providerMetadata?.hasSpoiler === true ? { hasSpoiler: true } : {}),
+        ...(typeof providerMetadata?.mediaGroupId === 'string'
+          ? { mediaGroupId: providerMetadata.mediaGroupId }
+          : {}),
+        ...(typeof providerMetadata?.setName === 'string'
+          ? { setName: providerMetadata.setName }
+          : {}),
         kind: current.kind as CrmMediaInput['kind'],
         type:
           current.kind === 'PHOTO'
             ? 'image'
-            : ['AUDIO', 'VOICE'].includes(current.kind)
-              ? 'audio'
-              : ['ANIMATION', 'VIDEO', 'VIDEO_NOTE'].includes(current.kind)
-                ? 'video'
-                : 'file',
+            : current.kind === 'STICKER'
+              ? 'sticker'
+              : ['AUDIO', 'VOICE'].includes(current.kind)
+                ? 'audio'
+                : ['ANIMATION', 'VIDEO', 'VIDEO_NOTE'].includes(current.kind)
+                  ? 'video'
+                  : 'file',
       },
     };
   }

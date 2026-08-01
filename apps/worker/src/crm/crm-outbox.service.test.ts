@@ -71,6 +71,44 @@ const config = {
 };
 
 describe('CrmOutboxService', () => {
+  it('forwards optional sticker emoji and set metadata without provider payloads', async () => {
+    const service = new CrmOutboxService(
+      config as never,
+      { client: {} } as never,
+      new MockCrmClient(),
+    ) as unknown as {
+      media(
+        projectId: string,
+        connectionId: string,
+        asset: Record<string, unknown>,
+      ): Promise<{ media: Record<string, unknown> }>;
+    };
+
+    await expect(
+      service.media('project-a', 'connection-a', {
+        bucketKey: null,
+        connectionId: 'connection-a',
+        declaredMimeType: 'image/webp',
+        detectedMimeType: null,
+        extension: 'webp',
+        id: 'asset-a',
+        kind: 'STICKER',
+        originalFilename: null,
+        providerMediaId: 'provider-file-a',
+        providerMetadata: { emoji: '👋', setName: 'omnicus_demo' },
+        sizeBytes: 1024n,
+        status: 'AVAILABLE',
+      }),
+    ).resolves.toEqual({
+      media: expect.objectContaining({
+        emoji: '👋',
+        kind: 'STICKER',
+        setName: 'omnicus_demo',
+        type: 'sticker',
+      }),
+    });
+  });
+
   it('backfills an earlier sent automation message with a stable CRM intent', async () => {
     const transaction = {
       crmOperation: {

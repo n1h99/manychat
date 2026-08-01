@@ -124,7 +124,16 @@ export class CrmIntegrationController {
         crmProjectId: { type: 'string' },
         file: { format: 'binary', type: 'string' },
         kind: {
-          enum: ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'],
+          enum: [
+            'PHOTO',
+            'DOCUMENT',
+            'VIDEO',
+            'AUDIO',
+            'VOICE',
+            'VIDEO_NOTE',
+            'ANIMATION',
+            'STICKER',
+          ],
           type: 'string',
         },
         omnicusProjectId: { type: 'string' },

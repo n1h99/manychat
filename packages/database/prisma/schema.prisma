@@ -136,6 +136,7 @@ enum NormalizedEventType {
   VOICE
   VIDEO_NOTE
   ANIMATION
+  STICKER
   CALLBACK_QUERY
   REACTION
   CHAT_MEMBER
@@ -167,6 +168,7 @@ enum MessageType {
   VOICE
   VIDEO_NOTE
   ANIMATION
+  STICKER
   CALLBACK_QUERY
   SYSTEM
   UNSUPPORTED
@@ -216,6 +218,7 @@ enum MessageTemplateKind {
   VOICE
   VIDEO_NOTE
   ANIMATION
+  STICKER
 }
 
 enum BroadcastStatus {

@@ -8,7 +8,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 
 export type MediaKind =
-  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'STICKER' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
 
 export interface MediaStorageConfiguration {
   accessKeyId: string;
@@ -106,6 +106,9 @@ interface ImageDimensions {
 const TELEGRAM_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 const TELEGRAM_PHOTO_MAX_DIMENSION_SUM = 10_000;
 const TELEGRAM_PHOTO_MAX_ASPECT_RATIO = 20;
+const TELEGRAM_STATIC_STICKER_MAX_BYTES = 512 * 1024;
+const TELEGRAM_ANIMATED_STICKER_MAX_BYTES = 64 * 1024;
+const TELEGRAM_VIDEO_STICKER_MAX_BYTES = 256 * 1024;
 const MAXIMUM_IMAGE_INPUT_PIXELS = 100_000_000;
 
 function readBigEndian16(bytes: Uint8Array, offset: number): number {
@@ -229,11 +232,26 @@ const signatures = [
   },
   {
     extension: 'webp',
-    kinds: new Set<MediaKind>(['DOCUMENT', 'PHOTO']),
+    kinds: new Set<MediaKind>(['DOCUMENT', 'PHOTO', 'STICKER']),
     mimeType: 'image/webp',
     matches: (bytes: Uint8Array) =>
       [0x52, 0x49, 0x46, 0x46].every((value, index) => bytes[index] === value) &&
       [0x57, 0x45, 0x42, 0x50].every((value, index) => bytes[index + 8] === value),
+  },
+  {
+    extension: 'tgs',
+    kinds: new Set<MediaKind>(['STICKER']),
+    mimeType: 'application/x-tgsticker',
+    matches: (bytes: Uint8Array) =>
+      bytes.byteLength >= 10 && bytes[0] === 0x1f && bytes[1] === 0x8b && bytes[2] === 0x08,
+  },
+  {
+    extension: 'webm',
+    kinds: new Set<MediaKind>(['STICKER']),
+    mimeType: 'video/webm',
+    matches: (bytes: Uint8Array) =>
+      bytes.byteLength >= 4 &&
+      [0x1a, 0x45, 0xdf, 0xa3].every((value, index) => bytes[index] === value),
   },
   {
     extension: 'pdf',
@@ -315,8 +333,15 @@ function validateMediaIdentity(input: MediaValidationInput): DetectedMedia {
     (candidate) => candidate.kinds.has(input.kind) && candidate.matches(input.bytes),
   );
   if (!signature) throw new MediaValidationError('media_type_rejected');
-  if (input.declaredMimeType && input.declaredMimeType !== signature.mimeType)
-    throw new MediaValidationError('media_mime_mismatch');
+  if (input.declaredMimeType && input.declaredMimeType !== signature.mimeType) {
+    const isGenericBinary =
+      input.kind === 'STICKER' && input.declaredMimeType === 'application/octet-stream';
+    const isTelegramStickerGzip =
+      signature.mimeType === 'application/x-tgsticker' &&
+      ['application/gzip', 'application/x-gzip'].includes(input.declaredMimeType);
+    if (!isGenericBinary && !isTelegramStickerGzip)
+      throw new MediaValidationError('media_mime_mismatch');
+  }
   const filenameExtension = input.filename?.split('.').pop()?.toLowerCase();
   if (
     filenameExtension &&
@@ -366,8 +391,28 @@ function validateDocumentStructure(bytes: Uint8Array, mimeType: string): void {
 export function validateMedia(input: MediaValidationInput): ValidatedMedia {
   const signature = validateMediaIdentity(input);
   if (input.kind === 'DOCUMENT') validateDocumentStructure(input.bytes, signature.mimeType);
-  const dimensions =
-    input.kind === 'PHOTO' ? validateTelegramPhoto(input.bytes, signature.mimeType) : undefined;
+  let dimensions: ImageDimensions | undefined;
+  if (input.kind === 'PHOTO') dimensions = validateTelegramPhoto(input.bytes, signature.mimeType);
+  if (input.kind === 'STICKER') {
+    if (
+      (signature.mimeType === 'image/webp' &&
+        input.bytes.byteLength > TELEGRAM_STATIC_STICKER_MAX_BYTES) ||
+      (signature.mimeType === 'application/x-tgsticker' &&
+        input.bytes.byteLength > TELEGRAM_ANIMATED_STICKER_MAX_BYTES) ||
+      (signature.mimeType === 'video/webm' &&
+        input.bytes.byteLength > TELEGRAM_VIDEO_STICKER_MAX_BYTES)
+    )
+      throw new MediaValidationError('media_sticker_size_exceeded');
+    if (signature.mimeType === 'image/webp') {
+      dimensions = webpDimensions(input.bytes);
+      if (
+        !dimensions ||
+        Math.max(dimensions.width, dimensions.height) !== 512 ||
+        Math.min(dimensions.width, dimensions.height) < 1
+      )
+        throw new MediaValidationError('media_sticker_dimensions_rejected');
+    }
+  }
   return {
     extension: signature.extension,
     ...(dimensions ? { height: dimensions.height } : {}),

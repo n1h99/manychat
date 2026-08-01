@@ -9,10 +9,10 @@ Authoritative provider reference: Telegram Bot API 10.2, reviewed on
 2026-08-01 at `https://core.telegram.org/bots/api` and
 `https://core.telegram.org/bots/api-changelog`.
 
-## Released in contract 3.0.0
+## Released in contracts 3.0.0 and 3.1.0
 
 The authoritative CRM-to-Omnicus contract is
-`OMNICUS_CRM_OUTBOUND_OPENAPI.yaml` 3.0.0.
+`OMNICUS_CRM_OUTBOUND_OPENAPI.yaml` 3.1.0.
 
 | Gap | Released behavior                                                                                                 |
 | --- | ----------------------------------------------------------------------------------------------------------------- |
@@ -25,6 +25,7 @@ The authoritative CRM-to-Omnicus contract is
 | G12 | Explicit idempotent retry of terminal FAILED; UNKNOWN is rejected                                                 |
 | G14 | Durable pin/unpin                                                                                                 |
 | G15 | Private-chat 30-second `sendMessageDraft` preview updates                                                         |
+| G03 | Static, animated and video stickers; media spoilers for photo, video and animation                                |
 
 The capability response explicitly publishes `quote`, `linkPreviewOptions`
 and `explicitRetry`. CRM must gate these features by those keys rather than
@@ -56,11 +57,19 @@ OutboxRecord and are never represented as delivered content.
 - Telegram's scheduled-message API is not a Bot API facility. Omnicus will
   expose scheduling only after its own delayed-outbox lifecycle is implemented.
 
-## Still disabled in 3.0.0
+Contract 3.1.0 adds `STICKER` as a first-class media kind. Static WEBP,
+animated TGS and video WEBM uploads are checked against format-specific size
+limits before Telegram is called. Stickers never accept captions. Inbound
+photo, video and animation events preserve `hasSpoiler`; inbound media also
+preserves `mediaGroupId` so CRM can group existing Telegram albums without
+mistaking that metadata for an outbound album operation.
+
+## Still disabled in 3.1.0
 
 Capability discovery returns `supported=false` with a stable reason code for:
 
-- G03 media groups and stickers;
+- G03 outbound media groups; a correct album is one durable aggregate returning
+  2-10 provider messages and is not emulated with independent sends;
 - G05 inbound user-reaction advertisement remains disabled until the published
   Omnicus-to-CRM reaction endpoint passes live E2E; normalization, persistence
   and transactional delivery are implemented;

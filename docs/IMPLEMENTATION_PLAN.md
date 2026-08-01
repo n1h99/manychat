@@ -519,10 +519,15 @@ durable edit/delete/reaction/pin operations, explicit retry of terminal failed
 operations, rich text entities, quote/link-preview/protect-content options,
 ephemeral chat actions, ephemeral streaming drafts and conversation-level
 AUTO/MANUAL automation control. All durable changes reuse the Telegram outbox;
-ephemeral signals never create messages. Scheduling, albums, stickers,
+ephemeral signals never create messages. Scheduling, albums,
 structured location/contact/poll messages, reply keyboards, bot-interface
 configuration, paused auto-resume and rich-message blocks remain disabled in
 the capability response until their persistence and contracts are implemented.
+
+The next provider increment adds first-class Telegram stickers (WEBP, TGS and
+WEBM) plus spoiler presentation for photo, video and animation. Inbound album
+membership is normalized as `mediaGroupId`, while outbound albums stay disabled
+until a durable multi-message aggregate and reconciliation model is released.
 
 The provider follow-up adds transactional normalization and CRM outbox delivery
 for private-chat Telegram user reaction events, but keeps the advertised

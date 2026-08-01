@@ -345,13 +345,37 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
 
   private messageType(
     content: unknown,
-  ): 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE' {
+  ):
+    | 'ANIMATION'
+    | 'AUDIO'
+    | 'DOCUMENT'
+    | 'PHOTO'
+    | 'STICKER'
+    | 'TEXT'
+    | 'VIDEO'
+    | 'VIDEO_NOTE'
+    | 'VOICE' {
     if (!content || typeof content !== 'object' || Array.isArray(content)) return 'TEXT';
     const kind = (content as Record<string, Prisma.JsonValue>).kind;
-    return ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'].includes(
-      String(kind),
-    )
-      ? (kind as 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE')
+    return [
+      'PHOTO',
+      'DOCUMENT',
+      'VIDEO',
+      'AUDIO',
+      'VOICE',
+      'VIDEO_NOTE',
+      'ANIMATION',
+      'STICKER',
+    ].includes(String(kind))
+      ? (kind as
+          | 'ANIMATION'
+          | 'AUDIO'
+          | 'DOCUMENT'
+          | 'PHOTO'
+          | 'STICKER'
+          | 'VIDEO'
+          | 'VIDEO_NOTE'
+          | 'VOICE')
       : 'TEXT';
   }
 

@@ -1280,6 +1280,14 @@ tenant-safe `(projectId, mediaAssetId)` foreign key. Inline keyboard and reply
 configuration remains validated JSON in immutable template content/message
 metadata; credentials, signed URLs and raw provider responses are never stored.
 
+Migration `20260801000200_telegram_sticker_media` additionally adds `STICKER`
+to `NormalizedEventType`, `MessageType`, and `MessageTemplateKind`. A sticker
+continues to use one `Message` and one optional `MediaAsset`; its provider
+`file_id` remains scoped to the owning connection. Static WEBP, animated TGS,
+and video WEBM uploads are distinguished by detected MIME type and extension.
+Media spoiler state is stored as a boolean in safe message metadata because it
+changes presentation rather than relational identity.
+
 Callback acknowledgement uses an `OutboxRecord` with `kind=TELEGRAM` and an
 action-discriminated JSON payload containing only the internal connection and
 Telegram callback query identifier. The stable

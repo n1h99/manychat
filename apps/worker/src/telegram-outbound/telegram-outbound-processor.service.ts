@@ -212,6 +212,7 @@ export class TelegramOutboundProcessorService
       const metadata = message.metadata as {
         disableNotification?: boolean;
         entities?: TelegramMessageEntity[];
+        hasSpoiler?: boolean;
         inlineKeyboard?: TelegramInlineKeyboard;
         linkPreviewOptions?: TelegramLinkPreviewOptions;
         messageEffectId?: string;
@@ -246,9 +247,16 @@ export class TelegramOutboundProcessorService
       };
       let sent: { messageId: string };
       if (
-        ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'].includes(
-          message.type,
-        ) &&
+        [
+          'PHOTO',
+          'DOCUMENT',
+          'VIDEO',
+          'AUDIO',
+          'VOICE',
+          'VIDEO_NOTE',
+          'ANIMATION',
+          'STICKER',
+        ].includes(message.type) &&
         message.mediaAsset
       ) {
         try {
@@ -256,6 +264,7 @@ export class TelegramOutboundProcessorService
             ...sendOptions,
             ...(content.caption ? { caption: content.caption } : {}),
             ...(metadata?.entities ? { captionEntities: metadata.entities } : {}),
+            ...(metadata?.hasSpoiler ? { hasSpoiler: true } : {}),
             kind: message.type as TelegramMediaKind,
             media: await this.mediaReference(
               message.mediaAsset,

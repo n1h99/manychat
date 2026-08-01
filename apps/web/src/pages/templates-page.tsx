@@ -234,6 +234,7 @@ export function TemplatesPage() {
                 { label: 'Voice message', value: 'VOICE' },
                 { label: 'Video note', value: 'VIDEO_NOTE' },
                 { label: 'Animation', value: 'ANIMATION' },
+                { label: 'Sticker', value: 'STICKER' },
               ]}
             />
           </Form.Item>
@@ -253,7 +254,7 @@ export function TemplatesPage() {
                     }))}
                 />
               </Form.Item>
-              {kind === 'VIDEO_NOTE' ? null : (
+              {kind === 'VIDEO_NOTE' || kind === 'STICKER' ? null : (
                 <Form.Item label="Caption" name="caption">
                   <Input.TextArea maxLength={1024} rows={4} />
                 </Form.Item>

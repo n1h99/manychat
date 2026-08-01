@@ -81,6 +81,19 @@ export class CrmOutboundService {
     correlationId: string,
     authenticatedProjectId?: string,
   ): Promise<CrmOutboundQueuedResult> {
+    if (
+      dto.media?.kind === 'STICKER' &&
+      (dto.text !== undefined || dto.entities !== undefined || dto.linkPreviewOptions !== undefined)
+    )
+      throw new ConflictException({
+        code: 'CRM_STICKER_CAPTION_UNSUPPORTED',
+        message: 'Sticker messages cannot have a caption',
+      });
+    if (dto.hasSpoiler && !['ANIMATION', 'PHOTO', 'VIDEO'].includes(dto.media?.kind ?? ''))
+      throw new ConflictException({
+        code: 'CRM_MEDIA_SPOILER_UNSUPPORTED',
+        message: 'Media spoiler is unavailable for this media kind',
+      });
     const project = await this.database.client.project.findUnique({
       include: { crmConfig: true },
       where: { id: dto.omnicusProjectId },
@@ -245,7 +258,9 @@ export class CrmOutboundService {
             contactId: identity.contactId,
             content: (mediaAsset
               ? {
-                  caption: dto.media?.kind === 'VIDEO_NOTE' ? '' : (dto.text ?? ''),
+                  caption: ['STICKER', 'VIDEO_NOTE'].includes(dto.media?.kind ?? '')
+                    ? ''
+                    : (dto.text ?? ''),
                   ...(inlineKeyboard ? { inlineKeyboard } : {}),
                 }
               : {
@@ -258,6 +273,7 @@ export class CrmOutboundService {
             metadata: {
               disableNotification: dto.disableNotification ?? false,
               ...(entities ? { entities } : {}),
+              ...(dto.hasSpoiler ? { hasSpoiler: true } : {}),
               ...(inlineKeyboard ? { inlineKeyboard } : {}),
               ...(linkPreviewOptions ? { linkPreviewOptions } : {}),
               ...(dto.messageEffectId ? { messageEffectId: dto.messageEffectId } : {}),

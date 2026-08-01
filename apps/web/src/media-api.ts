@@ -15,7 +15,7 @@ export interface MediaAsset {
 }
 
 export type MediaKind =
-  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'STICKER' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
 
 export function useMediaAssets(projectId?: string) {
   const { accessToken } = useAuth();

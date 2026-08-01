@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CrmOutboundService } from './crm-outbound.service';
@@ -16,13 +16,15 @@ const dto: CrmOutboundMessageDto = {
   text: 'Safe outbound text',
 };
 
-function database(options: { existing?: boolean; projectId?: string } = {}) {
+function database(options: { existing?: boolean; mediaKind?: string; projectId?: string } = {}) {
   const projectId = options.projectId ?? 'project-a';
   const transaction = {
     auditLog: { create: vi.fn() },
     conversation: { upsert: vi.fn().mockResolvedValue({ id: 'conversation-a' }) },
     idempotencyRecord: { create: vi.fn() },
-    mediaAsset: { findFirst: vi.fn().mockResolvedValue({ id: 'asset-a', kind: 'VOICE' }) },
+    mediaAsset: {
+      findFirst: vi.fn().mockResolvedValue({ id: 'asset-a', kind: options.mediaKind ?? 'VOICE' }),
+    },
     message: {
       create: vi.fn().mockResolvedValue({ id: 'message-a' }),
       findFirst: vi.fn().mockResolvedValue({ externalMessageId: 'telegram-message-42' }),
@@ -179,6 +181,84 @@ describe('CrmOutboundService', () => {
         }),
       }),
     );
+  });
+
+  it('queues a captionless sticker and persists supported media spoiler metadata', async () => {
+    const stickerDatabase = database({ mediaKind: 'STICKER' });
+    const stickerService = new CrmOutboundService(
+      stickerDatabase as never,
+      { enqueue: vi.fn() } as never,
+    );
+    await stickerService.queue(
+      {
+        crmProjectId: dto.crmProjectId,
+        identity: dto.identity,
+        media: { kind: 'STICKER', mediaAssetId: 'asset-a' },
+        omnicusContactId: dto.omnicusContactId,
+        omnicusProjectId: dto.omnicusProjectId,
+      },
+      'crm-sticker-request-a',
+      'correlation-a',
+    );
+    expect(stickerDatabase.transaction.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: { caption: '' }, type: 'STICKER' }),
+      }),
+    );
+
+    const photoDatabase = database({ mediaKind: 'PHOTO' });
+    await new CrmOutboundService(photoDatabase as never, { enqueue: vi.fn() } as never).queue(
+      {
+        crmProjectId: dto.crmProjectId,
+        hasSpoiler: true,
+        identity: dto.identity,
+        media: { kind: 'PHOTO', mediaAssetId: 'asset-a' },
+        omnicusContactId: dto.omnicusContactId,
+        omnicusProjectId: dto.omnicusProjectId,
+      },
+      'crm-spoiler-request-a',
+      'correlation-a',
+    );
+    expect(photoDatabase.transaction.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ metadata: expect.objectContaining({ hasSpoiler: true }) }),
+      }),
+    );
+  });
+
+  it('rejects sticker captions and unsupported spoiler kinds before database writes', async () => {
+    const db = database({ mediaKind: 'STICKER' });
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await expect(
+      service.queue(
+        {
+          crmProjectId: dto.crmProjectId,
+          identity: dto.identity,
+          media: { kind: 'STICKER', mediaAssetId: 'asset-a' },
+          omnicusContactId: dto.omnicusContactId,
+          omnicusProjectId: dto.omnicusProjectId,
+          text: 'unsupported caption',
+        },
+        'crm-invalid-sticker',
+        'correlation-a',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.queue(
+        {
+          crmProjectId: dto.crmProjectId,
+          hasSpoiler: true,
+          identity: dto.identity,
+          media: { kind: 'STICKER', mediaAssetId: 'asset-a' },
+          omnicusContactId: dto.omnicusContactId,
+          omnicusProjectId: dto.omnicusProjectId,
+        },
+        'crm-invalid-spoiler',
+        'correlation-a',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(db.transaction.message.create).not.toHaveBeenCalled();
   });
 
   it('reconciles a confirmed sent message without exposing outbox payload', async () => {

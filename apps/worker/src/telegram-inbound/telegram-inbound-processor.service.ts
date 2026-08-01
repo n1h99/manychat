@@ -82,6 +82,7 @@ function messageTypeFor(
   | 'COMMAND'
   | 'DOCUMENT'
   | 'PHOTO'
+  | 'STICKER'
   | 'TEXT'
   | 'VIDEO'
   | 'VIDEO_NOTE'
@@ -92,6 +93,7 @@ function messageTypeFor(
     case 'COMMAND':
     case 'DOCUMENT':
     case 'PHOTO':
+    case 'STICKER':
     case 'CALLBACK_QUERY':
     case 'VIDEO':
     case 'AUDIO':
@@ -306,6 +308,7 @@ export class TelegramInboundProcessorService
           'VOICE',
           'VIDEO_NOTE',
           'ANIMATION',
+          'STICKER',
           'CALLBACK_QUERY',
         ].includes(event.type)
       ) {
@@ -351,9 +354,16 @@ export class TelegramInboundProcessorService
           },
         });
         if (
-          ['PHOTO', 'DOCUMENT', 'VIDEO', 'AUDIO', 'VOICE', 'VIDEO_NOTE', 'ANIMATION'].includes(
-            event.type,
-          )
+          [
+            'PHOTO',
+            'DOCUMENT',
+            'VIDEO',
+            'AUDIO',
+            'VOICE',
+            'VIDEO_NOTE',
+            'ANIMATION',
+            'STICKER',
+          ].includes(event.type)
         ) {
           const providerMediaId =
             typeof event.content.fileId === 'string' ? event.content.fileId : undefined;
@@ -364,7 +374,14 @@ export class TelegramInboundProcessorService
                 declaredMimeType:
                   typeof event.content.mimeType === 'string' ? event.content.mimeType : null,
                 kind: event.type as
-                  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE',
+                  | 'ANIMATION'
+                  | 'AUDIO'
+                  | 'DOCUMENT'
+                  | 'PHOTO'
+                  | 'STICKER'
+                  | 'VIDEO'
+                  | 'VIDEO_NOTE'
+                  | 'VOICE',
                 originalFilename:
                   typeof event.content.fileName === 'string' ? event.content.fileName : null,
                 projectId: claimed.projectId,

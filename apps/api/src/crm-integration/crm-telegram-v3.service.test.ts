@@ -105,6 +105,10 @@ describe('CrmTelegramV3Service', () => {
         },
         explicitRetry: { supported: true },
         linkPreviewOptions: { supported: true },
+        mediaSpoilers: {
+          limits: { mediaKinds: ['ANIMATION', 'PHOTO', 'VIDEO'] },
+          supported: true,
+        },
         messageEffects: {
           limits: expect.objectContaining({
             availableEffects: [],
@@ -117,13 +121,20 @@ describe('CrmTelegramV3Service', () => {
         quote: { supported: true },
         reactions: { supported: true },
         scheduling: { supported: false },
+        stickers: {
+          limits: expect.objectContaining({
+            captions: false,
+            formats: ['TGS', 'WEBM', 'WEBP'],
+          }),
+          supported: true,
+        },
         streamingDraft: { supported: true },
         userReactionEvents: {
           reasonCode: 'CRM_REACTION_ENDPOINT_NOT_LIVE_VERIFIED',
           supported: false,
         },
       },
-      contractVersion: '3.0.0',
+      contractVersion: '3.1.0',
       telegramBotApiVersion: '10.2',
     });
   });

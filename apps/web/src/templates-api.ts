@@ -4,7 +4,15 @@ import { apiRequest } from './api';
 import { useAuth } from './auth';
 
 export type TemplateKind =
-  'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'TEXT' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+  | 'ANIMATION'
+  | 'AUDIO'
+  | 'DOCUMENT'
+  | 'PHOTO'
+  | 'STICKER'
+  | 'TEXT'
+  | 'VIDEO'
+  | 'VIDEO_NOTE'
+  | 'VOICE';
 export interface TelegramInlineKeyboardButton {
   callbackData?: string;
   text: string;

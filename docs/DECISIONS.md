@@ -912,3 +912,31 @@ cross project or connection boundaries. Capability discovery remains honest
 when Telegram exposes a send feature but withholds catalog discovery. CRM can
 render explicit edit semantics without attempting unsupported mutations or
 creating a lingering “…” preview during draft cleanup.
+
+## ADR-041: Telegram stickers are typed media; albums require a separate aggregate
+
+**Status:** Accepted, 2026-08-01.
+
+**Context:** The remaining Chat v3 media scope includes stickers, spoiler
+presentation, and media albums. Telegram Bot API 10.2 sends a sticker as one
+message, while `sendMediaGroup` returns two to ten distinct messages. Treating
+an album as repeated independent sends would lose its atomic provider result,
+shared caption semantics, and stable relationship between the logical request
+and every provider message ID.
+
+**Decision:** `STICKER` is added to the existing typed `Message`/`MediaAsset`
+pipeline. Uploaded sticker bytes are signature-checked and constrained to the
+documented WEBP, TGS, or WEBM format limits before private storage. Provider
+`file_id` reuse remains restricted to the owning connection. Stickers do not
+accept captions. `hasSpoiler` is allowed only for photo, video, and animation
+messages and is persisted as safe outbound metadata.
+
+Media albums will use a dedicated aggregate and versioned endpoint in the next
+slice. Until that aggregate has transactional persistence, an array of uploads
+must not be implemented as several ordinary outbound calls and the
+`mediaGroups` capability remains disabled.
+
+**Consequences:** Sticker delivery inherits the ordinary durable outbox,
+lease, retry, `UNKNOWN`, recovery, and CRM history guarantees. Spoilers do not
+change media identity. Albums remain honestly capability-gated rather than
+claiming provider atomicity that PostgreSQL does not represent.

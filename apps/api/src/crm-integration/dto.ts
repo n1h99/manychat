@@ -39,6 +39,7 @@ const crmOutboundMediaKinds = [
   'VOICE',
   'VIDEO_NOTE',
   'ANIMATION',
+  'STICKER',
 ] as const;
 
 export class CrmOutboundMediaDto {
@@ -105,6 +106,11 @@ export class CrmOutboundMessageDto {
   @Type(() => CrmOutboundMediaDto)
   @ValidateNested()
   media?: CrmOutboundMediaDto;
+
+  @ApiPropertyOptional({ type: Boolean })
+  @IsOptional()
+  @IsBoolean()
+  hasSpoiler?: boolean;
 
   @ApiPropertyOptional({
     description: 'Rows of provider-independent Telegram inline keyboard buttons',

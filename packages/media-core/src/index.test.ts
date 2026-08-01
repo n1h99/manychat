@@ -38,6 +38,18 @@ describe('media validation', () => {
       0x00,
     ]);
 
+  const webp = (width: number, height: number) => {
+    const bytes = new Uint8Array(30);
+    bytes.set([0x52, 0x49, 0x46, 0x46], 0);
+    bytes.set([0x57, 0x45, 0x42, 0x50], 8);
+    bytes.set([0x56, 0x50, 0x38, 0x58], 12);
+    const storedWidth = width - 1;
+    const storedHeight = height - 1;
+    bytes.set([storedWidth & 0xff, (storedWidth >> 8) & 0xff, (storedWidth >> 16) & 0xff], 24);
+    bytes.set([storedHeight & 0xff, (storedHeight >> 8) & 0xff, (storedHeight >> 16) & 0xff], 27);
+    return bytes;
+  };
+
   it('accepts a matching JPEG photo', () => {
     expect(
       validateMedia({
@@ -213,6 +225,51 @@ describe('media validation', () => {
         maximumBytes: 100,
       }),
     ).toThrow(MediaValidationError);
+  });
+
+  it.each([
+    ['static', 'sticker.webp', 'image/webp', webp(512, 384)],
+    [
+      'animated',
+      'sticker.tgs',
+      'application/x-tgsticker',
+      Uint8Array.from([0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 0]),
+    ],
+    ['video', 'sticker.webm', 'video/webm', Uint8Array.from([0x1a, 0x45, 0xdf, 0xa3])],
+  ] as const)('accepts a signature-validated %s sticker', (_format, filename, mime, bytes) => {
+    expect(
+      validateMedia({
+        bytes,
+        declaredMimeType: mime,
+        filename,
+        kind: 'STICKER',
+        maximumBytes: 600 * 1024,
+      }),
+    ).toMatchObject({ mimeType: mime });
+  });
+
+  it('accepts browser-generic MIME for a signature-verified TGS sticker', () => {
+    expect(
+      validateMedia({
+        bytes: Uint8Array.from([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0, 0]),
+        declaredMimeType: 'application/octet-stream',
+        filename: 'animated.tgs',
+        kind: 'STICKER',
+        maximumBytes: 100,
+      }),
+    ).toMatchObject({ extension: 'tgs', mimeType: 'application/x-tgsticker' });
+  });
+
+  it('rejects a static sticker without a 512-pixel side', () => {
+    expect(() =>
+      validateMedia({
+        bytes: webp(400, 400),
+        declaredMimeType: 'image/webp',
+        filename: 'sticker.webp',
+        kind: 'STICKER',
+        maximumBytes: 600 * 1024,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'media_sticker_dimensions_rejected' }));
   });
 
   it('accepts complete PDF and empty ZIP documents without transforming them', async () => {

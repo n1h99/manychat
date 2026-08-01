@@ -59,7 +59,18 @@ export class MediaController {
     file: { buffer: Buffer; mimetype: string; originalname: string; size: number } | undefined,
     @Req() request: AuthenticatedRequest,
   ) {
-    if (!['ANIMATION', 'AUDIO', 'DOCUMENT', 'PHOTO', 'VIDEO', 'VIDEO_NOTE', 'VOICE'].includes(kind))
+    if (
+      ![
+        'ANIMATION',
+        'AUDIO',
+        'DOCUMENT',
+        'PHOTO',
+        'STICKER',
+        'VIDEO',
+        'VIDEO_NOTE',
+        'VOICE',
+      ].includes(kind)
+    )
       throw new BadRequestException({
         code: 'MEDIA_KIND_INVALID',
         message: 'Media kind is invalid',

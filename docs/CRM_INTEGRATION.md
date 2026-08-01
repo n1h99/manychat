@@ -119,9 +119,14 @@ uses them as a Thinking placeholder, not as cancellation.
 
 Conversation automation control currently exposes only `AUTO` and `MANUAL`,
 mapped to the existing conversation override. `PAUSED` with automatic resume,
-application scheduling, albums, stickers, structured messages, reply
+application scheduling, albums, structured messages, reply
 keyboards, bot-interface configuration and rich-message blocks remain
 machine-readably unsupported; CRM must keep those controls disabled.
+
+Contract 3.1.0 exposes stickers and media spoilers separately. CRM must gate
+sticker UI on `stickers.supported` and spoiler UI on
+`mediaSpoilers.supported`; `mediaGroups.supported=false` still prohibits an
+outbound album composer.
 
 ## Live acceptance gate
 

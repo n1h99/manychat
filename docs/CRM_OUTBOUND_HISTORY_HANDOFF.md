@@ -7,7 +7,7 @@ messages created from its own composer. It must now also store outbound
 Telegram messages created by Omnicus automation and broadcasts.
 
 The authoritative request schema is
-`docs/OMNICUS_TO_CRM_OPENAPI.yaml`, version `3.0.0`.
+`docs/OMNICUS_TO_CRM_OPENAPI.yaml`, version `3.1.0`.
 
 ## Required endpoint
 

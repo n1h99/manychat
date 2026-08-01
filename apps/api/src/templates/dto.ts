@@ -19,6 +19,7 @@ const templateKinds = [
   'VOICE',
   'VIDEO_NOTE',
   'ANIMATION',
+  'STICKER',
 ] as const;
 
 type TemplateKind = (typeof templateKinds)[number];

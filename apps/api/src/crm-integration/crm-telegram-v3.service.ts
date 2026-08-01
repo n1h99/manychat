@@ -126,6 +126,7 @@ export class CrmTelegramV3Service {
         inlineKeyboard: supported({ maximumButtonsPerRow: 8, maximumRows: 8 }),
         linkPreviewOptions: supported({ allowedProtocols: 'http,https' }),
         mediaGroups: { supported: false, reasonCode: 'MEDIA_GROUP_NOT_RELEASED' },
+        mediaSpoilers: supported({ mediaKinds: ['ANIMATION', 'PHOTO', 'VIDEO'] }),
         messageEffects: supported({
           availableEffects: [],
           catalogAvailable: false,
@@ -146,7 +147,13 @@ export class CrmTelegramV3Service {
           limits: { contractPublished: true, privateChatsOnly: true },
         },
         scheduling: { supported: false, reasonCode: 'APPLICATION_SCHEDULER_NOT_RELEASED' },
-        stickers: { supported: false, reasonCode: 'STICKER_NOT_RELEASED' },
+        stickers: supported({
+          animatedMaximumBytes: 64 * 1024,
+          captions: false,
+          formats: ['TGS', 'WEBM', 'WEBP'],
+          staticMaximumBytes: 512 * 1024,
+          videoMaximumBytes: 256 * 1024,
+        }),
         structuredMessages: {
           supported: false,
           reasonCode: 'STRUCTURED_MESSAGES_NOT_RELEASED',
@@ -155,7 +162,7 @@ export class CrmTelegramV3Service {
         richMessages: { supported: false, reasonCode: 'RICH_MESSAGES_NOT_RELEASED' },
         streamingDraft: supported({ privateChatsOnly: true, ttlSeconds: 30 }),
       },
-      contractVersion: '3.0.0',
+      contractVersion: '3.1.0',
       telegramBotApiVersion: '10.2',
     };
   }

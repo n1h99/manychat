@@ -143,8 +143,12 @@ describe('HttpCrmClient', () => {
       },
       media: {
         assetId: 'asset-a',
-        kind: 'VIDEO_NOTE',
-        type: 'video',
+        emoji: '👋',
+        hasSpoiler: true,
+        kind: 'STICKER',
+        mediaGroupId: 'album-1',
+        setName: 'omnicus_demo',
+        type: 'sticker',
       },
       occurredAt: '2026-07-29T00:00:00.000Z',
     });
@@ -157,7 +161,15 @@ describe('HttpCrmClient', () => {
         sourceMessageId: '11111111-1111-4111-8111-111111111111',
         type: 'callback_query',
       },
-      media: { assetId: 'asset-a', kind: 'VIDEO_NOTE', type: 'video' },
+      media: {
+        assetId: 'asset-a',
+        emoji: '👋',
+        hasSpoiler: true,
+        kind: 'STICKER',
+        mediaGroupId: 'album-1',
+        setName: 'omnicus_demo',
+        type: 'sticker',
+      },
     });
   });
 
@@ -183,6 +195,7 @@ describe('HttpCrmClient', () => {
       identity: leadInput.identity,
       inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
       entities: [{ length: 4, offset: 0, type: 'bold' }],
+      hasSpoiler: true,
       linkPreviewOptions: { isDisabled: true },
       messageId: '11111111-1111-4111-8111-111111111111',
       messageEffectId: 'effect-known-by-caller',
@@ -207,6 +220,7 @@ describe('HttpCrmClient', () => {
       deliveryStatus: 'SENT',
       inlineKeyboard: [[{ callbackData: 'budget:1000', text: 'Under 1000' }]],
       entities: [{ length: 4, offset: 0, type: 'bold' }],
+      hasSpoiler: true,
       linkPreviewOptions: { isDisabled: true },
       messageId: '11111111-1111-4111-8111-111111111111',
       messageEffectId: 'effect-known-by-caller',

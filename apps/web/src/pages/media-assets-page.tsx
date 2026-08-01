@@ -48,6 +48,7 @@ export function MediaAssetsPage() {
               { label: 'Voice (OGG/MP3/M4A)', value: 'VOICE' },
               { label: 'Video note (square MP4)', value: 'VIDEO_NOTE' },
               { label: 'Animation (GIF/MP4)', value: 'ANIMATION' },
+              { label: 'Sticker (WebP/TGS/WebM)', value: 'STICKER' },
             ]}
             value={kind}
           />
@@ -63,7 +64,9 @@ export function MediaAssetsPage() {
                       ? '.mp3,.m4a,.mp4'
                       : kind === 'ANIMATION'
                         ? '.gif,.mp4'
-                        : '.mp4'
+                        : kind === 'STICKER'
+                          ? '.webp,.tgs,.webm'
+                          : '.mp4'
             }
             beforeUpload={(next) => {
               setFile(next);

@@ -1,0 +1,3 @@
+ALTER TYPE "NormalizedEventType" ADD VALUE 'STICKER';
+ALTER TYPE "MessageType" ADD VALUE 'STICKER';
+ALTER TYPE "MessageTemplateKind" ADD VALUE 'STICKER';

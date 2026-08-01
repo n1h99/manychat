@@ -107,6 +107,8 @@ export const telegramInboundFixtures = {
       caption: 'photo caption',
       chat: { id: 1001, type: 'private' },
       from: telegramUser,
+      has_media_spoiler: true,
+      media_group_id: 'album-1',
       message_id: 11,
       photo: [
         { file_id: 'small-file-id', file_unique_id: 'small-unique-id', height: 90, width: 90 },
@@ -131,6 +133,26 @@ export const telegramInboundFixtures = {
       user: telegramUser,
     },
     update_id: 114,
+  }),
+  sticker: defineSafeFixture('telegram-sticker', {
+    message: {
+      chat: { id: 1001, type: 'private' },
+      from: telegramUser,
+      message_id: 17,
+      sticker: {
+        emoji: '👋',
+        file_id: 'sticker-file-id',
+        file_size: 4096,
+        file_unique_id: 'sticker-unique-id',
+        height: 512,
+        is_animated: false,
+        is_video: false,
+        mime_type: 'image/webp',
+        set_name: 'omnicus_demo',
+        width: 512,
+      },
+    },
+    update_id: 115,
   }),
   text: defineSafeFixture('telegram-text', {
     message: {

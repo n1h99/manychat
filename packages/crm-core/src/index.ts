@@ -26,11 +26,15 @@ export interface CrmMediaInput {
   assetId: string;
   downloadUrl?: string;
   downloadUrlExpiresAt?: string;
+  emoji?: string;
   fileName?: string;
-  kind: 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
+  kind: 'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'STICKER' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
   mimeType?: string;
+  hasSpoiler?: boolean;
+  mediaGroupId?: string;
+  setName?: string;
   size?: number;
-  type: 'audio' | 'file' | 'image' | 'video';
+  type: 'audio' | 'file' | 'image' | 'sticker' | 'video';
 }
 
 export interface CrmInteractiveInput {
@@ -109,6 +113,7 @@ export interface ForwardOutboundMessageInput {
   identity: CrmIdentityInput;
   inlineKeyboard?: CrmInlineKeyboardInput;
   entities?: CrmMessageEntityInput[];
+  hasSpoiler?: boolean;
   linkPreviewOptions?: CrmLinkPreviewOptionsInput;
   media?: CrmMediaInput;
   messageId: string;
@@ -304,6 +309,7 @@ export class HttpCrmClient implements CrmClient {
       identity: input.identity,
       inlineKeyboard: input.inlineKeyboard,
       entities: input.entities,
+      hasSpoiler: input.hasSpoiler,
       linkPreviewOptions: input.linkPreviewOptions,
       media: input.media,
       messageId: input.messageId,

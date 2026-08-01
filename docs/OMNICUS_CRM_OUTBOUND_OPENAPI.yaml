@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Omnicus API for Cyber Pulse CRM
-  version: 3.0.0
+  version: 3.1.0
   description: Project-scoped CRM to Omnicus Telegram messaging, mutations, ephemeral actions and capability contract.
 security:
   - serviceBearer: []
@@ -477,6 +477,9 @@ components:
           type: boolean
         protectContent:
           type: boolean
+        hasSpoiler:
+          type: boolean
+          description: Supported only for PHOTO, VIDEO and ANIMATION.
         messageEffectId:
           type: string
           minLength: 1
@@ -515,6 +518,7 @@ components:
         - VOICE
         - VIDEO_NOTE
         - ANIMATION
+        - STICKER
     OutboundMedia:
       type: object
       additionalProperties: false
@@ -620,15 +624,17 @@ components:
       type: object
       required: [contractVersion, telegramBotApiVersion, capabilities]
       properties:
-        contractVersion: { type: string, enum: [3.0.0] }
+        contractVersion: { type: string, enum: [3.1.0] }
         telegramBotApiVersion: { type: string, enum: ['10.2'] }
         capabilities:
           type: object
-          required: [quote, linkPreviewOptions, explicitRetry]
+          required: [quote, linkPreviewOptions, explicitRetry, stickers, mediaSpoilers]
           properties:
             quote: { $ref: '#/components/schemas/Capability' }
             linkPreviewOptions: { $ref: '#/components/schemas/Capability' }
             explicitRetry: { $ref: '#/components/schemas/Capability' }
+            stickers: { $ref: '#/components/schemas/Capability' }
+            mediaSpoilers: { $ref: '#/components/schemas/Capability' }
           additionalProperties:
             $ref: '#/components/schemas/Capability'
     UploadedMedia:

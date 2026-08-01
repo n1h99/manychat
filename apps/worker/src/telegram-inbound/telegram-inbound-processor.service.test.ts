@@ -266,6 +266,7 @@ describe('TelegramInboundProcessorService', () => {
     ],
     ['photo', telegramInboundFixtures.photo.payload, 'PHOTO'],
     ['document', telegramInboundFixtures.document.payload, 'DOCUMENT'],
+    ['sticker', telegramInboundFixtures.sticker.payload, 'STICKER'],
     ['callback', telegramInboundFixtures.callbackQuery.payload, 'CALLBACK_QUERY'],
   ])('persists %s metadata without downloading media', async (_name, payload, type) => {
     const { mediaAssetUpsert, messageUpdate, messageUpsert, service } = createHarness({ payload });
@@ -275,7 +276,7 @@ describe('TelegramInboundProcessorService', () => {
     expect(messageUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: expect.objectContaining({ type }) }),
     );
-    if (type === 'PHOTO' || type === 'DOCUMENT') {
+    if (type === 'PHOTO' || type === 'DOCUMENT' || type === 'STICKER') {
       expect(mediaAssetUpsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
