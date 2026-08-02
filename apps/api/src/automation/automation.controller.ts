@@ -18,7 +18,7 @@ import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types'
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AutomationService } from './automation.service';
-import { CreateScenarioDto, DuplicateScenarioDto, UpdateScenarioDto } from './dto';
+import { CreateScenarioDto, DuplicateScenarioDto, TestScenarioDto, UpdateScenarioDto } from './dto';
 
 @ApiTags('automation')
 @ApiBearerAuth()
@@ -91,6 +91,33 @@ export class AutomationController {
       data: await this.automation.publish(
         projectId,
         scenarioId,
+        request.auth!,
+        this.context(request),
+      ),
+      meta: {},
+    };
+  }
+
+  @Post(':scenarioId/test-run')
+  @RequireProjectPermission('automation:manage')
+  @ApiBody({ type: TestScenarioDto })
+  async testRun(@Param('projectId') projectId: string, @Body() body: TestScenarioDto) {
+    return { data: await this.automation.testRun(projectId, body), meta: {} };
+  }
+
+  @Post(':scenarioId/executions/:executionId/replay')
+  @RequireProjectPermission('automation:manage')
+  async replayExecution(
+    @Param('projectId') projectId: string,
+    @Param('scenarioId') scenarioId: string,
+    @Param('executionId') executionId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.automation.replayExecution(
+        projectId,
+        scenarioId,
+        executionId,
         request.auth!,
         this.context(request),
       ),

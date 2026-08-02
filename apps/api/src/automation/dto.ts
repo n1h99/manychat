@@ -1,4 +1,4 @@
-import { IsObject, IsOptional, IsString, Length } from 'class-validator';
+import { IsISO8601, IsIn, IsObject, IsOptional, IsString, Length } from 'class-validator';
 
 export class CreateScenarioDto {
   @IsString()
@@ -15,6 +15,10 @@ export class CreateScenarioDto {
 }
 
 export class UpdateScenarioDto {
+  @IsOptional()
+  @IsISO8601()
+  expectedUpdatedAt?: string;
+
   @IsOptional()
   @IsString()
   @Length(1, 160)
@@ -34,4 +38,25 @@ export class DuplicateScenarioDto {
   @IsString()
   @Length(1, 160)
   name!: string;
+}
+
+export class TestScenarioDto {
+  @IsObject()
+  graph!: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  contact?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  customFields?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  event?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsIn(['reply', 'timeout'])
+  waitOutcome?: 'reply' | 'timeout';
 }

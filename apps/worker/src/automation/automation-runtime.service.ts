@@ -2,14 +2,18 @@ import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  automationValueFor,
   evaluateCondition,
+  evaluateConditionGroup,
+  matchesWaitForReplyCriteria,
   scenarioGraphSchema,
+  waitForReplyCriteriaSchema,
   type ConditionOperator,
   type ScenarioGraph,
   type ScenarioGraphEdge,
   type ScenarioGraphNode,
 } from '@omnicus/automation-core';
-import type { Prisma } from '@omnicus/database';
+import { Prisma, type CustomFieldType } from '@omnicus/database';
 import { renderTemplate } from '@omnicus/media-core';
 
 import { DatabaseService } from '../database/database.service';
@@ -33,6 +37,7 @@ interface RuntimeContext extends AutomationTriggerInput {
 
 interface NodeResult {
   next?: ScenarioGraphEdge | undefined;
+  reasonCode?: string;
   suspended?: boolean;
 }
 
@@ -54,14 +59,29 @@ export class AutomationRuntimeService {
     input: AutomationTriggerInput,
   ): Promise<void> {
     const activeWaits = await transaction.waitState.findMany({
-      select: { id: true, projectId: true, scenarioExecutionId: true, successNodeId: true },
+      select: {
+        criteria: true,
+        id: true,
+        projectId: true,
+        scenarioExecutionId: true,
+        successNodeId: true,
+      },
       where: {
         conversationId: input.conversationId,
         projectId: input.projectId,
         status: 'ACTIVE',
       },
     });
+    if (!activeWaits.length) return;
+    const event = await transaction.normalizedEvent.findUnique({
+      select: { payload: true },
+      where: {
+        projectId_id: { id: input.normalizedEventId, projectId: input.projectId },
+      },
+    });
+    if (!event) return;
     for (const wait of activeWaits) {
+      if (!matchesWaitForReplyCriteria(wait.criteria, event.payload)) continue;
       const won = await transaction.waitState.updateMany({
         data: {
           resolvedAt: new Date(),
@@ -301,7 +321,14 @@ export class AutomationRuntimeService {
         data: { currentNodeId: node.id, status: 'RUNNING' },
         where: { projectId_id: { id: executionId, projectId: context.projectId } },
       });
-      await this.nodeExecution(transaction, executionId, context.projectId, node, 'PROCESSING');
+      await this.nodeExecution(
+        transaction,
+        executionId,
+        context.projectId,
+        node,
+        'PROCESSING',
+        this.safeNodeInput(node, context),
+      );
       const result = await this.applyNode(
         transaction,
         node,
@@ -309,7 +336,20 @@ export class AutomationRuntimeService {
         context,
         executionId,
       );
-      await this.nodeExecution(transaction, executionId, context.projectId, node, 'SUCCEEDED');
+      await this.nodeExecution(
+        transaction,
+        executionId,
+        context.projectId,
+        node,
+        'SUCCEEDED',
+        undefined,
+        {
+          ...(result.next?.output ? { selectedOutput: result.next.output } : {}),
+          ...(result.next?.to ? { nextNodeId: result.next.to } : {}),
+          ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+          suspended: result.suspended === true,
+        },
+      );
       if (result.suspended) return;
       node = result.next ? nodes.get(result.next.to) : undefined;
     }
@@ -336,21 +376,39 @@ export class AutomationRuntimeService {
         operator?: ConditionOperator;
         value?: unknown;
       };
+      const sorted = edges
+        .slice()
+        .sort(
+          (a, b) =>
+            (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER),
+        );
+      const configured = sorted.filter((edge) => edge.condition || edge.conditionGroup);
+      const fallback = sorted.find((edge) => !edge.condition && !edge.conditionGroup);
+      const matches = (edge: ScenarioGraphEdge) => {
+        const valueFor = (field: string) =>
+          automationValueFor(
+            field,
+            context.eventPayload,
+            context.customFields,
+            context.contactVariables,
+          );
+        if (edge.conditionGroup) return evaluateConditionGroup(edge.conditionGroup, valueFor);
+        const rule = edge.condition ?? config;
+        return evaluateCondition(rule.operator ?? 'exists', valueFor(rule.field ?? ''), rule.value);
+      };
+      const legacyCondition =
+        typeof config.field === 'string' && typeof config.operator === 'string';
+      const next =
+        configured.length === 0 && legacyCondition
+          ? sorted.find(matches)
+          : configured.find(matches);
       return {
-        next: edges
-          .slice()
-          .sort(
-            (a, b) =>
-              (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER),
-          )
-          .find((edge) => {
-            const rule = edge.condition ?? config;
-            return evaluateCondition(
-              rule.operator ?? 'exists',
-              this.valueFor(rule.field, context.eventPayload, context.customFields),
-              rule.value,
-            );
-          }),
+        next: next ?? (configured.length > 0 || !legacyCondition ? fallback : undefined),
+        reasonCode: next
+          ? 'CONDITION_MATCHED'
+          : (configured.length > 0 || !legacyCondition) && fallback
+            ? 'FALLBACK_SELECTED'
+            : 'NO_BRANCH_MATCHED',
       };
     }
     if (node.type === 'DELAY') {
@@ -394,10 +452,12 @@ export class AutomationRuntimeService {
       });
       const replyEdge = edges.find((edge) => edge.output === 'reply') ?? defaultEdge;
       const timeoutEdge = edges.find((edge) => edge.output === 'timeout');
+      const criteria = waitForReplyCriteriaSchema.safeParse(node.config.criteria ?? {});
+      if (!criteria.success) throw new Error('automation_wait_criteria_invalid');
       await transaction.waitState.upsert({
         create: {
           conversationId: context.conversationId,
-          criteria: {},
+          criteria: criteria.data as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + seconds * 1_000),
           nodeId: node.id,
           projectId: context.projectId,
@@ -487,6 +547,14 @@ export class AutomationRuntimeService {
     if (node.type === 'SET_CUSTOM_FIELD') {
       const key = typeof node.config.key === 'string' ? node.config.key : undefined;
       if (!key) throw new Error('automation_custom_field_invalid');
+      const definition = await transaction.customFieldDefinition.findFirst({
+        where: { archivedAt: null, key, projectId: context.projectId },
+      });
+      if (
+        !definition ||
+        !this.isCustomFieldValueValid(definition.type, node.config.value, definition.options)
+      )
+        throw new Error('automation_custom_field_invalid');
       await transaction.contact.update({
         data: {
           customFields: {
@@ -495,6 +563,26 @@ export class AutomationRuntimeService {
           },
         },
         where: { projectId_id: { id: context.contactId, projectId: context.projectId } },
+      });
+      await transaction.contactCustomFieldValue.upsert({
+        create: {
+          contactId: context.contactId,
+          definitionId: definition.id,
+          projectId: context.projectId,
+          valueJson: node.config.value as Prisma.InputJsonValue,
+          ...this.customFieldProjections(definition.type, node.config.value),
+        },
+        update: {
+          valueJson: node.config.value as Prisma.InputJsonValue,
+          ...this.customFieldProjections(definition.type, node.config.value),
+        },
+        where: {
+          projectId_contactId_definitionId: {
+            contactId: context.contactId,
+            definitionId: definition.id,
+            projectId: context.projectId,
+          },
+        },
       });
       context.customFields = {
         ...this.object(context.customFields),
@@ -538,7 +626,12 @@ export class AutomationRuntimeService {
     context: RuntimeContext,
   ): Promise<void> {
     const tagId = typeof node.config.tagId === 'string' ? node.config.tagId : undefined;
-    if (!tagId) return;
+    if (!tagId) throw new Error('automation_tag_invalid');
+    const tag = await transaction.tag.findFirst({
+      select: { id: true },
+      where: { archivedAt: null, id: tagId, projectId: context.projectId },
+    });
+    if (!tag) throw new Error('automation_tag_invalid');
     if (node.type === 'ADD_TAG')
       await transaction.contactTag.createMany({
         data: [
@@ -695,6 +788,8 @@ export class AutomationRuntimeService {
     projectId: string,
     node: ScenarioGraphNode,
     status: 'PROCESSING' | 'SUCCEEDED',
+    inputSafe?: Prisma.InputJsonObject,
+    outputSafe?: Prisma.InputJsonObject,
   ): Promise<void> {
     const idempotencyKey = createHash('sha256').update(`${executionId}:${node.id}:1`).digest('hex');
     await transaction.nodeExecution.upsert({
@@ -702,7 +797,7 @@ export class AutomationRuntimeService {
         attempt: 1,
         completedAt: status === 'SUCCEEDED' ? new Date() : null,
         idempotencyKey,
-        inputSafe: {},
+        inputSafe: inputSafe ?? {},
         nodeId: node.id,
         nodeType: node.type,
         projectId,
@@ -710,28 +805,85 @@ export class AutomationRuntimeService {
         startedAt: new Date(),
         status,
       },
-      update: status === 'SUCCEEDED' ? { completedAt: new Date(), status } : {},
+      update:
+        status === 'SUCCEEDED'
+          ? { completedAt: new Date(), outputSafe: outputSafe ?? {}, status }
+          : {},
       where: { projectId_idempotencyKey: { idempotencyKey, projectId } },
     });
   }
 
-  private valueFor(
-    field: string | undefined,
-    payload: Prisma.JsonValue,
-    customFields: Prisma.JsonValue,
-  ): unknown {
-    const content = this.object(payload).content;
-    if (field === 'message.text') return this.object(content ?? null).text ?? null;
-    if (field === 'callback.data') return this.object(content ?? null).data ?? null;
-    if (field?.startsWith('contact.customFields.'))
-      return this.object(customFields)[field.slice(21)];
-    return undefined;
+  private safeNodeInput(node: ScenarioGraphNode, context: RuntimeContext): Prisma.InputJsonObject {
+    const payload = this.object(context.eventPayload);
+    const eventType = typeof payload.type === 'string' ? payload.type : 'UNKNOWN';
+    if (node.type === 'DELAY')
+      return { delaySeconds: node.config.delaySeconds as number, eventType };
+    if (node.type === 'WAIT_FOR_REPLY') {
+      const criteria = waitForReplyCriteriaSchema.safeParse(node.config.criteria ?? {});
+      return {
+        criteriaKind: criteria.success ? criteria.data.kind : 'INVALID',
+        eventType,
+        timeoutSeconds: node.config.timeoutSeconds as number,
+      };
+    }
+    if (node.type === 'CONDITION')
+      return {
+        eventType,
+        field: typeof node.config.field === 'string' ? node.config.field : 'branch-defined',
+        operator:
+          typeof node.config.operator === 'string' ? node.config.operator : 'branch-defined',
+      };
+    return { eventType };
   }
 
   private object(value: Prisma.JsonValue): Record<string, Prisma.JsonValue> {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, Prisma.JsonValue>)
       : {};
+  }
+
+  private customFieldProjections(type: CustomFieldType, value: unknown) {
+    if (value === null)
+      return { valueBoolean: null, valueDateTime: null, valueNumber: null, valueText: null };
+    if (type === 'NUMBER')
+      return {
+        valueBoolean: null,
+        valueDateTime: null,
+        valueNumber: new Prisma.Decimal(value as number),
+        valueText: null,
+      };
+    if (type === 'BOOLEAN')
+      return {
+        valueBoolean: value as boolean,
+        valueDateTime: null,
+        valueNumber: null,
+        valueText: null,
+      };
+    return {
+      valueBoolean: null,
+      valueDateTime: null,
+      valueNumber: null,
+      valueText: typeof value === 'string' ? value : null,
+    };
+  }
+
+  private isCustomFieldValueValid(
+    type: CustomFieldType,
+    value: unknown,
+    options: Prisma.JsonValue | null,
+  ): boolean {
+    if (value === null) return true;
+    if (type === 'TEXT') return typeof value === 'string';
+    if (type === 'NUMBER') return typeof value === 'number' && Number.isFinite(value);
+    if (type === 'BOOLEAN') return typeof value === 'boolean';
+    if (type === 'DATE') return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    if (type === 'DATETIME') return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+    if (type === 'JSON') return typeof value === 'object';
+    const allowed = Array.isArray(options) ? options : [];
+    return type === 'SELECT'
+      ? typeof value === 'string' && allowed.includes(value)
+      : Array.isArray(value) &&
+          value.every((entry) => typeof entry === 'string' && allowed.includes(entry));
   }
 
   private contactVariables(contact: {

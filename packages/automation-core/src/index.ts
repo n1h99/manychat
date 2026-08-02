@@ -20,6 +20,79 @@ export const automationNodeTypes = [
 
 export type AutomationNodeType = (typeof automationNodeTypes)[number];
 
+export const conditionOperators = [
+  'equals',
+  'not_equals',
+  'contains',
+  'starts_with',
+  'ends_with',
+  'greater_than',
+  'greater_or_equal',
+  'less_than',
+  'less_or_equal',
+  'exists',
+  'not_exists',
+] as const;
+
+export type ConditionOperator = (typeof conditionOperators)[number];
+
+export const waitReplyMediaTypes = [
+  'PHOTO',
+  'DOCUMENT',
+  'VIDEO',
+  'AUDIO',
+  'VOICE',
+  'VIDEO_NOTE',
+  'ANIMATION',
+  'STICKER',
+] as const;
+
+const waitTextOperatorSchema = z.enum(['equals', 'contains', 'starts_with', 'ends_with']);
+
+const waitCriteriaContractSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('ANY') }),
+  z.object({
+    caseSensitive: z.boolean().default(false),
+    kind: z.literal('TEXT'),
+    operator: waitTextOperatorSchema,
+    value: z.string().min(1).max(4_096),
+  }),
+  z.object({
+    caseSensitive: z.boolean().default(true),
+    kind: z.literal('CALLBACK'),
+    operator: waitTextOperatorSchema,
+    value: z.string().min(1).max(64),
+  }),
+  z.object({
+    kind: z.literal('MEDIA'),
+    mediaTypes: z.array(z.enum(waitReplyMediaTypes)).min(1),
+  }),
+]);
+
+export const waitForReplyCriteriaSchema = z.preprocess(
+  (input) =>
+    input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 0
+      ? { kind: 'ANY' }
+      : input,
+  waitCriteriaContractSchema,
+);
+
+export type WaitForReplyCriteria = z.infer<typeof waitForReplyCriteriaSchema>;
+
+export const conditionRuleSchema = z.object({
+  field: z.string().min(1),
+  operator: z.enum(conditionOperators),
+  value: z.unknown().optional(),
+});
+
+export const conditionGroupSchema = z.object({
+  combinator: z.enum(['AND', 'OR']),
+  rules: z.array(conditionRuleSchema).min(1).max(20),
+});
+
+export type ConditionRule = z.infer<typeof conditionRuleSchema>;
+export type ConditionGroup = z.infer<typeof conditionGroupSchema>;
+
 export const graphNodeSchema = z.object({
   config: z.record(z.string(), z.unknown()).default({}),
   id: z.string().min(1),
@@ -28,25 +101,8 @@ export const graphNodeSchema = z.object({
 });
 
 export const graphEdgeSchema = z.object({
-  condition: z
-    .object({
-      field: z.string().min(1),
-      operator: z.enum([
-        'equals',
-        'not_equals',
-        'contains',
-        'starts_with',
-        'ends_with',
-        'greater_than',
-        'greater_or_equal',
-        'less_than',
-        'less_or_equal',
-        'exists',
-        'not_exists',
-      ]),
-      value: z.unknown().optional(),
-    })
-    .optional(),
+  condition: conditionRuleSchema.optional(),
+  conditionGroup: conditionGroupSchema.optional(),
   from: z.string().min(1),
   output: z.string().min(1).default('default'),
   priority: z.number().int().nonnegative().optional(),
@@ -85,6 +141,19 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
       errors.push(`Edge ${edge.from}:${edge.output}->${edge.to} references an unknown node`);
       continue;
     }
+    const rules = edge.conditionGroup?.rules ?? (edge.condition ? [edge.condition] : []);
+    for (const rule of rules)
+      if (
+        rule.operator !== 'exists' &&
+        rule.operator !== 'not_exists' &&
+        rule.value === undefined
+      ) {
+        errors.push(`Edge ${edge.from}:${edge.output}->${edge.to} requires a comparison value`);
+      }
+    if (edge.condition && edge.conditionGroup)
+      errors.push(
+        `Edge ${edge.from}:${edge.output}->${edge.to} cannot define two condition formats`,
+      );
     const edges = outgoing.get(edge.from) ?? [];
     edges.push(edge);
     outgoing.set(edge.from, edges);
@@ -120,6 +189,13 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
       if (new Set(priorities).size !== priorities.length) {
         errors.push(`Condition node ${node.id} has duplicate branch priorities`);
       }
+      const configuredBranches = edges.filter((edge) => edge.condition || edge.conditionGroup);
+      if (
+        configuredBranches.length > 0 &&
+        edges.filter((edge) => !edge.condition && !edge.conditionGroup).length > 1
+      ) {
+        errors.push(`Condition node ${node.id} has multiple fallback branches`);
+      }
     }
     if (node.type === 'DELAY') {
       const delaySeconds = node.config.delaySeconds;
@@ -140,6 +216,24 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
       ) {
         errors.push(`Wait for Reply node ${node.id} requires a positive integer timeoutSeconds`);
       }
+      const criteria = waitForReplyCriteriaSchema.safeParse(node.config.criteria ?? {});
+      if (!criteria.success) {
+        errors.push(`Wait for Reply node ${node.id} has invalid reply criteria`);
+      }
+    }
+    if (
+      (node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG') &&
+      (typeof node.config.tagId !== 'string' || node.config.tagId.length === 0)
+    ) {
+      errors.push(
+        `${node.type === 'ADD_TAG' ? 'Add Tag' : 'Remove Tag'} node ${node.id} requires a tag`,
+      );
+    }
+    if (
+      node.type === 'SET_CUSTOM_FIELD' &&
+      (typeof node.config.key !== 'string' || node.config.key.length === 0)
+    ) {
+      errors.push(`Set Custom Field node ${node.id} requires a custom field`);
     }
     if (
       node.type === 'START_SUBFLOW' &&
@@ -199,19 +293,6 @@ function hasUnguardedCycle(
   return graph.nodes.some((node) => visit(node.id));
 }
 
-export type ConditionOperator =
-  | 'equals'
-  | 'not_equals'
-  | 'contains'
-  | 'starts_with'
-  | 'ends_with'
-  | 'greater_than'
-  | 'greater_or_equal'
-  | 'less_than'
-  | 'less_or_equal'
-  | 'exists'
-  | 'not_exists';
-
 export function evaluateCondition(
   operator: ConditionOperator,
   actual: unknown,
@@ -229,7 +310,8 @@ export function evaluateCondition(
       return actual !== expected;
     case 'contains':
       return (
-        typeof actual === 'string' && typeof expected === 'string' && actual.includes(expected)
+        (typeof actual === 'string' && typeof expected === 'string' && actual.includes(expected)) ||
+        (Array.isArray(actual) && actual.some((item) => item === expected))
       );
     case 'starts_with':
       return (
@@ -248,4 +330,182 @@ export function evaluateCondition(
     case 'less_or_equal':
       return typeof actual === 'number' && typeof expected === 'number' && actual <= expected;
   }
+}
+
+const supportedReplyEventTypes = new Set([
+  'MESSAGE',
+  'COMMAND',
+  'CALLBACK_QUERY',
+  'CONTACT_SHARED',
+  ...waitReplyMediaTypes,
+]);
+
+export function matchesWaitForReplyCriteria(
+  criteriaInput: unknown,
+  payloadInput: unknown,
+): boolean {
+  const criteria = waitForReplyCriteriaSchema.safeParse(criteriaInput ?? {});
+  if (!criteria.success) return false;
+  const payload = record(payloadInput);
+  const eventType = typeof payload.type === 'string' ? payload.type : undefined;
+  if (!eventType || !supportedReplyEventTypes.has(eventType)) return false;
+  if (criteria.data.kind === 'ANY') return true;
+  if (criteria.data.kind === 'MEDIA') return criteria.data.mediaTypes.includes(eventType as never);
+  const content = record(payload.content);
+  const actual =
+    criteria.data.kind === 'CALLBACK'
+      ? typeof content.data === 'string'
+        ? content.data
+        : undefined
+      : typeof content.text === 'string'
+        ? content.text
+        : undefined;
+  if (actual === undefined) return false;
+  const expected = criteria.data.value;
+  return evaluateCondition(
+    criteria.data.operator,
+    criteria.data.caseSensitive ? actual : actual.toLocaleLowerCase(),
+    criteria.data.caseSensitive ? expected : expected.toLocaleLowerCase(),
+  );
+}
+
+export function evaluateConditionGroup(
+  group: ConditionGroup,
+  valueFor: (field: string) => unknown,
+): boolean {
+  const results = group.rules.map((rule) =>
+    evaluateCondition(rule.operator, valueFor(rule.field), rule.value),
+  );
+  return group.combinator === 'AND' ? results.every(Boolean) : results.some(Boolean);
+}
+
+export function automationValueFor(
+  field: string | undefined,
+  payloadInput: unknown,
+  customFieldsInput: unknown,
+  contactInput: unknown,
+): unknown {
+  const payload = record(payloadInput);
+  const content = record(payload.content);
+  const customFields = record(customFieldsInput);
+  const contact = record(contactInput);
+  if (field === 'message.text') return content.text ?? null;
+  if (field === 'callback.data') return content.data ?? null;
+  if (field === 'event.type') return payload.type ?? null;
+  if (field?.startsWith('contact.') && !field.startsWith('contact.customFields.'))
+    return contact[field.slice('contact.'.length)] ?? null;
+  if (field?.startsWith('contact.customFields.'))
+    return customFields[field.slice('contact.customFields.'.length)];
+  return undefined;
+}
+
+export interface AutomationSimulationInput {
+  contact?: Record<string, unknown>;
+  customFields?: Record<string, unknown>;
+  event?: Record<string, unknown>;
+  waitOutcome?: 'reply' | 'timeout';
+}
+
+export interface AutomationSimulationStep {
+  nodeId: string;
+  nodeType: AutomationNodeType;
+  result: 'COMPLETED' | 'WAITING' | 'WOULD_EXECUTE';
+  selectedOutput?: string;
+  nextNodeId?: string;
+  reasonCode?: string;
+}
+
+export interface AutomationSimulationResult {
+  completed: boolean;
+  steps: AutomationSimulationStep[];
+}
+
+export function simulateScenarioGraph(
+  graphInput: unknown,
+  input: AutomationSimulationInput = {},
+): AutomationSimulationResult {
+  const parsed = scenarioGraphSchema.safeParse(graphInput);
+  if (!parsed.success) throw new Error('automation_simulation_graph_invalid');
+  const graph = parsed.data;
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const outgoing = new Map<string, ScenarioGraphEdge[]>();
+  for (const edge of graph.edges)
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge]);
+  let node = graph.nodes.find((candidate) => candidate.type === 'INCOMING_MESSAGE');
+  const steps: AutomationSimulationStep[] = [];
+  let budget = 100;
+  while (node && budget-- > 0) {
+    const currentNode = node;
+    const edges = (outgoing.get(currentNode.id) ?? []).slice().sort(byPriority);
+    let selected = edges.find((edge) => edge.output === 'default') ?? edges[0];
+    let result: AutomationSimulationStep['result'] = 'WOULD_EXECUTE';
+    let reasonCode: string | undefined;
+    if (currentNode.type === 'CONDITION') {
+      const configured = edges.filter((edge) => edge.condition || edge.conditionGroup);
+      const fallback = edges.find((edge) => !edge.condition && !edge.conditionGroup);
+      const legacyCondition = hasLegacyNodeCondition(currentNode);
+      selected =
+        configured.length === 0 && legacyCondition
+          ? edges.find((edge) => edgeMatches(edge, currentNode, input))
+          : (configured.find((edge) => edgeMatches(edge, currentNode, input)) ?? fallback);
+      reasonCode = selected
+        ? configured.length > 0 && selected === fallback
+          ? 'FALLBACK_SELECTED'
+          : 'CONDITION_MATCHED'
+        : 'NO_BRANCH_MATCHED';
+    } else if (currentNode.type === 'WAIT_FOR_REPLY') {
+      if (!input.waitOutcome) {
+        result = 'WAITING';
+        selected = undefined;
+        reasonCode = 'WAIT_OUTCOME_REQUIRED';
+      } else {
+        selected = edges.find((edge) => edge.output === input.waitOutcome);
+        reasonCode = input.waitOutcome === 'reply' ? 'REPLY_SIMULATED' : 'TIMEOUT_SIMULATED';
+      }
+    } else if (currentNode.type === 'DELAY') {
+      reasonCode = 'DELAY_SKIPPED_IN_TEST';
+    } else if (currentNode.type === 'STOP') {
+      result = 'COMPLETED';
+      selected = undefined;
+    }
+    steps.push({
+      nodeId: currentNode.id,
+      nodeType: currentNode.type,
+      result,
+      ...(selected?.output ? { selectedOutput: selected.output } : {}),
+      ...(selected?.to ? { nextNodeId: selected.to } : {}),
+      ...(reasonCode ? { reasonCode } : {}),
+    });
+    if (result === 'WAITING') return { completed: false, steps };
+    node = selected ? nodes.get(selected.to) : undefined;
+  }
+  if (budget <= 0) throw new Error('automation_simulation_step_budget_exhausted');
+  return { completed: true, steps };
+}
+
+function hasLegacyNodeCondition(node: ScenarioGraphNode): boolean {
+  return typeof node.config.field === 'string' && typeof node.config.operator === 'string';
+}
+
+function edgeMatches(
+  edge: ScenarioGraphEdge,
+  node: ScenarioGraphNode,
+  input: AutomationSimulationInput,
+): boolean {
+  const valueFor = (field: string) =>
+    automationValueFor(field, input.event ?? {}, input.customFields ?? {}, input.contact ?? {});
+  if (edge.conditionGroup) return evaluateConditionGroup(edge.conditionGroup, valueFor);
+  const rule = edge.condition ?? (node.config as ConditionRule);
+  if (!rule.field || !rule.operator) return false;
+  return evaluateCondition(rule.operator, valueFor(rule.field), rule.value);
+}
+
+function byPriority(left: ScenarioGraphEdge, right: ScenarioGraphEdge): number {
+  return (left.priority ?? Number.MAX_SAFE_INTEGER) - (right.priority ?? Number.MAX_SAFE_INTEGER);
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

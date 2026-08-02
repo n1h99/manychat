@@ -19,6 +19,24 @@ describe('automation editor graph mapping', () => {
           priority: 0,
           to: 'template',
         },
+        {
+          conditionGroup: {
+            combinator: 'AND',
+            rules: [
+              { field: 'message.text', operator: 'contains', value: 'yes' },
+              {
+                field: 'contact.customFields.score',
+                operator: 'greater_than',
+                value: 5,
+              },
+            ],
+          },
+          from: 'condition',
+          id: 'edge-b',
+          output: 'qualified',
+          priority: 1,
+          to: 'template',
+        },
       ],
       nodes: [
         { config: {}, id: 'condition', position: { x: 10, y: 20 }, type: 'CONDITION' },

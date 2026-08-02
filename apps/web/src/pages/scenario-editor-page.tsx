@@ -10,7 +10,9 @@ import {
   useNodesState,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
+  type NodeChange,
   type NodeProps,
   type NodeTypes,
   type ReactFlowInstance,
@@ -21,21 +23,26 @@ import {
   ApiOutlined,
   BranchesOutlined,
   ClockCircleOutlined,
+  CopyOutlined,
   DatabaseOutlined,
+  ExperimentOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
+  RedoOutlined,
   SendOutlined,
   SettingOutlined,
   StopOutlined,
   TagsOutlined,
   ThunderboltOutlined,
+  UndoOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Col,
   Collapse,
   Descriptions,
@@ -54,10 +61,10 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
-import { AutomationNodeConfig } from '../automation-node-config';
+import { AutomationConditionGroupFields, AutomationNodeConfig } from '../automation-node-config';
 import {
   automationEdgeLabel,
   type AutomationEdgeData,
@@ -67,12 +74,21 @@ import {
 } from '../automation-editor-graph';
 import {
   emptyScenarioGraph,
+  type AutomationSimulationResult,
   type ScenarioExecution,
   useScenario,
   useScenarioExecutions,
   useScenarioMutations,
   useScenarios,
 } from '../automation-api';
+import { AutomationTestPanel, type AutomationTestInput } from '../automation-test-panel';
+import { ApiError } from '../api';
+import { automationEditorSignature, safeDiagnosticJson } from '../automation-studio';
+import {
+  useAutomationCustomFields,
+  useAutomationTags,
+  type AutomationCustomField,
+} from '../automation-studio-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { useTemplates } from '../templates-api';
 
@@ -183,6 +199,16 @@ function styledNodes(nodes: Node[]): Node[] {
   return spreadCompactFlowNodes(nodes).map((node) => ({ ...node, type: 'automation' }));
 }
 
+interface AutomationEditorSnapshot {
+  configs: Record<string, Record<string, unknown>>;
+  edges: Edge[];
+  nodes: Node[];
+}
+
+function cloneEditorSnapshot(snapshot: AutomationEditorSnapshot): AutomationEditorSnapshot {
+  return structuredClone(snapshot);
+}
+
 export function ScenarioEditorPage() {
   const { projectId, scenarioId } = useParams();
   const navigate = useNavigate();
@@ -190,6 +216,8 @@ export function ScenarioEditorPage() {
   const scenarioQuery = useScenario(projectId, scenarioId === 'new' ? undefined : scenarioId);
   const scenarios = useScenarios(projectId);
   const templates = useTemplates(projectId);
+  const tags = useAutomationTags(projectId);
+  const customFields = useAutomationCustomFields(projectId);
   const executions = useScenarioExecutions(projectId, scenarioId);
   const mutations = useScenarioMutations(projectId);
   const [form] = Form.useForm<{ description?: string; name: string }>();
@@ -203,11 +231,34 @@ export function ScenarioEditorPage() {
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
   const [inspectedExecution, setInspectedExecution] = useState<ScenarioExecution>();
+  const [testOpen, setTestOpen] = useState(false);
+  const [testResult, setTestResult] = useState<AutomationSimulationResult>();
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance>();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isCanvasInteractive, setIsCanvasInteractive] = useState(true);
+  const [historyPast, setHistoryPast] = useState<AutomationEditorSnapshot[]>([]);
+  const [historyFuture, setHistoryFuture] = useState<AutomationEditorSnapshot[]>([]);
+  const copiedNode = useRef<AutomationEditorSnapshot['nodes'][number] | undefined>(undefined);
+  const copiedConfig = useRef<Record<string, unknown> | undefined>(undefined);
+  const [lastSavedSignature, setLastSavedSignature] = useState<string>();
+  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string>();
+  const [saveStatus, setSaveStatus] = useState<'conflict' | 'dirty' | 'saved' | 'saving'>('saved');
   const scenarioName = Form.useWatch('name', form);
   const scenarioDescription = Form.useWatch('description', form);
+  const graph = flowToScenarioGraph(nodes, edges, configs);
+  const validation = validateScenarioGraph(graph);
+  const signature = automationEditorSignature(graph, scenarioName, scenarioDescription);
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  const updateDraftRef = useRef(mutations.update.mutateAsync);
+  updateDraftRef.current = mutations.update.mutateAsync;
+  const newScenarioInitialSignature = useMemo(
+    () => automationEditorSignature(emptyScenarioGraph, '', undefined),
+    [],
+  );
+  const draftDirty = scenarioQuery.data
+    ? lastSavedSignature !== undefined && signature !== lastSavedSignature
+    : signature !== newScenarioInitialSignature;
 
   useEffect(() => {
     const scenario = scenarioQuery.data;
@@ -221,6 +272,13 @@ export function ScenarioEditorPage() {
       ...(scenario.description ? { description: scenario.description } : {}),
       name: scenario.name,
     });
+    setExpectedUpdatedAt(scenario.updatedAt);
+    setLastSavedSignature(
+      automationEditorSignature(graph, scenario.name, scenario.description ?? undefined),
+    );
+    setSaveStatus('saved');
+    setHistoryPast([]);
+    setHistoryFuture([]);
   }, [form, scenarioQuery.data, setEdges, setNodes]);
 
   useEffect(() => {
@@ -247,6 +305,154 @@ export function ScenarioEditorPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [flowInstance, isFullscreen]);
 
+  const currentSnapshot = useCallback(
+    (): AutomationEditorSnapshot =>
+      cloneEditorSnapshot({ configs, edges: edges as Edge[], nodes: nodes as Node[] }),
+    [configs, edges, nodes],
+  );
+  const restoreSnapshot = useCallback(
+    (snapshot: AutomationEditorSnapshot) => {
+      const restored = cloneEditorSnapshot(snapshot);
+      setNodes(restored.nodes);
+      setEdges(restored.edges);
+      setConfigs(restored.configs);
+      setSelectedId(undefined);
+      setSelectedEdgeId(undefined);
+    },
+    [setEdges, setNodes],
+  );
+  const captureHistory = useCallback(() => {
+    const snapshot = currentSnapshot();
+    setHistoryPast((current) => [...current.slice(-49), snapshot]);
+    setHistoryFuture([]);
+  }, [currentSnapshot]);
+  const undo = useCallback(() => {
+    const previous = historyPast.at(-1);
+    if (!previous) return;
+    setHistoryFuture((current) => [currentSnapshot(), ...current.slice(0, 49)]);
+    setHistoryPast((current) => current.slice(0, -1));
+    restoreSnapshot(previous);
+  }, [currentSnapshot, historyPast, restoreSnapshot]);
+  const redo = useCallback(() => {
+    const next = historyFuture[0];
+    if (!next) return;
+    setHistoryPast((current) => [...current.slice(-49), currentSnapshot()]);
+    setHistoryFuture((current) => current.slice(1));
+    restoreSnapshot(next);
+  }, [currentSnapshot, historyFuture, restoreSnapshot]);
+  const copySelectedNode = useCallback(() => {
+    const selectedNode = nodes.find((node) => node.id === selectedId);
+    if (!selectedNode) return;
+    copiedNode.current = structuredClone(selectedNode);
+    copiedConfig.current = structuredClone(configs[selectedNode.id] ?? {});
+  }, [configs, nodes, selectedId]);
+  const pasteCopiedNode = useCallback(() => {
+    if (!copiedNode.current) return;
+    captureHistory();
+    const id = `${String(copiedNode.current.data.label).toLowerCase()}-${crypto.randomUUID().slice(0, 8)}`;
+    const pasted = {
+      ...structuredClone(copiedNode.current),
+      id,
+      position: {
+        x: copiedNode.current.position.x + 40,
+        y: copiedNode.current.position.y + 40,
+      },
+      selected: false,
+    };
+    setNodes((current) => [...current, pasted]);
+    setConfigs((current) => ({ ...current, [id]: structuredClone(copiedConfig.current ?? {}) }));
+    setSelectedId(id);
+  }, [captureHistory, setNodes]);
+  const duplicateSelectedNode = useCallback(() => {
+    copySelectedNode();
+    pasteCopiedNode();
+  }, [copySelectedNode, pasteCopiedNode]);
+
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+      } else if (event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        redo();
+      } else if (event.key.toLowerCase() === 'c') {
+        copySelectedNode();
+      } else if (event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        pasteCopiedNode();
+      }
+    };
+    window.addEventListener('keydown', keyboard);
+    return () => window.removeEventListener('keydown', keyboard);
+  }, [copySelectedNode, pasteCopiedNode, redo, undo]);
+
+  useEffect(() => {
+    if (!draftDirty) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    const guardLink = (event: MouseEvent) => {
+      const anchor = (event.target as HTMLElement | null)?.closest('a[href]');
+      if (!anchor || !window.confirm('This scenario has unsaved changes. Leave the editor?')) {
+        if (anchor) event.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    document.addEventListener('click', guardLink, true);
+    return () => {
+      window.removeEventListener('beforeunload', beforeUnload);
+      document.removeEventListener('click', guardLink, true);
+    };
+  }, [draftDirty]);
+
+  useEffect(() => {
+    if (
+      !scenarioQuery.data ||
+      !draftDirty ||
+      validation.errors.length ||
+      !scenarioName?.trim() ||
+      mutations.update.isPending ||
+      saveStatus === 'conflict'
+    )
+      return;
+    setSaveStatus('dirty');
+    const timer = window.setTimeout(async () => {
+      setSaveStatus('saving');
+      try {
+        const updated = await updateDraftRef.current({
+          ...(scenarioDescription === undefined ? {} : { description: scenarioDescription }),
+          ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+          graph: graphRef.current,
+          id: scenarioQuery.data!.id,
+          name: scenarioName,
+        });
+        setExpectedUpdatedAt(updated.updatedAt);
+        setLastSavedSignature(signature);
+        setSaveStatus('saved');
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'SCENARIO_DRAFT_CONFLICT') {
+          setSaveStatus('conflict');
+          void message.error('Autosave stopped: this draft changed in another session.');
+        } else {
+          setSaveStatus('dirty');
+        }
+      }
+    }, 1_500);
+    return () => window.clearTimeout(timer);
+  }, [
+    draftDirty,
+    expectedUpdatedAt,
+    saveStatus,
+    scenarioDescription,
+    scenarioName,
+    scenarioQuery.data,
+    signature,
+    validation.errors.length,
+  ]);
+
   if (scenarioId !== 'new' && scenarioQuery.isLoading)
     return <Spin className="route-loading" size="large" />;
   if (!hasProjectPermission(access.data, 'automation:manage'))
@@ -258,12 +464,11 @@ export function ScenarioEditorPage() {
       />
     );
 
-  const graph = flowToScenarioGraph(nodes, edges, configs);
-  const validation = validateScenarioGraph(graph);
   const selected = nodes.find((node) => node.id === selectedId);
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
 
   const addNode = (type: string) => {
+    captureHistory();
     const id = `${type.toLowerCase()}-${crypto.randomUUID().slice(0, 8)}`;
     setNodes((current) => [
       ...current,
@@ -312,6 +517,7 @@ export function ScenarioEditorPage() {
         : sourceType === 'WAIT_FOR_REPLY'
           ? { output: outgoing.length === 0 ? 'reply' : 'timeout' }
           : { output: 'default' };
+    captureHistory();
     setEdges((current) =>
       addEdge(
         {
@@ -330,15 +536,48 @@ export function ScenarioEditorPage() {
       return;
     }
     try {
-      if (scenarioQuery.data)
-        await mutations.update.mutateAsync({ id: scenarioQuery.data.id, ...values, graph });
-      else {
+      if (scenarioQuery.data) {
+        const updated = await mutations.update.mutateAsync({
+          ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+          id: scenarioQuery.data.id,
+          ...values,
+          graph,
+        });
+        setExpectedUpdatedAt(updated.updatedAt);
+        setLastSavedSignature(automationEditorSignature(graph, values.name, values.description));
+        setSaveStatus('saved');
+      } else {
         const created = await mutations.create.mutateAsync({ ...values, graph });
         void navigate(`/projects/${projectId}/scenarios/${created.id}`);
       }
       void message.success('Scenario draft saved.');
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'SCENARIO_DRAFT_CONFLICT') {
+        setSaveStatus('conflict');
+        void message.error('This draft changed in another session. Reload before saving again.');
+      } else void message.error('Scenario could not be saved.');
+    }
+  };
+
+  const applyEdgeChanges = (changes: EdgeChange[]) => {
+    if (changes.some((change) => change.type === 'remove')) captureHistory();
+    onEdgesChange(changes);
+  };
+  const applyNodeChanges = (changes: NodeChange[]) => {
+    if (changes.some((change) => change.type === 'remove')) captureHistory();
+    onNodesChange(changes);
+  };
+
+  const runTest = async (input: AutomationTestInput) => {
+    try {
+      const result = await mutations.testRun.mutateAsync({
+        ...input,
+        graph,
+        scenarioId: scenarioQuery.data?.id ?? 'new',
+      });
+      setTestResult(result);
     } catch {
-      void message.error('Scenario could not be saved.');
+      void message.error('Safe test run could not be completed.');
     }
   };
 
@@ -367,6 +606,9 @@ export function ScenarioEditorPage() {
             {scenarioDescription ? <small>{scenarioDescription}</small> : null}
           </div>
           <Space wrap>
+            <Button icon={<ExperimentOutlined />} onClick={() => setTestOpen(true)}>
+              Test run
+            </Button>
             <Button
               htmlType="submit"
               loading={mutations.create.isPending || mutations.update.isPending}
@@ -448,6 +690,52 @@ export function ScenarioEditorPage() {
           </Col>
           <Col lg={18} xl={14} xs={24}>
             <div aria-label="Scenario canvas" className="scenario-canvas">
+              <div className="automation-canvas-toolbar">
+                <Space size="small" wrap>
+                  <Button
+                    aria-label="Undo editor change"
+                    disabled={!historyPast.length}
+                    icon={<UndoOutlined />}
+                    onClick={undo}
+                    size="small"
+                  >
+                    Undo
+                  </Button>
+                  <Button
+                    aria-label="Redo editor change"
+                    disabled={!historyFuture.length}
+                    icon={<RedoOutlined />}
+                    onClick={redo}
+                    size="small"
+                  >
+                    Redo
+                  </Button>
+                  <Button
+                    disabled={!selected}
+                    icon={<CopyOutlined />}
+                    onClick={copySelectedNode}
+                    size="small"
+                  >
+                    Copy
+                  </Button>
+                  <Button disabled={!selected} onClick={duplicateSelectedNode} size="small">
+                    Duplicate
+                  </Button>
+                </Space>
+                <Tag
+                  color={
+                    saveStatus === 'conflict' ? 'red' : saveStatus === 'saved' ? 'green' : 'gold'
+                  }
+                >
+                  {saveStatus === 'conflict'
+                    ? 'Save conflict'
+                    : saveStatus === 'saving'
+                      ? 'Saving…'
+                      : draftDirty
+                        ? 'Unsaved changes'
+                        : 'Saved'}
+                </Tag>
+              </div>
               <ReactFlow
                 connectionLineStyle={{ stroke: '#0f766e', strokeWidth: 2 }}
                 defaultEdgeOptions={automationEdgeDefaults}
@@ -458,6 +746,8 @@ export function ScenarioEditorPage() {
                 minZoom={0.35}
                 nodeTypes={automationNodeTypes}
                 nodes={nodes}
+                snapGrid={[20, 20]}
+                snapToGrid
                 nodesConnectable={isCanvasInteractive}
                 nodesDraggable={isCanvasInteractive}
                 elementsSelectable={isCanvasInteractive}
@@ -473,12 +763,13 @@ export function ScenarioEditorPage() {
                   setSelectedEdgeId(edge.id);
                   setSelectedId(undefined);
                 }}
-                onEdgesChange={onEdgesChange}
+                onEdgesChange={applyEdgeChanges}
                 onNodeClick={(_, node) => {
                   setSelectedId(node.id);
                   setSelectedEdgeId(undefined);
                 }}
-                onNodesChange={onNodesChange}
+                onNodeDragStart={captureHistory}
+                onNodesChange={applyNodeChanges}
                 proOptions={{ hideAttribution: true }}
               >
                 <Background color="#dbe5ef" gap={22} size={1.2} />
@@ -508,17 +799,21 @@ export function ScenarioEditorPage() {
                   <Tag>{String(selected.data.label)}</Tag>
                   <AutomationNodeConfig
                     config={configs[selected.id] ?? {}}
+                    customFields={customFields.data ?? []}
                     nodeType={String(selected.data.label)}
-                    onChange={(config) =>
-                      setConfigs((current) => ({ ...current, [selected.id]: config }))
-                    }
+                    onChange={(config) => {
+                      captureHistory();
+                      setConfigs((current) => ({ ...current, [selected.id]: config }));
+                    }}
                     scenarios={scenarios.data ?? []}
+                    tags={tags.data ?? []}
                     templates={templates.data ?? []}
                   />
                   {String(selected.data.label) !== 'INCOMING_MESSAGE' ? (
                     <Button
                       danger
                       onClick={() => {
+                        captureHistory();
                         setNodes((current) => current.filter((node) => node.id !== selected.id));
                         setEdges((current) =>
                           current.filter(
@@ -534,12 +829,17 @@ export function ScenarioEditorPage() {
                 </>
               ) : selectedEdge ? (
                 <EdgeConfiguration
+                  customFields={customFields.data ?? []}
                   edge={selectedEdge}
-                  onChange={(next) =>
+                  onChange={(next) => {
+                    captureHistory();
                     setEdges((current) =>
                       current.map((edge) => (edge.id === next.id ? next : edge)),
-                    )
-                  }
+                    );
+                  }}
+                  sourceType={String(
+                    nodes.find((node) => node.id === selectedEdge.source)?.data.label ?? '',
+                  )}
                 />
               ) : (
                 <div className="automation-settings-empty">
@@ -554,6 +854,9 @@ export function ScenarioEditorPage() {
           </Col>
         </Row>
         <Space className="automation-actions" wrap>
+          <Button icon={<ExperimentOutlined />} onClick={() => setTestOpen(true)}>
+            Test run
+          </Button>
           <Button
             htmlType="submit"
             loading={mutations.create.isPending || mutations.update.isPending}
@@ -689,20 +992,83 @@ export function ScenarioEditorPage() {
                     <Typography.Text type="secondary">
                       {node.nodeType} · {node.status} · attempt {node.attempt}
                     </Typography.Text>
+                    <Typography.Text type="secondary">
+                      {executionDuration(node.startedAt, node.completedAt)}
+                    </Typography.Text>
+                    {safeDiagnosticJson(node.inputSafe) ? (
+                      <details>
+                        <summary>Safe input</summary>
+                        <pre className="automation-diagnostic-json">
+                          {safeDiagnosticJson(node.inputSafe)}
+                        </pre>
+                      </details>
+                    ) : null}
+                    {safeDiagnosticJson(node.outputSafe) ? (
+                      <details>
+                        <summary>Safe output</summary>
+                        <pre className="automation-diagnostic-json">
+                          {safeDiagnosticJson(node.outputSafe)}
+                        </pre>
+                      </details>
+                    ) : null}
+                    {safeDiagnosticJson(node.errorSafe) ? (
+                      <details>
+                        <summary>Safe error</summary>
+                        <pre className="automation-diagnostic-json">
+                          {safeDiagnosticJson(node.errorSafe)}
+                        </pre>
+                      </details>
+                    ) : null}
                   </Space>
                 ),
                 color:
                   node.status === 'SUCCEEDED' ? 'green' : node.status === 'FAILED' ? 'red' : 'blue',
               }))}
             />
+            <Button
+              icon={<ExperimentOutlined />}
+              loading={mutations.replayExecution.isPending}
+              onClick={async () => {
+                try {
+                  const result = await mutations.replayExecution.mutateAsync({
+                    executionId: inspectedExecution.id,
+                    scenarioId: scenarioQuery.data!.id,
+                  });
+                  setTestResult(result);
+                  setInspectedExecution(undefined);
+                  setTestOpen(true);
+                } catch {
+                  void message.error('Execution could not be replayed safely.');
+                }
+              }}
+            >
+              Replay as safe test
+            </Button>
           </>
         ) : null}
+      </Drawer>
+      <Drawer onClose={() => setTestOpen(false)} open={testOpen} title="Safe test run" width={560}>
+        <AutomationTestPanel
+          loading={mutations.testRun.isPending}
+          onRun={runTest}
+          {...(testResult ? { result: testResult } : {})}
+        />
       </Drawer>
     </section>
   );
 }
 
-function EdgeConfiguration({ edge, onChange }: { edge: Edge; onChange(edge: Edge): void }) {
+function EdgeConfiguration({
+  customFields,
+  edge,
+  onChange,
+  sourceType,
+}: {
+  customFields: AutomationCustomField[];
+  edge: Edge;
+  onChange(edge: Edge): void;
+  sourceType: string;
+}) {
   const data = (edge.data ?? {}) as AutomationEdgeData;
   const update = (next: Partial<AutomationEdgeData>) => {
     const merged = { ...data, ...next };
@@ -712,10 +1078,32 @@ function EdgeConfiguration({ edge, onChange }: { edge: Edge; onChange(edge: Edge
       label: merged.output === 'default' ? undefined : merged.output,
     });
   };
+  const replaceData = (next: AutomationEdgeData) =>
+    onChange({
+      ...edge,
+      data: next,
+      label: next.output === 'default' ? undefined : next.output,
+    });
+  const fallback = !data.condition && !data.conditionGroup;
+  const conditionGroup: NonNullable<AutomationEdgeData['conditionGroup']> = data.conditionGroup ?? {
+    combinator: 'AND',
+    rules: [data.condition ?? { field: 'message.text', operator: 'exists' }],
+  };
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
       <Form.Item label="Output port">
-        <Input onChange={(event) => update({ output: event.target.value })} value={data.output} />
+        {sourceType === 'WAIT_FOR_REPLY' ? (
+          <Select
+            onChange={(output: string) => update({ output })}
+            options={[
+              { label: 'Reply matched', value: 'reply' },
+              { label: 'Timed out', value: 'timeout' },
+            ]}
+            value={data.output ?? null}
+          />
+        ) : (
+          <Input onChange={(event) => update({ output: event.target.value })} value={data.output} />
+        )}
       </Form.Item>
       {data.priority !== undefined ? (
         <>
@@ -726,53 +1114,48 @@ function EdgeConfiguration({ edge, onChange }: { edge: Edge; onChange(edge: Edge
               value={data.priority}
             />
           </Form.Item>
-          <Form.Item label="Field">
-            <Input
-              onChange={(event) =>
-                update({
-                  condition: {
-                    field: event.target.value,
-                    operator: data.condition?.operator ?? 'exists',
-                    value: data.condition?.value,
-                  },
-                })
-              }
-              value={data.condition?.field}
+          <Checkbox
+            checked={fallback}
+            onChange={(event) => {
+              const rest = { ...data };
+              delete rest.condition;
+              delete rest.conditionGroup;
+              replaceData(
+                event.target.checked
+                  ? rest
+                  : {
+                      ...rest,
+                      conditionGroup: {
+                        combinator: 'AND',
+                        rules: [{ field: 'message.text', operator: 'exists' }],
+                      },
+                    },
+              );
+            }}
+          >
+            Fallback branch when no rules match
+          </Checkbox>
+          {!fallback ? (
+            <AutomationConditionGroupFields
+              customFields={customFields}
+              group={conditionGroup}
+              onChange={(nextGroup) => {
+                const rest = { ...data };
+                delete rest.condition;
+                delete rest.conditionGroup;
+                replaceData({ ...rest, conditionGroup: nextGroup });
+              }}
             />
-          </Form.Item>
-          <Form.Item label="Operator">
-            <Select
-              onChange={(operator) =>
-                update({
-                  condition: {
-                    field: data.condition?.field ?? 'message.text',
-                    operator: operator ?? 'exists',
-                    value: data.condition?.value,
-                  },
-                })
-              }
-              options={['equals', 'not_equals', 'contains', 'exists', 'not_exists'].map(
-                (value) => ({ label: value, value }),
-              )}
-              value={data.condition?.operator}
-            />
-          </Form.Item>
-          <Form.Item label="Value">
-            <Input
-              onChange={(event) =>
-                update({
-                  condition: {
-                    field: data.condition?.field ?? 'message.text',
-                    operator: data.condition?.operator ?? 'equals',
-                    value: event.target.value,
-                  },
-                })
-              }
-              value={typeof data.condition?.value === 'string' ? data.condition.value : undefined}
-            />
-          </Form.Item>
+          ) : null}
         </>
       ) : null}
     </Space>
   );
+}
+
+function executionDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt) return 'Not started';
+  if (!completedAt) return `Started ${new Date(startedAt).toLocaleString()}`;
+  const milliseconds = Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
+  return `${milliseconds} ms`;
 }

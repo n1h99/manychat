@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateCondition, validateScenarioGraph } from './index';
+import {
+  evaluateCondition,
+  evaluateConditionGroup,
+  matchesWaitForReplyCriteria,
+  simulateScenarioGraph,
+  validateScenarioGraph,
+} from './index';
 
 describe('automation graph validation', () => {
   it('requires deterministic condition branch priorities', () => {
@@ -24,6 +30,7 @@ describe('automation graph validation', () => {
     expect(evaluateCondition('greater_than', null, 1)).toBe(false);
     expect(evaluateCondition('greater_than', '2', 1)).toBe(false);
     expect(evaluateCondition('greater_than', 2, 1)).toBe(true);
+    expect(evaluateCondition('contains', ['vip', 'active'], 'vip')).toBe(true);
   });
 
   it('accepts a cycle guarded by a durable delay', () => {
@@ -72,5 +79,159 @@ describe('automation graph validation', () => {
     expect(result.errors).toContain(
       'Subflow node subflow requires a pinned published scenario version',
     );
+  });
+
+  it('validates bounded Wait for Reply criteria while keeping legacy empty criteria compatible', () => {
+    const valid = validateScenarioGraph({
+      edges: [
+        { from: 'trigger', to: 'wait' },
+        { from: 'wait', output: 'reply', to: 'stop' },
+      ],
+      nodes: [
+        { id: 'trigger', type: 'INCOMING_MESSAGE' },
+        { config: { criteria: {}, timeoutSeconds: 60 }, id: 'wait', type: 'WAIT_FOR_REPLY' },
+        { id: 'stop', type: 'STOP' },
+      ],
+    });
+    const invalid = validateScenarioGraph({
+      edges: [{ from: 'trigger', to: 'wait' }],
+      nodes: [
+        { id: 'trigger', type: 'INCOMING_MESSAGE' },
+        {
+          config: {
+            criteria: { kind: 'TEXT', operator: 'contains', value: '' },
+            timeoutSeconds: 60,
+          },
+          id: 'wait',
+          type: 'WAIT_FOR_REPLY',
+        },
+      ],
+    });
+
+    expect(valid.errors).not.toContain('Wait for Reply node wait has invalid reply criteria');
+    expect(invalid.errors).toContain('Wait for Reply node wait has invalid reply criteria');
+  });
+});
+
+describe('Wait for Reply criteria', () => {
+  it('matches text without case sensitivity and ignores unrelated event types', () => {
+    const criteria = {
+      caseSensitive: false,
+      kind: 'TEXT',
+      operator: 'contains',
+      value: 'YES',
+    };
+
+    expect(
+      matchesWaitForReplyCriteria(criteria, {
+        content: { text: 'Yes, please' },
+        type: 'MESSAGE',
+      }),
+    ).toBe(true);
+    expect(
+      matchesWaitForReplyCriteria(criteria, {
+        content: { text: 'Yes, please' },
+        type: 'MESSAGE_EDITED',
+      }),
+    ).toBe(false);
+  });
+
+  it('matches only selected media types', () => {
+    const criteria = { kind: 'MEDIA', mediaTypes: ['PHOTO', 'DOCUMENT'] };
+
+    expect(matchesWaitForReplyCriteria(criteria, { content: {}, type: 'PHOTO' })).toBe(true);
+    expect(matchesWaitForReplyCriteria(criteria, { content: {}, type: 'VOICE' })).toBe(false);
+  });
+});
+
+describe('condition groups and safe simulation', () => {
+  it('supports deterministic AND and OR groups', () => {
+    const values = new Map<string, unknown>([
+      ['message.text', 'yes please'],
+      ['contact.customFields.score', 10],
+    ]);
+    const rules = [
+      { field: 'message.text', operator: 'contains' as const, value: 'yes' },
+      { field: 'contact.customFields.score', operator: 'greater_or_equal' as const, value: 5 },
+    ];
+
+    expect(evaluateConditionGroup({ combinator: 'AND', rules }, (field) => values.get(field))).toBe(
+      true,
+    );
+    expect(
+      evaluateConditionGroup(
+        {
+          combinator: 'OR',
+          rules: [{ field: 'message.text', operator: 'equals', value: 'no' }],
+        },
+        (field) => values.get(field),
+      ),
+    ).toBe(false);
+  });
+
+  it('simulates branch choice without executing action side effects', () => {
+    const result = simulateScenarioGraph(
+      {
+        edges: [
+          { from: 'incoming', to: 'condition' },
+          {
+            conditionGroup: {
+              combinator: 'AND',
+              rules: [{ field: 'message.text', operator: 'contains', value: 'yes' }],
+            },
+            from: 'condition',
+            output: 'accepted',
+            priority: 0,
+            to: 'send',
+          },
+          { from: 'condition', output: 'fallback', priority: 1, to: 'stop' },
+          { from: 'send', to: 'stop' },
+        ],
+        nodes: [
+          { id: 'incoming', type: 'INCOMING_MESSAGE' },
+          { id: 'condition', type: 'CONDITION' },
+          { config: { text: 'Never sent' }, id: 'send', type: 'SEND_MESSAGE' },
+          { id: 'stop', type: 'STOP' },
+        ],
+      },
+      { event: { content: { text: 'yes' }, type: 'MESSAGE' } },
+    );
+
+    expect(result.completed).toBe(true);
+    expect(result.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ nodeId: 'condition', selectedOutput: 'accepted' }),
+        expect.objectContaining({ nodeId: 'send', result: 'WOULD_EXECUTE' }),
+      ]),
+    );
+  });
+
+  it('keeps legacy node-level conditions executable without turning every edge into a fallback', () => {
+    const graph = {
+      edges: [
+        { from: 'incoming', to: 'condition' },
+        { from: 'condition', output: 'matched', priority: 0, to: 'stop' },
+        { from: 'condition', output: 'also-matched', priority: 1, to: 'stop-2' },
+      ],
+      nodes: [
+        { id: 'incoming', type: 'INCOMING_MESSAGE' },
+        {
+          config: { field: 'message.text', operator: 'equals', value: 'yes' },
+          id: 'condition',
+          type: 'CONDITION',
+        },
+        { id: 'stop', type: 'STOP' },
+        { id: 'stop-2', type: 'STOP' },
+      ],
+    };
+
+    expect(validateScenarioGraph(graph).errors).not.toContain(
+      'Condition node condition has multiple fallback branches',
+    );
+    expect(
+      simulateScenarioGraph(graph, {
+        event: { content: { text: 'no' }, type: 'MESSAGE' },
+      }).steps.find((step) => step.nodeId === 'condition'),
+    ).toMatchObject({ reasonCode: 'NO_BRANCH_MATCHED' });
   });
 });

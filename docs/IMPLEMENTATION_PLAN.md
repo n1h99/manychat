@@ -398,6 +398,33 @@ published-version execution, durable Delay/Wait continuations and pinned
 Subflows. External HTTP, broadcasts, templates, extra channels and advanced
 media remain outside this slice.
 
+## Automation Studio 2.1 — approved authoring and diagnostics slice
+
+This Telegram-only increment improves the existing versioned editor and runtime:
+
+- project-scoped tag and custom-field selectors replace raw identifiers;
+- condition authoring exposes the full deterministic operator set and typed
+  comparison values;
+- Delay and Wait durations are authored in seconds, minutes, hours or days while
+  the compiled graph keeps integer seconds;
+- Wait for Reply supports bounded text, callback and media criteria, with old
+  empty criteria remaining compatible as any supported customer reply;
+- execution inspection exposes safe per-node timing and branch metadata without
+  copying customer content or provider payloads.
+- condition connections support bounded nested-free AND/OR rule groups plus one
+  explicit fallback branch, while legacy node-level conditions remain executable;
+- Send Message provides a project-aware variable picker and deterministic sample
+  preview;
+- the editor provides a 50-step local undo/redo history, node copy/paste and
+  duplication, grid snapping, debounced draft autosave, optimistic concurrency
+  and navigation guards;
+- safe test run and execution replay simulate the pinned graph and branch choices
+  without creating Telegram, CRM, tag, contact, delay or wait side effects.
+
+The slice does not add regular expressions, arbitrary external HTTP requests,
+side-effecting execution replay, WhatsApp or Instagram. Published versions remain
+immutable and all durable continuation state remains PostgreSQL-owned.
+
 ## Contacts v2 — approved post-pilot slice
 
 Contacts v2 adds saved segments, typed custom-field projections and an explicit,
@@ -538,3 +565,10 @@ ignored to avoid Telegram's Thinking placeholder. Edit capability limits
 explicitly distinguish editable and immutable fields. Since Bot API 10.2 has
 no effect-catalog discovery method for bots, Omnicus advertises an empty catalog
 with a stable reason code instead of inventing effect identifiers.
+
+Provider contract 3.2.0 adds the CRM-requested durable boundary for safe
+scenario/broadcast `sourceContext`, client edit/contact events, temporary
+conversation pause with automatic resume, application-owned scheduling,
+Telegram media-group aggregates, structured contact/location/poll messages and
+bot commands/menu configuration. External callbacks and external deletion
+remain capability-gated because no safe provider contract exists for them.

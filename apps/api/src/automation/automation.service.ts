@@ -1,14 +1,29 @@
 import { createHash } from 'node:crypto';
 
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { scenarioGraphSchema, validateScenarioGraph } from '@omnicus/automation-core';
-import type { Prisma } from '@omnicus/database';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  scenarioGraphSchema,
+  simulateScenarioGraph,
+  validateScenarioGraph,
+} from '@omnicus/automation-core';
+import type { CustomFieldType, Prisma } from '@omnicus/database';
 
 import type { AuthenticatedUser } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { AuditService } from '../audit/audit.service';
 import { DatabaseService } from '../database/database.service';
-import type { CreateScenarioDto, DuplicateScenarioDto, UpdateScenarioDto } from './dto';
+import type {
+  CreateScenarioDto,
+  DuplicateScenarioDto,
+  TestScenarioDto,
+  UpdateScenarioDto,
+} from './dto';
 
 @Injectable()
 export class AutomationService {
@@ -78,8 +93,11 @@ export class AutomationService {
           select: {
             attempt: true,
             completedAt: true,
+            errorSafe: true,
+            inputSafe: true,
             nodeId: true,
             nodeType: true,
+            outputSafe: true,
             startedAt: true,
             status: true,
           },
@@ -88,6 +106,61 @@ export class AutomationService {
       take: 100,
       where: { projectId, scenarioId },
     });
+  }
+
+  async testRun(projectId: string, dto: TestScenarioDto) {
+    this.assertValidGraph(dto.graph);
+    await this.assertReferencedResources(projectId, dto.graph);
+    return simulateScenarioGraph(dto.graph, {
+      ...(dto.contact ? { contact: dto.contact } : {}),
+      ...(dto.customFields ? { customFields: dto.customFields } : {}),
+      ...(dto.event ? { event: dto.event } : {}),
+      ...(dto.waitOutcome ? { waitOutcome: dto.waitOutcome } : {}),
+    });
+  }
+
+  async replayExecution(
+    projectId: string,
+    scenarioId: string,
+    executionId: string,
+    actor: AuthenticatedUser,
+    context: RequestSecurityContext,
+  ) {
+    const execution = await this.database.client.scenarioExecution.findFirst({
+      include: {
+        contact: true,
+        scenarioVersion: { select: { compiledDefinition: true } },
+        triggerEvent: { select: { payload: true } },
+      },
+      where: { id: executionId, projectId, scenarioId },
+    });
+    if (!execution?.scenarioVersion.compiledDefinition)
+      throw new NotFoundException({
+        code: 'SCENARIO_EXECUTION_NOT_FOUND',
+        message: 'Scenario execution was not found',
+      });
+    const result = simulateScenarioGraph(execution.scenarioVersion.compiledDefinition, {
+      contact: {
+        displayName: execution.contact.displayName,
+        email: execution.contact.email,
+        firstName: execution.contact.firstName,
+        lastName: execution.contact.lastName,
+        phone: execution.contact.phone,
+        username: execution.contact.username,
+      },
+      customFields: this.record(execution.contact.customFields),
+      event: this.record(execution.triggerEvent.payload),
+    });
+    await this.audit.record({
+      action: 'scenario.execution_test_replayed',
+      actorUserId: actor.userId,
+      correlationId: context.correlationId,
+      entityId: executionId,
+      entityType: 'ScenarioExecution',
+      projectId,
+      afterSafeJson: { completed: result.completed, stepCount: result.steps.length },
+    });
+    return result;
   }
 
   async create(
@@ -172,12 +245,28 @@ export class AutomationService {
           where: { projectId_id: { id: draftId, projectId } },
         });
       }
-      const updated = await transaction.scenario.update({
-        data: {
-          ...(dto.description === undefined ? {} : { description: dto.description }),
-          ...(dto.name === undefined ? {} : { name: dto.name }),
-          draftVersionId: draftId,
-        },
+      const data = {
+        ...(dto.description === undefined ? {} : { description: dto.description }),
+        ...(dto.name === undefined ? {} : { name: dto.name }),
+        draftVersionId: draftId,
+      };
+      if (dto.expectedUpdatedAt) {
+        const result = await transaction.scenario.updateMany({
+          data,
+          where: { id: scenarioId, projectId, updatedAt: new Date(dto.expectedUpdatedAt) },
+        });
+        if (result.count !== 1)
+          throw new ConflictException({
+            code: 'SCENARIO_DRAFT_CONFLICT',
+            message: 'Scenario draft changed in another editor session',
+          });
+      } else {
+        await transaction.scenario.update({
+          data,
+          where: { projectId_id: { id: scenarioId, projectId } },
+        });
+      }
+      const updated = await transaction.scenario.findUniqueOrThrow({
         where: { projectId_id: { id: scenarioId, projectId } },
       });
       await this.audit.record({
@@ -207,6 +296,7 @@ export class AutomationService {
       });
     const draftVersion = scenario.draftVersion;
     const validation = this.assertValidGraph(draftVersion.graph);
+    await this.assertReferencedResources(projectId, draftVersion.graph);
     await this.assertPinnedTemplates(projectId, draftVersion.graph);
     await this.assertPinnedSubflows(projectId, scenarioId, draftVersion.graph);
     return this.database.client.$transaction(async (transaction) => {
@@ -404,6 +494,95 @@ export class AutomationService {
     }
   }
 
+  private async assertReferencedResources(projectId: string, graph: unknown): Promise<void> {
+    const parsed = scenarioGraphSchema.safeParse(graph);
+    if (!parsed.success) return;
+    const tagIds = new Set(
+      parsed.data.nodes
+        .filter((node) => node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG')
+        .map((node) => node.config.tagId)
+        .filter((tagId): tagId is string => typeof tagId === 'string'),
+    );
+    if (tagIds.size) {
+      const tags = await this.database.client.tag.findMany({
+        select: { id: true },
+        where: { archivedAt: null, id: { in: [...tagIds] }, projectId },
+      });
+      if (tags.length !== tagIds.size)
+        throw new BadRequestException({
+          code: 'SCENARIO_TAG_INVALID',
+          message: 'Scenario references an unavailable project tag',
+        });
+    }
+    const fieldPaths = [
+      ...parsed.data.nodes.map((node) =>
+        node.type === 'SET_CUSTOM_FIELD'
+          ? node.config.key
+          : node.type === 'CONDITION'
+            ? node.config.field
+            : undefined,
+      ),
+      ...parsed.data.edges.map((edge) => edge.condition?.field),
+      ...parsed.data.edges.flatMap((edge) =>
+        edge.conditionGroup ? edge.conditionGroup.rules.map((rule) => rule.field) : [],
+      ),
+    ];
+    const fieldKeys = new Set(
+      fieldPaths
+        .filter((field): field is string => typeof field === 'string')
+        .map((field) =>
+          field.startsWith('contact.customFields.')
+            ? field.slice('contact.customFields.'.length)
+            : field,
+        )
+        .filter((field) => !field.includes('.')),
+    );
+    if (!fieldKeys.size) return;
+    const fields = await this.database.client.customFieldDefinition.findMany({
+      select: { key: true, options: true, type: true },
+      where: { archivedAt: null, key: { in: [...fieldKeys] }, projectId },
+    });
+    if (fields.length !== fieldKeys.size)
+      throw new BadRequestException({
+        code: 'SCENARIO_CUSTOM_FIELD_INVALID',
+        message: 'Scenario references an unavailable project custom field',
+      });
+    const definitions = new Map(fields.map((field) => [field.key, field]));
+    for (const node of parsed.data.nodes.filter(
+      (candidate) => candidate.type === 'SET_CUSTOM_FIELD',
+    )) {
+      const key = typeof node.config.key === 'string' ? node.config.key : undefined;
+      const definition = key ? definitions.get(key) : undefined;
+      if (
+        !definition ||
+        !this.isCustomFieldValueValid(definition.type, node.config.value, definition.options)
+      )
+        throw new BadRequestException({
+          code: 'SCENARIO_CUSTOM_FIELD_VALUE_INVALID',
+          message: 'Scenario custom-field value does not match its active definition',
+        });
+    }
+  }
+
+  private isCustomFieldValueValid(
+    type: CustomFieldType,
+    value: unknown,
+    options: Prisma.JsonValue | null,
+  ): boolean {
+    if (value === null) return true;
+    if (type === 'TEXT') return typeof value === 'string';
+    if (type === 'NUMBER') return typeof value === 'number' && Number.isFinite(value);
+    if (type === 'BOOLEAN') return typeof value === 'boolean';
+    if (type === 'DATE') return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    if (type === 'DATETIME') return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+    if (type === 'JSON') return value !== null && typeof value === 'object';
+    const allowed = Array.isArray(options) ? options : [];
+    return type === 'SELECT'
+      ? typeof value === 'string' && allowed.includes(value)
+      : Array.isArray(value) &&
+          value.every((entry) => typeof entry === 'string' && allowed.includes(entry));
+  }
+
   private async assertPinnedSubflows(
     projectId: string,
     sourceScenarioId: string,
@@ -444,5 +623,11 @@ export class AutomationService {
 
   private toJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  }
+
+  private record(value: Prisma.JsonValue): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   }
 }

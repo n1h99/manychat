@@ -30,15 +30,35 @@ export interface ScenarioExecution {
   id: string;
   nodeExecutions: Array<{
     attempt: number;
+    completedAt: string | null;
+    errorSafe: unknown | null;
+    inputSafe: unknown;
     nodeId: string;
     nodeType: string;
+    outputSafe: unknown | null;
+    startedAt: string | null;
     status: string;
   }>;
   status: string;
 }
+export interface AutomationSimulationResult {
+  completed: boolean;
+  steps: Array<{
+    nextNodeId?: string;
+    nodeId: string;
+    nodeType: string;
+    reasonCode?: string;
+    result: 'COMPLETED' | 'WAITING' | 'WOULD_EXECUTE';
+    selectedOutput?: string;
+  }>;
+}
 export interface ScenarioGraph {
   edges: Array<{
     condition?: { field: string; operator: string; value?: unknown };
+    conditionGroup?: {
+      combinator: 'AND' | 'OR';
+      rules: Array<{ field: string; operator: string; value?: unknown }>;
+    };
     from: string;
     id?: string;
     output?: string;
@@ -140,6 +160,26 @@ export function useScenarioMutations(projectId?: string) {
         request<Scenario>(`/${scenarioId}/versions/${versionId}/restore`, 'POST'),
       onSuccess: invalidate,
     }),
+    replayExecution: useMutation({
+      mutationFn: ({ executionId, scenarioId }: { executionId: string; scenarioId: string }) =>
+        request<AutomationSimulationResult>(
+          `/${scenarioId}/executions/${executionId}/replay`,
+          'POST',
+        ),
+    }),
+    testRun: useMutation({
+      mutationFn: ({
+        scenarioId,
+        ...input
+      }: {
+        contact?: Record<string, unknown>;
+        customFields?: Record<string, unknown>;
+        event?: Record<string, unknown>;
+        graph: ScenarioGraph;
+        scenarioId: string;
+        waitOutcome?: 'reply' | 'timeout';
+      }) => request<AutomationSimulationResult>(`/${scenarioId}/test-run`, 'POST', input),
+    }),
     update: useMutation({
       mutationFn: ({
         id,
@@ -147,10 +187,13 @@ export function useScenarioMutations(projectId?: string) {
       }: {
         id: string;
         description?: string;
+        expectedUpdatedAt?: string;
         graph?: ScenarioGraph;
         name?: string;
       }) => request<Scenario>(`/${id}`, 'PATCH', input),
-      onSuccess: invalidate,
+      onSuccess: async () => {
+        await client.invalidateQueries({ queryKey: ['scenarios', projectId] });
+      },
     }),
   };
 }

@@ -4,6 +4,10 @@ import type { ScenarioGraph } from './automation-api';
 
 export type AutomationEdgeData = {
   condition?: { field: string; operator: string; value?: unknown };
+  conditionGroup?: {
+    combinator: 'AND' | 'OR';
+    rules: Array<{ field: string; operator: string; value?: unknown }>;
+  };
   output?: string;
   priority?: number;
 };
@@ -43,6 +47,7 @@ export function scenarioGraphToFlow(graph: ScenarioGraph): { edges: Edge[]; node
     edges: graph.edges.map((edge, index) => ({
       data: {
         ...(edge.condition ? { condition: edge.condition } : {}),
+        ...(edge.conditionGroup ? { conditionGroup: edge.conditionGroup } : {}),
         output: edge.output ?? 'default',
         ...(edge.priority === undefined ? {} : { priority: edge.priority }),
       },
@@ -70,6 +75,7 @@ export function flowToScenarioGraph(
       const data = (edge.data ?? {}) as AutomationEdgeData;
       return {
         ...(data.condition ? { condition: data.condition } : {}),
+        ...(data.conditionGroup ? { conditionGroup: data.conditionGroup } : {}),
         from: edge.source,
         id: edge.id,
         output: data.output ?? (typeof edge.label === 'string' ? edge.label : 'default'),
