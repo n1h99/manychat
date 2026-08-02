@@ -102,6 +102,7 @@ export interface ForwardInboundMessageInput {
   messageId?: string;
   normalizedEventId?: string;
   occurredAt: string;
+  replyToMessageId?: string;
   senderName?: string;
   text?: string;
 }
@@ -340,6 +341,7 @@ export class HttpCrmClient implements CrmClient {
       occurredAt: input.occurredAt,
       omnicusContactId: input.contactId,
       omnicusProjectId: context.projectId,
+      replyToMessageId: input.replyToMessageId,
       senderName: input.senderName,
       text: input.text,
     };

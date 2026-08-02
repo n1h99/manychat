@@ -546,6 +546,9 @@ export interface TelegramMessage {
     user_id?: number;
     vcard?: string;
   };
+  reply_to_message?: {
+    message_id: number;
+  };
 }
 
 interface TelegramMessageEntityWire {
@@ -778,7 +781,12 @@ function mediaPresentation(message: TelegramMessage): Record<string, unknown> {
 }
 
 function messageEvent(message: TelegramMessage): TelegramInboundEvent {
-  const metadata = { telegramMessage: message };
+  const metadata = {
+    ...(message.reply_to_message
+      ? { replyToExternalMessageId: String(message.reply_to_message.message_id) }
+      : {}),
+    telegramMessage: message,
+  };
   const base = {
     chatId: String(message.chat.id),
     externalMessageId: String(message.message_id),

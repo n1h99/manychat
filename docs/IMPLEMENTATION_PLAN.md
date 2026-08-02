@@ -591,6 +591,12 @@ connection routing is rejected, and a post-fix production worker operation
 completed `SUCCEEDED` on its first attempt. Connection-scoped capability
 discovery now advertises `userReactionEvents.supported=true`.
 
+The active CRM pairing now owns complete inbound history independently of
+automation graphs. Telegram inbound persistence creates a stable CRM intent in
+the same transaction when the contact is linked, or one contact-bootstrap
+intent followed by bounded history backfill when it is not. Contract 3.2.3
+preserves a same-conversation inbound reply reference as an Omnicus UUID.
+
 ## Automation Studio 2.2 — external HTTP and incomplete-draft authoring
 
 This approved slice adds an SSRF-safe `EXTERNAL_HTTP_REQUEST` node with bounded

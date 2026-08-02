@@ -235,4 +235,34 @@ describe('AutomationRuntimeService Wait for Reply criteria', () => {
       expect.objectContaining({ data: { currentNodeId: 'http-a', status: 'WAITING' } }),
     );
   });
+
+  it('does not queue a second inbound CRM delivery from a legacy forward node', async () => {
+    const outboxFindUnique = vi.fn();
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      queueCrmOperation(
+        transaction: unknown,
+        node: unknown,
+        context: unknown,
+        executionId: string,
+      ): Promise<void>;
+    };
+
+    await service.queueCrmOperation(
+      {
+        crmOperation: {
+          findFirst: vi.fn().mockResolvedValue({ id: 'automatic-inbound-operation' }),
+        },
+        outboxRecord: { findUnique: outboxFindUnique },
+      },
+      { config: {}, id: 'forward-a', type: 'FORWARD_TO_CRM' },
+      {
+        contactId: 'contact-a',
+        normalizedEventId: 'event-a',
+        projectId: 'project-a',
+      },
+      'execution-a',
+    );
+
+    expect(outboxFindUnique).not.toHaveBeenCalled();
+  });
 });

@@ -248,6 +248,7 @@ describe('CrmOutboxService', () => {
           createdAt: occurredAt,
           id: 'inbound-message-a',
           mediaAsset: null,
+          metadata: { replyToMessageId: 'reply-source-message-a' },
         },
         payload: {
           content: { data: 'budget:1000', id: 'callback-a' },
@@ -298,6 +299,7 @@ describe('CrmOutboxService', () => {
           sourceMessageId: 'source-message-a',
           type: 'callback_query',
         },
+        replyToMessageId: 'reply-source-message-a',
         text: 'Under 1000',
       }),
     );

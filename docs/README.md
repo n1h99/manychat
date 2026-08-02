@@ -8,6 +8,9 @@ v3.3.
 - Railway runs the web, API and worker services from `main`; deployments are
   automatic after a push.
 - Telegram and Cyber Pulse CRM are the active live integration slice.
+- Every normalized Telegram inbound message is queued to an active paired CRM
+  independently of Automation Studio. Inbound replies keep a same-conversation
+  Omnicus message reference through contract 3.2.3.
 - Telegram Chat v3.2 live E2E passed for inbound edits, shared contacts,
   automation/broadcast `sourceContext`, reaction add/change/remove, duplicate
   delivery, reaction-before-source and routing isolation.

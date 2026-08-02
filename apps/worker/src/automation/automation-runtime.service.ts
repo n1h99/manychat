@@ -753,6 +753,18 @@ export class AutomationRuntimeService {
     context: RuntimeContext,
     executionId: string,
   ): Promise<void> {
+    if (
+      node.type === 'FORWARD_TO_CRM' &&
+      (await transaction.crmOperation.findFirst({
+        select: { id: true },
+        where: {
+          normalizedEventId: context.normalizedEventId,
+          projectId: context.projectId,
+          type: 'FORWARD_INBOUND_MESSAGE',
+        },
+      }))
+    )
+      return;
     const idempotencyKey = `crm-${executionId}-${node.id}`;
     if (
       await transaction.outboxRecord.findUnique({

@@ -11,6 +11,7 @@ const receivedAt = new Date('2026-07-26T10:00:00.000Z');
 interface HarnessOptions {
   attempts?: number;
   connectionId?: string;
+  crmLeadId?: string;
   existingContactId?: string;
   lockedAt?: Date | null;
   payload?: unknown;
@@ -36,12 +37,17 @@ function createHarness(options: HarnessOptions = {}) {
     status: options.status ?? 'PENDING',
   };
   const normalizedUpsert = vi.fn().mockResolvedValue({ id: 'normalized-a' });
-  const contactCreate = vi.fn().mockResolvedValue({ id: 'contact-a' });
+  const contactCreate = vi.fn().mockResolvedValue({ crmLeadId: null, id: 'contact-a' });
   const contactUpdate = vi.fn().mockResolvedValue(undefined);
   const contactUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
-  const identityFindUnique = vi
-    .fn()
-    .mockResolvedValue(options.existingContactId ? { contactId: options.existingContactId } : null);
+  const identityFindUnique = vi.fn().mockResolvedValue(
+    options.existingContactId
+      ? {
+          contact: { crmLeadId: options.crmLeadId ?? null },
+          contactId: options.existingContactId,
+        }
+      : null,
+  );
   const identityCreate = vi.fn().mockResolvedValue({ id: 'identity-a' });
   const identityUpdate = vi.fn().mockResolvedValue(undefined);
   const conversationUpsert = vi.fn().mockResolvedValue({ id: 'conversation-a' });
@@ -143,6 +149,7 @@ function createHarness(options: HarnessOptions = {}) {
   const config = new ConfigService({
     APP_ENV: 'test',
     CHANNEL_SECRETS_KEY: TEST_CHANNEL_SECRETS_KEY,
+    CRM_INTEGRATION_ENABLED: true,
     DATABASE_URL: 'postgresql://omnicus:omnicus@localhost:5432/omnicus',
     DEMO_JOB_ENABLED: false,
     NODE_ENV: 'test',
@@ -178,6 +185,7 @@ describe('TelegramInboundProcessorService', () => {
       identityCreate,
       messageUpsert,
       normalizedUpsert,
+      crmOperationCreate,
       service,
     } = createHarness();
 
@@ -196,6 +204,68 @@ describe('TelegramInboundProcessorService', () => {
     expect(messageUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ direction: 'INBOUND', type: 'TEXT' }),
+      }),
+    );
+    expect(crmOperationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: 'contact-a',
+          type: 'CREATE_OR_UPDATE_LEAD',
+        }),
+      }),
+    );
+  });
+
+  it('queues every inbound message directly when the contact is already linked to CRM', async () => {
+    const { crmOperationCreate, crmOutboxCreateMany, service } = createHarness({
+      crmLeadId: 'crm-lead-a',
+      existingContactId: 'contact-existing',
+    });
+
+    await service.process({ inboxRecordId: 'inbox-a' });
+
+    expect(crmOutboxCreateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ idempotencyKey: 'crm-history-message-a' })],
+        skipDuplicates: true,
+      }),
+    );
+    expect(crmOperationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: 'contact-existing',
+          messageId: 'message-a',
+          normalizedEventId: 'normalized-a',
+          type: 'FORWARD_INBOUND_MESSAGE',
+        }),
+      }),
+    );
+  });
+
+  it('links an inbound Telegram reply only to a message from the same contact scope', async () => {
+    const payload = {
+      ...telegramInboundFixtures.text.payload,
+      message: {
+        ...telegramInboundFixtures.text.payload.message,
+        message_id: 44,
+        reply_to_message: { message_id: 42 },
+        text: 'Reply',
+      },
+    };
+    const { messageUpsert, service } = createHarness({
+      crmLeadId: 'crm-lead-a',
+      existingContactId: 'contact-existing',
+      payload,
+      reactionTarget: { contactId: 'contact-existing', id: 'target-message-a' },
+    });
+
+    await service.process({ inboxRecordId: 'inbox-a' });
+
+    expect(messageUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          metadata: expect.objectContaining({ replyToMessageId: 'target-message-a' }),
+        }),
       }),
     );
   });

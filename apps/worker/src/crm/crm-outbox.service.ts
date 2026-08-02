@@ -260,6 +260,10 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       this.messageText(operation.normalizedEvent?.message?.content) ??
       interactive?.displayText ??
       interactive?.data;
+    const inboundReplyToMessageId = this.stringProperty(
+      operation.normalizedEvent?.message?.metadata,
+      'replyToMessageId',
+    );
 
     try {
       let result;
@@ -292,6 +296,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           occurredAt:
             operation.normalizedEvent?.message?.createdAt.toISOString() ??
             operation.createdAt.toISOString(),
+          ...(inboundReplyToMessageId ? { replyToMessageId: inboundReplyToMessageId } : {}),
           senderName: operation.contact.displayName,
           ...(inboundText === undefined ? {} : { text: inboundText }),
         });
@@ -605,6 +610,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
         data: {
           contactId,
           inputSafe: { source: 'initial_history', sourceOperationId },
+          messageId: message.id,
           normalizedEventId: message.normalizedEventId,
           outboxRecordId: outbox.id,
           projectId,

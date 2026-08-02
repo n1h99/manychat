@@ -708,7 +708,8 @@ legacy CRM cleanup.
 
 ## ADR-036: Telegram interactive media uses typed assets and durable callback acknowledgement
 
-**Status:** Accepted, 2026-07-29.
+**Status:** Accepted, 2026-07-29. The live-inbound routing clause is superseded
+by ADR-047; the media, callback and initial-history decisions remain active.
 
 **Context:** The product needs Telegram replies, inline choices, audio, voice,
 video, video notes and animations in automation, broadcasts and the Cyber Pulse
@@ -1141,3 +1142,35 @@ save. Closing or reloading with unsaved changes can discard local edits after
 the existing warning. Structurally incomplete drafts remain saveable, while
 publish and test validation stay strict. There are no timer-driven scenario
 update requests.
+
+## ADR-047: Active CRM pairings receive Telegram inbound messages independently of automation
+
+**Status:** Accepted, 2026-08-02. Supersedes only the ADR-036 statement that the
+current inbound event is the responsibility of a `Forward to CRM` node.
+
+**Context:** A valid Telegram Force Reply response reached the transactional
+inbox and triggered its automation, but it was absent from CRM history because
+the active test scenario did not contain `Forward to CRM`. Changing or pausing
+an automation must not silently remove customer messages from the operator's
+conversation history.
+
+**Decision:** When CRM integration and the project pairing are active, the
+Telegram inbound transaction creates the CRM intent independently of scenario
+execution. A linked contact uses the stable `crm-history-<messageId>` key. An
+unlinked contact first uses one stable `crm-contact-bootstrap-<contactId>` lead
+operation; its existing bounded history backfill then schedules the stored
+messages. A legacy `Forward to CRM` node reuses the already queued normalized
+event instead of creating a second delivery.
+
+The Telegram adapter normalizes `reply_to_message.message_id`. The worker
+resolves it to an Omnicus message UUID only inside the same project, connection,
+conversation and contact, then contract 3.2.3 sends the optional
+`replyToMessageId`. CRM rejects a known cross-conversation target, stores a
+same-conversation or not-yet-materialized reference, and renders the preview
+only when the source is present in that conversation.
+
+**Consequences:** CRM chat completeness no longer depends on the published
+automation graph. PostgreSQL inbox/outbox durability, at-least-once delivery,
+per-message idempotency, media materialization and reconciliation rules stay
+unchanged. No Telegram payload, message text or credential is added to safe CRM
+operation metadata.

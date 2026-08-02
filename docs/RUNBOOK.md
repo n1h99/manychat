@@ -287,6 +287,14 @@ not create duplicate history. Investigate history failures through the same CRM
 operation journal; never re-import messages manually without checking the
 stable message ID and provider result.
 
+For an already linked contact, every new normalized inbound Telegram message
+creates that stable CRM history intent inside the inbound transaction; it does
+not wait for a `Forward to CRM` scenario node. If automation runs as well, the
+normalized event is reused and no second CRM delivery is created. Inbound reply
+references are Omnicus UUIDs resolved within the same conversation; a missing
+preview in CRM must be diagnosed by the source-message mapping, not by retrying
+the customer message.
+
 ### Telegram Chat v3 operations
 
 CRM message edit/delete/reaction/pin requests create ordinary Telegram

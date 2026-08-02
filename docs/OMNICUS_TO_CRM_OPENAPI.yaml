@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Omnicus to CRM messaging contract
-  version: 3.2.2
+  version: 3.2.3
   description: Exact contract implemented by Omnicus for normalized Telegram messages, edits, contact shares, automation state and confirmed outbound history.
 security:
   - serviceBearer: []
@@ -524,6 +524,10 @@ components:
         occurredAt:
           type: string
           format: date-time
+        replyToMessageId:
+          type: string
+          format: uuid
+          description: Omnicus UUID of the replied-to message in the same conversation.
         senderName:
           type: string
         text:

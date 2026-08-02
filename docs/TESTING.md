@@ -41,6 +41,11 @@ reaction-before-source, incorrect routing, media ownership, scheduled-message
 reconciliation and source-context persistence. Live verification is recorded
 separately because mock or unit coverage is not evidence of provider delivery.
 
+Inbound bridge regression additionally verifies that a linked contact queues
+one `crm-history-<messageId>` operation without an automation node, an unlinked
+contact queues one lead bootstrap, and a Telegram reply target is forwarded
+only after same-conversation resolution.
+
 Automation tests cover deterministic graph execution, branch selection,
 wait/delay/subflow continuation, immutable published versions and execution
 journaling. Automation Studio 2.2 adds explicit coverage for:

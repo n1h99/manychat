@@ -26,7 +26,9 @@ GET  /integrations/v1/omnicus/operations?crmProjectId=...&idempotencyKey=...
 The exact normalized inbound message extension is documented in
 `docs/OMNICUS_TO_CRM_OPENAPI.yaml`. It preserves the provider-independent
 category in `media.type`, the exact Telegram kind in `media.kind`, and callback
-choices in `interactive`.
+choices in `interactive`. Contract 3.2.3 also carries an optional normalized
+`replyToMessageId`, which is an Omnicus UUID resolved inside the same project,
+connection and conversation rather than a Telegram provider ID.
 
 CRM implementation and deployment requirements for outbound history are in
 `docs/CRM_OUTBOUND_HISTORY_HANDOFF.md`.
@@ -67,6 +69,13 @@ for connections created before ADR-038 and must not be used for new projects.
 The PostgreSQL outbox remains the source of truth. A request timeout is
 reconciled by idempotency key. If reconciliation cannot determine the result,
 the outbox becomes `UNKNOWN`; it is not blindly retried.
+
+Inbound history delivery is application-owned and does not depend on an
+automation node. A linked contact receives a transactional per-message CRM
+intent immediately. For an unlinked contact Omnicus queues one stable lead
+bootstrap operation and uses the existing bounded history backfill after the
+link succeeds. A published `Forward to CRM` node cannot create a duplicate for
+the normalized event.
 
 ## Direction: CRM to Omnicus
 

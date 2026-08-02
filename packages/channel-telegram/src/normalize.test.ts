@@ -68,6 +68,24 @@ describe('normalizeTelegramUpdate', () => {
     });
   });
 
+  it('normalizes an inbound reply target without exposing provider structure to consumers', () => {
+    const event = normalizeTelegramUpdate({
+      ...telegramInboundFixtures.text.payload,
+      message: {
+        ...telegramInboundFixtures.text.payload.message,
+        message_id: 44,
+        reply_to_message: { message_id: 42 },
+        text: 'Reply',
+      },
+    });
+
+    expect(event).toMatchObject({
+      externalMessageId: '44',
+      metadata: { replyToExternalMessageId: '42' },
+      type: 'MESSAGE',
+    });
+  });
+
   it('keeps only Telegram media metadata and selects the largest photo resolution', () => {
     expect(normalizeTelegramUpdate(telegramInboundFixtures.photo.payload)).toMatchObject({
       content: {

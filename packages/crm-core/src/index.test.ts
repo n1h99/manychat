@@ -151,6 +151,7 @@ describe('HttpCrmClient', () => {
         type: 'sticker',
       },
       occurredAt: '2026-07-29T00:00:00.000Z',
+      replyToMessageId: '22222222-2222-4222-8222-222222222222',
     });
 
     const request = fetchImplementation.mock.calls[0]?.[1] as RequestInit;
@@ -170,6 +171,7 @@ describe('HttpCrmClient', () => {
         setName: 'omnicus_demo',
         type: 'sticker',
       },
+      replyToMessageId: '22222222-2222-4222-8222-222222222222',
     });
   });
 
