@@ -69,7 +69,10 @@ const blockedHeaders = new Set([
 ]);
 const secretOnlyHeaders = new Set(['authorization', 'cookie', 'x-api-key']);
 const dangerousPathSegments = new Set(['__proto__', 'constructor', 'prototype']);
-const blockedAddresses = new BlockList();
+// Keep address families separate: Node's BlockList maps IPv4 checks into IPv6,
+// so an IPv4-mapped IPv6 guard on a shared list would reject every public IPv4 address.
+const blockedIpv4Addresses = new BlockList();
+const blockedIpv6Addresses = new BlockList();
 
 for (const [network, prefix] of [
   ['0.0.0.0', 8],
@@ -87,7 +90,7 @@ for (const [network, prefix] of [
   ['224.0.0.0', 4],
   ['240.0.0.0', 4],
 ] as const)
-  blockedAddresses.addSubnet(network, prefix, 'ipv4');
+  blockedIpv4Addresses.addSubnet(network, prefix, 'ipv4');
 
 for (const [network, prefix] of [
   ['::', 128],
@@ -100,7 +103,7 @@ for (const [network, prefix] of [
   ['fe80::', 10],
   ['ff00::', 8],
 ] as const)
-  blockedAddresses.addSubnet(network, prefix, 'ipv6');
+  blockedIpv6Addresses.addSubnet(network, prefix, 'ipv6');
 
 export async function executeExternalHttpRequest(
   input: ExternalHttpExecutionInput,
@@ -288,16 +291,19 @@ async function resolveTarget(urlText: string): Promise<ResolvedTarget> {
   } catch {
     throw new ExternalHttpError('RETRYABLE_FAILURE', 'external_http_dns_unavailable');
   }
-  if (!addresses.length || addresses.some((entry) => isBlocked(entry.address)))
-    throw new ExternalHttpError('PERMANENT_FAILURE', 'external_http_target_forbidden');
-  const selected = addresses[0]!;
+  const selected = selectSafeLookupAddress(addresses);
+  if (!selected) throw new ExternalHttpError('PERMANENT_FAILURE', 'external_http_target_forbidden');
   return { address: selected.address, family: selected.family === 6 ? 6 : 4, url };
+}
+
+export function selectSafeLookupAddress(addresses: LookupAddress[]): LookupAddress | undefined {
+  return addresses.find((entry) => !isBlocked(entry.address));
 }
 
 function isBlocked(address: string): boolean {
   const family = isIP(address);
-  if (family === 4) return blockedAddresses.check(address, 'ipv4');
-  if (family === 6) return blockedAddresses.check(address, 'ipv6');
+  if (family === 4) return blockedIpv4Addresses.check(address, 'ipv4');
+  if (family === 6) return blockedIpv6Addresses.check(address, 'ipv6');
   return true;
 }
 

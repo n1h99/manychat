@@ -22,24 +22,27 @@ import { validateScenarioGraph } from '@omnicus/automation-core';
 import {
   ApiOutlined,
   BranchesOutlined,
+  CheckCircleOutlined,
   ClockCircleOutlined,
   CopyOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
+  ExclamationCircleOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   RedoOutlined,
+  SearchOutlined,
   SendOutlined,
   SettingOutlined,
   StopOutlined,
+  SyncOutlined,
   TagsOutlined,
   ThunderboltOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
 import {
-  Alert,
   Button,
   Card,
   Checkbox,
@@ -50,6 +53,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Result,
   Row,
   Select,
@@ -65,6 +69,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import { AutomationConditionGroupFields, AutomationNodeConfig } from '../automation-node-config';
+import { AutomationGraphPreview } from '../automation-graph-preview';
 import {
   automationEdgeLabel,
   type AutomationEdgeData,
@@ -75,6 +80,7 @@ import {
 import {
   emptyScenarioGraph,
   type AutomationSimulationResult,
+  type Scenario,
   type ScenarioExecution,
   useScenario,
   useScenarioExecutions,
@@ -83,7 +89,13 @@ import {
 } from '../automation-api';
 import { AutomationTestPanel, type AutomationTestInput } from '../automation-test-panel';
 import { ApiError } from '../api';
-import { automationEditorSignature, safeDiagnosticJson } from '../automation-studio';
+import {
+  automationEditorSignature,
+  automationNodeDescription,
+  automationNodeLabel,
+  humanizeAutomationValidationIssue,
+  safeDiagnosticJson,
+} from '../automation-studio';
 import {
   useAutomationHttpMutations,
   useAutomationSecrets,
@@ -242,6 +254,8 @@ export function ScenarioEditorPage() {
   const [inspectedExecution, setInspectedExecution] = useState<ScenarioExecution>();
   const [testOpen, setTestOpen] = useState(false);
   const [testResult, setTestResult] = useState<AutomationSimulationResult>();
+  const [previewVersion, setPreviewVersion] = useState<Scenario['versions'][number]>();
+  const [paletteSearch, setPaletteSearch] = useState('');
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance>();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isCanvasInteractive, setIsCanvasInteractive] = useState(true);
@@ -257,6 +271,12 @@ export function ScenarioEditorPage() {
   const scenarioDescription = Form.useWatch('description', form);
   const graph = flowToScenarioGraph(nodes, edges, configs);
   const validation = validateScenarioGraph(graph);
+  const validationErrors = validation.errors.map((issue) =>
+    humanizeAutomationValidationIssue(issue, graph.nodes),
+  );
+  const validationWarnings = validation.warnings.map((issue) =>
+    humanizeAutomationValidationIssue(issue, graph.nodes),
+  );
   const signature = automationEditorSignature(graph, scenarioName, scenarioDescription);
   const newScenarioInitialSignature = useMemo(
     () => automationEditorSignature(emptyScenarioGraph, '', undefined),
@@ -265,22 +285,53 @@ export function ScenarioEditorPage() {
   const draftDirty = scenarioQuery.data
     ? lastSavedSignature !== undefined && signature !== lastSavedSignature
     : signature !== newScenarioInitialSignature;
+  const filteredPaletteGroups = useMemo(() => {
+    const query = paletteSearch.trim().toLowerCase();
+    return paletteGroups
+      .map((group) => ({
+        ...group,
+        nodes: group.nodes.filter(([, label]) => label.toLowerCase().includes(query)),
+      }))
+      .filter((group) => group.nodes.length > 0);
+  }, [paletteSearch]);
+  const nodeLabels = useMemo(() => {
+    const totals = new Map<string, number>();
+    const seen = new Map<string, number>();
+    for (const node of nodes) {
+      const type = String(node.data.label);
+      totals.set(type, (totals.get(type) ?? 0) + 1);
+    }
+    return Object.fromEntries(
+      nodes.map((node) => {
+        const type = String(node.data.label);
+        const occurrence = (seen.get(type) ?? 0) + 1;
+        seen.set(type, occurrence);
+        const label = automationNodeLabel(type);
+        return [node.id, (totals.get(type) ?? 0) > 1 ? `${label} ${occurrence}` : label];
+      }),
+    );
+  }, [nodes]);
 
   useEffect(() => {
     const scenario = scenarioQuery.data;
     const graph = scenario?.draftVersion?.graph ?? scenario?.activeVersion?.graph;
     if (!graph || !scenario) return;
     const flow = scenarioGraphToFlow(graph);
-    setNodes(styledNodes(flow.nodes));
+    const hydratedNodes = styledNodes(flow.nodes);
+    const hydratedConfigs = Object.fromEntries(
+      graph.nodes.map((node) => [node.id, node.config ?? {}]),
+    );
+    const hydratedGraph = flowToScenarioGraph(hydratedNodes, flow.edges, hydratedConfigs);
+    setNodes(hydratedNodes);
     setEdges(flow.edges);
-    setConfigs(Object.fromEntries(graph.nodes.map((node) => [node.id, node.config ?? {}])));
+    setConfigs(hydratedConfigs);
     form.setFieldsValue({
-      ...(scenario.description ? { description: scenario.description } : {}),
+      description: scenario.description ?? '',
       name: scenario.name,
     });
     setExpectedUpdatedAt(scenario.updatedAt);
     setLastSavedSignature(
-      automationEditorSignature(graph, scenario.name, scenario.description ?? undefined),
+      automationEditorSignature(hydratedGraph, scenario.name, scenario.description ?? undefined),
     );
     setSaveStatus('saved');
     setHistoryPast([]);
@@ -378,6 +429,7 @@ export function ScenarioEditorPage() {
     const keyboard = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (!isCanvasInteractive) return;
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key.toLowerCase() === 'z') {
         event.preventDefault();
@@ -395,7 +447,7 @@ export function ScenarioEditorPage() {
     };
     window.addEventListener('keydown', keyboard);
     return () => window.removeEventListener('keydown', keyboard);
-  }, [copySelectedNode, pasteCopiedNode, redo, undo]);
+  }, [copySelectedNode, isCanvasInteractive, pasteCopiedNode, redo, undo]);
 
   useEffect(() => {
     if (!draftDirty) return;
@@ -417,6 +469,12 @@ export function ScenarioEditorPage() {
   useEffect(() => {
     if (draftDirty && saveStatus === 'saved') setSaveStatus('dirty');
   }, [draftDirty, saveStatus]);
+
+  useEffect(() => {
+    if (!inspectedExecution) return;
+    const refreshed = executions.data?.find((execution) => execution.id === inspectedExecution.id);
+    if (refreshed && refreshed !== inspectedExecution) setInspectedExecution(refreshed);
+  }, [executions.data, inspectedExecution]);
 
   if (scenarioId !== 'new' && scenarioQuery.isLoading)
     return <Spin className="route-loading" size="large" />;
@@ -641,22 +699,31 @@ export function ScenarioEditorPage() {
           </Col>
         </Row>
         <Row className="automation-workspace" gutter={[16, 16]}>
-          <Col lg={6} xl={5} xs={24}>
+          <Col lg={6} xl={4} xs={24}>
             <Card className="automation-panel-card" size="small" title="Add a step">
               <Typography.Paragraph className="automation-panel-hint" type="secondary">
                 Choose a step and place it on the canvas.
               </Typography.Paragraph>
+              <Input
+                allowClear
+                className="automation-node-search"
+                onChange={(event) => setPaletteSearch(event.target.value)}
+                placeholder="Find a step"
+                prefix={<SearchOutlined />}
+                value={paletteSearch}
+              />
               <Collapse
                 className="node-palette"
-                defaultActiveKey={['triggers', 'logic']}
+                defaultActiveKey={paletteGroups.map((group) => group.key)}
                 ghost
-                items={paletteGroups.map((group) => ({
+                items={filteredPaletteGroups.map((group) => ({
                   children: (
                     <div className="node-palette-items">
                       {group.nodes.map(([type, label]) => (
                         <Button
                           block
                           className="node-palette-item"
+                          disabled={!isCanvasInteractive}
                           icon={automationNodeIcon(type)}
                           key={type}
                           onClick={() => addNode(type)}
@@ -672,13 +739,13 @@ export function ScenarioEditorPage() {
               />
             </Card>
           </Col>
-          <Col lg={18} xl={14} xs={24}>
+          <Col lg={18} xl={13} xs={24}>
             <div aria-label="Scenario canvas" className="scenario-canvas">
               <div className="automation-canvas-toolbar">
                 <Space size="small" wrap>
                   <Button
                     aria-label="Undo editor change"
-                    disabled={!historyPast.length}
+                    disabled={!isCanvasInteractive || !historyPast.length}
                     icon={<UndoOutlined />}
                     onClick={undo}
                     size="small"
@@ -687,7 +754,7 @@ export function ScenarioEditorPage() {
                   </Button>
                   <Button
                     aria-label="Redo editor change"
-                    disabled={!historyFuture.length}
+                    disabled={!isCanvasInteractive || !historyFuture.length}
                     icon={<RedoOutlined />}
                     onClick={redo}
                     size="small"
@@ -695,14 +762,18 @@ export function ScenarioEditorPage() {
                     Redo
                   </Button>
                   <Button
-                    disabled={!selected}
+                    disabled={!isCanvasInteractive || !selected}
                     icon={<CopyOutlined />}
                     onClick={copySelectedNode}
                     size="small"
                   >
                     Copy
                   </Button>
-                  <Button disabled={!selected} onClick={duplicateSelectedNode} size="small">
+                  <Button
+                    disabled={!isCanvasInteractive || !selected}
+                    onClick={duplicateSelectedNode}
+                    size="small"
+                  >
                     Duplicate
                   </Button>
                 </Space>
@@ -720,13 +791,14 @@ export function ScenarioEditorPage() {
                 connectionLineStyle={{ stroke: '#0f766e', strokeWidth: 2 }}
                 defaultEdgeOptions={automationEdgeDefaults}
                 edges={edges}
-                deleteKeyCode={['Backspace', 'Delete']}
+                deleteKeyCode={isCanvasInteractive ? ['Backspace', 'Delete'] : null}
                 fitView
                 fitViewOptions={{ padding: 0.24 }}
                 maxZoom={1.6}
                 minZoom={0.35}
                 nodeTypes={automationNodeTypes}
                 nodes={nodes}
+                connectOnClick
                 snapGrid={[20, 20]}
                 snapToGrid
                 nodesConnectable={isCanvasInteractive}
@@ -769,85 +841,129 @@ export function ScenarioEditorPage() {
               </ReactFlow>
             </div>
           </Col>
-          <Col lg={24} xl={5} xs={24}>
+          <Col lg={24} xl={7} xs={24}>
             <Card
               className="automation-panel-card"
               size="small"
               title={selected ? 'Node settings' : selectedEdge ? 'Connection settings' : 'Settings'}
             >
               {selected ? (
-                <>
-                  <Tag>{String(selected.data.label)}</Tag>
-                  <AutomationNodeConfig
-                    config={configs[selected.id] ?? {}}
-                    customFields={customFields.data ?? []}
-                    nodeType={String(selected.data.label)}
-                    onCreateSecret={async (name, value) => {
-                      const created = await automationHttp.createSecret.mutateAsync({
-                        name,
-                        value,
-                      });
-                      return created.id;
-                    }}
-                    onChange={(config) => {
-                      captureHistory();
-                      setConfigs((current) => ({ ...current, [selected.id]: config }));
-                    }}
-                    scenarios={scenarios.data ?? []}
-                    secrets={automationSecrets.data ?? []}
-                    tags={tags.data ?? []}
-                    templates={templates.data ?? []}
-                    testHttpRequest={async (config, variables) =>
-                      automationHttp.testRequest.mutateAsync({
-                        config,
-                        ...(variables ? { variables } : {}),
-                      })
-                    }
-                  />
+                <div className="automation-node-settings">
+                  <header className="automation-settings-heading">
+                    <span className="automation-settings-icon">
+                      {automationNodeIcon(String(selected.data.label))}
+                    </span>
+                    <span>
+                      <strong>{automationNodeLabel(String(selected.data.label))}</strong>
+                      <small>{automationNodeDescription(String(selected.data.label))}</small>
+                    </span>
+                  </header>
+                  <div className="automation-settings-content">
+                    {!isCanvasInteractive ? (
+                      <div className="automation-settings-readonly">
+                        Canvas is locked. Unlock it to edit this step.
+                      </div>
+                    ) : (
+                      <AutomationNodeConfig
+                        config={configs[selected.id] ?? {}}
+                        customFields={customFields.data ?? []}
+                        nodeType={String(selected.data.label)}
+                        onCreateSecret={async (name, value) => {
+                          const created = await automationHttp.createSecret.mutateAsync({
+                            name,
+                            value,
+                          });
+                          return created.id;
+                        }}
+                        onChange={(config) => {
+                          captureHistory();
+                          setConfigs((current) => ({ ...current, [selected.id]: config }));
+                        }}
+                        scenarios={(scenarios.data ?? []).filter(
+                          (candidate) => candidate.id !== scenarioId,
+                        )}
+                        secrets={automationSecrets.data ?? []}
+                        tags={tags.data ?? []}
+                        templates={templates.data ?? []}
+                        testHttpRequest={async (config, variables) =>
+                          automationHttp.testRequest.mutateAsync({
+                            config,
+                            ...(variables ? { variables } : {}),
+                          })
+                        }
+                      />
+                    )}
+                  </div>
                   {String(selected.data.label) !== 'INCOMING_MESSAGE' ? (
+                    <footer className="automation-settings-footer">
+                      <Button
+                        danger
+                        disabled={!isCanvasInteractive}
+                        onClick={() => {
+                          captureHistory();
+                          setNodes((current) => current.filter((node) => node.id !== selected.id));
+                          setEdges((current) =>
+                            current.filter(
+                              (edge) => edge.source !== selected.id && edge.target !== selected.id,
+                            ),
+                          );
+                          setSelectedId(undefined);
+                        }}
+                      >
+                        Delete node
+                      </Button>
+                    </footer>
+                  ) : null}
+                </div>
+              ) : selectedEdge ? (
+                <div className="automation-node-settings">
+                  <header className="automation-settings-heading is-connection">
+                    <BranchesOutlined />
+                    <span>
+                      <strong>
+                        {nodeLabels[selectedEdge.source] ?? 'Source'} →{' '}
+                        {nodeLabels[selectedEdge.target] ?? 'Target'}
+                      </strong>
+                      <small>Configure the output and optional branch rules.</small>
+                    </span>
+                  </header>
+                  <div className="automation-settings-content">
+                    {!isCanvasInteractive ? (
+                      <div className="automation-settings-readonly">
+                        Canvas is locked. Unlock it to edit this connection.
+                      </div>
+                    ) : (
+                      <EdgeConfiguration
+                        customFields={customFields.data ?? []}
+                        edge={selectedEdge}
+                        onChange={(next) => {
+                          captureHistory();
+                          setEdges((current) =>
+                            current.map((edge) => (edge.id === next.id ? next : edge)),
+                          );
+                        }}
+                        sourceType={String(
+                          nodes.find((node) => node.id === selectedEdge.source)?.data.label ?? '',
+                        )}
+                      />
+                    )}
+                  </div>
+                  <footer className="automation-settings-footer">
                     <Button
                       danger
+                      disabled={!isCanvasInteractive}
                       onClick={() => {
                         captureHistory();
-                        setNodes((current) => current.filter((node) => node.id !== selected.id));
                         setEdges((current) =>
-                          current.filter(
-                            (edge) => edge.source !== selected.id && edge.target !== selected.id,
-                          ),
+                          current.filter((edge) => edge.id !== selectedEdge.id),
                         );
-                        setSelectedId(undefined);
+                        setSelectedEdgeId(undefined);
                       }}
                     >
-                      Delete node
+                      Delete connection
                     </Button>
-                  ) : null}
-                </>
-              ) : selectedEdge ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <EdgeConfiguration
-                    customFields={customFields.data ?? []}
-                    edge={selectedEdge}
-                    onChange={(next) => {
-                      captureHistory();
-                      setEdges((current) =>
-                        current.map((edge) => (edge.id === next.id ? next : edge)),
-                      );
-                    }}
-                    sourceType={String(
-                      nodes.find((node) => node.id === selectedEdge.source)?.data.label ?? '',
-                    )}
-                  />
-                  <Button
-                    danger
-                    onClick={() => {
-                      captureHistory();
-                      setEdges((current) => current.filter((edge) => edge.id !== selectedEdge.id));
-                      setSelectedEdgeId(undefined);
-                    }}
-                  >
-                    Delete connection
-                  </Button>
-                </Space>
+                  </footer>
+                </div>
               ) : (
                 <div className="automation-settings-empty">
                   <SettingOutlined />
@@ -882,44 +998,90 @@ export function ScenarioEditorPage() {
           ) : null}
         </Space>
       </Form>
-      <Space className="automation-validation" direction="vertical">
-        {validation.errors.length ? (
-          <Alert
-            className="soft-notice"
-            description={validation.errors.map((error) => (
-              <div key={error}>{error}</div>
-            ))}
-            message="Graph cannot be published"
-            showIcon
-            type="error"
-          />
-        ) : (
-          <Alert
-            className="soft-notice"
-            message="Graph validation passed"
-            showIcon
-            type="success"
-          />
-        )}
-        {validation.warnings.length ? (
-          <Alert
-            className="soft-notice"
-            description={validation.warnings.join('; ')}
-            message="Warnings"
-            showIcon
-            type="warning"
-          />
+      <section
+        className={`automation-validation-panel${validationErrors.length ? ' has-errors' : ''}`}
+      >
+        <header>
+          {validationErrors.length ? <ExclamationCircleOutlined /> : <CheckCircleOutlined />}
+          <span>
+            <strong>
+              {validationErrors.length
+                ? `${validationErrors.length} ${validationErrors.length === 1 ? 'fix' : 'fixes'} needed`
+                : validationWarnings.length
+                  ? `Ready to publish · ${validationWarnings.length} ${validationWarnings.length === 1 ? 'warning' : 'warnings'}`
+                  : 'Ready to publish'}
+            </strong>
+            <small>
+              {validationErrors.length
+                ? 'The draft is saved, but publish and safe test stay blocked.'
+                : 'Draft structure is valid.'}
+            </small>
+          </span>
+        </header>
+        {validationErrors.length || validationWarnings.length ? (
+          <details open={validationErrors.length > 0}>
+            <summary>Review validation details</summary>
+            <div className="automation-validation-issues">
+              {[
+                ...validationErrors.map((issue) => ({ ...issue, level: 'error' as const })),
+                ...validationWarnings.map((issue) => ({ ...issue, level: 'warning' as const })),
+              ].map((issue, index) => (
+                <button
+                  className={`automation-validation-issue is-${issue.level}`}
+                  key={`${issue.level}-${issue.message}-${index}`}
+                  onClick={() => {
+                    if (!issue.nodeId) return;
+                    setSelectedId(issue.nodeId);
+                    setSelectedEdgeId(undefined);
+                  }}
+                  type="button"
+                >
+                  <span>{issue.level === 'error' ? 'Fix' : 'Note'}</span>
+                  {issue.message}
+                </button>
+              ))}
+            </div>
+          </details>
         ) : null}
-      </Space>
+      </section>
       {scenarioQuery.data ? (
         <>
           <Typography.Title className="automation-section-title" level={4}>
             Version history
           </Typography.Title>
           <Table
+            className="automation-version-table"
             columns={[
+              {
+                key: 'preview',
+                title: 'Canvas',
+                width: 220,
+                render: (_, version) => (
+                  <button
+                    aria-label={`Preview version ${version.version}`}
+                    className="automation-version-preview-button"
+                    onClick={() => setPreviewVersion(version)}
+                    type="button"
+                  >
+                    <AutomationGraphPreview compact graph={version.graph} />
+                  </button>
+                ),
+              },
               { dataIndex: 'version', title: 'Version' },
-              { dataIndex: 'status', title: 'Status', render: (value) => <Tag>{value}</Tag> },
+              {
+                dataIndex: 'status',
+                title: 'Status',
+                render: (value, version) => (
+                  <Space size={6}>
+                    <Tag>{automationVersionStatus(value)}</Tag>
+                    {version.id === scenarioQuery.data?.draftVersion?.id ||
+                    (!scenarioQuery.data?.draftVersion &&
+                      version.id === scenarioQuery.data?.activeVersion?.id) ? (
+                      <Tag color="cyan">Current</Tag>
+                    ) : null}
+                  </Space>
+                ),
+              },
               {
                 dataIndex: 'publishedAt',
                 title: 'Published',
@@ -927,28 +1089,41 @@ export function ScenarioEditorPage() {
               },
               {
                 key: 'restore',
-                render: (_, version) => (
-                  <Button
-                    onClick={() =>
-                      void mutations.restoreVersion.mutateAsync({
-                        scenarioId: scenarioQuery.data!.id,
-                        versionId: version.id,
-                      })
-                    }
-                    size="small"
-                  >
-                    Restore to draft
-                  </Button>
-                ),
+                render: (_, version) =>
+                  version.id === scenarioQuery.data?.draftVersion?.id ||
+                  (!scenarioQuery.data?.draftVersion &&
+                    version.id === scenarioQuery.data?.activeVersion?.id) ? null : (
+                    <Button
+                      onClick={() =>
+                        void mutations.restoreVersion.mutateAsync({
+                          scenarioId: scenarioQuery.data!.id,
+                          versionId: version.id,
+                        })
+                      }
+                      size="small"
+                    >
+                      Restore to draft
+                    </Button>
+                  ),
               },
             ]}
             dataSource={scenarioQuery.data.versions ?? []}
             pagination={false}
             rowKey="id"
           />
-          <Typography.Title className="automation-section-title" level={4}>
-            Execution inspector
-          </Typography.Title>
+          <div className="automation-section-heading">
+            <Typography.Title className="automation-section-title" level={4}>
+              Execution inspector
+            </Typography.Title>
+            <Button
+              icon={<SyncOutlined />}
+              loading={executions.isFetching}
+              onClick={() => void executions.refetch()}
+              size="small"
+            >
+              Refresh
+            </Button>
+          </div>
           <Table
             columns={[
               {
@@ -956,11 +1131,15 @@ export function ScenarioEditorPage() {
                 render: (value) => new Date(value).toLocaleString(),
                 title: 'Started',
               },
-              { dataIndex: 'status', title: 'Status', render: (value) => <Tag>{value}</Tag> },
+              {
+                dataIndex: 'status',
+                title: 'Status',
+                render: (value) => <Tag>{automationExecutionStatus(value)}</Tag>,
+              },
               {
                 dataIndex: 'currentNodeId',
                 title: 'Current node',
-                render: (value) => value ?? '—',
+                render: (value) => (value ? (nodeLabels[value] ?? value) : 'Completed'),
               },
             ]}
             dataSource={executions.data ?? []}
@@ -983,9 +1162,16 @@ export function ScenarioEditorPage() {
               column={1}
               items={[
                 { children: inspectedExecution.id, key: 'id', label: 'Execution' },
-                { children: inspectedExecution.status, key: 'status', label: 'Status' },
                 {
-                  children: inspectedExecution.currentNodeId ?? '—',
+                  children: automationExecutionStatus(inspectedExecution.status),
+                  key: 'status',
+                  label: 'Status',
+                },
+                {
+                  children: inspectedExecution.currentNodeId
+                    ? (nodeLabels[inspectedExecution.currentNodeId] ??
+                      inspectedExecution.currentNodeId)
+                    : 'Completed',
                   key: 'current',
                   label: 'Current node',
                 },
@@ -995,13 +1181,27 @@ export function ScenarioEditorPage() {
               items={inspectedExecution.nodeExecutions.map((node) => ({
                 children: (
                   <Space direction="vertical" size={0}>
-                    <Typography.Text strong>{node.nodeId}</Typography.Text>
+                    <Typography.Text strong>{automationNodeLabel(node.nodeType)}</Typography.Text>
                     <Typography.Text type="secondary">
-                      {node.nodeType} · {node.status} · attempt {node.attempt}
+                      {automationNodeStepStatus(node.status)} · attempt {node.attempt}
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       {executionDuration(node.startedAt, node.completedAt)}
                     </Typography.Text>
+                    {node.delivery ? (
+                      <div
+                        className={`automation-delivery-status is-${node.delivery.messageStatus.toLowerCase()}`}
+                      >
+                        <strong>{automationDeliveryStatus(node.delivery.messageStatus)}</strong>
+                        <small>
+                          Telegram delivery · outbox {node.delivery.outboxStatus.toLowerCase()}
+                        </small>
+                      </div>
+                    ) : null}
+                    <details className="automation-technical-details">
+                      <summary>Technical details</summary>
+                      <code>{node.nodeId}</code>
+                    </details>
                     {safeDiagnosticJson(node.inputSafe) ? (
                       <details>
                         <summary>Safe input</summary>
@@ -1054,11 +1254,23 @@ export function ScenarioEditorPage() {
           </>
         ) : null}
       </Drawer>
+      <Modal
+        footer={null}
+        onCancel={() => setPreviewVersion(undefined)}
+        open={Boolean(previewVersion)}
+        title={previewVersion ? `Version ${previewVersion.version} canvas` : 'Version canvas'}
+        width={780}
+      >
+        {previewVersion ? <AutomationGraphPreview graph={previewVersion.graph} /> : null}
+      </Modal>
       <Drawer onClose={() => setTestOpen(false)} open={testOpen} title="Safe test run" width={560}>
         <AutomationTestPanel
           loading={mutations.testRun.isPending}
+          nodeLabels={nodeLabels}
+          nodeTypes={graph.nodes.map((node) => node.type)}
           onRun={runTest}
           {...(testResult ? { result: testResult } : {})}
+          validationErrors={validationErrors.map((issue) => issue.message)}
         />
       </Drawer>
     </section>
@@ -1172,4 +1384,42 @@ function executionDuration(startedAt: string | null, completedAt: string | null)
   if (!completedAt) return `Started ${new Date(startedAt).toLocaleString()}`;
   const milliseconds = Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
   return `${milliseconds} ms`;
+}
+
+function automationVersionStatus(status: string): string {
+  if (status === 'PUBLISHED') return 'Published';
+  if (status === 'SUPERSEDED') return 'Previous';
+  if (status === 'DRAFT') return 'Draft';
+  return status.toLowerCase().replaceAll('_', ' ');
+}
+
+function automationExecutionStatus(status: string): string {
+  const labels: Record<string, string> = {
+    CANCELLED: 'Cancelled',
+    COMPLETED: 'Completed',
+    FAILED: 'Failed',
+    QUEUED: 'Queued',
+    RUNNING: 'Running',
+    WAITING: 'Waiting',
+  };
+  return labels[status] ?? status.toLowerCase().replaceAll('_', ' ');
+}
+
+function automationNodeStepStatus(status: string): string {
+  if (status === 'SUCCEEDED') return 'Step completed';
+  if (status === 'FAILED') return 'Step failed';
+  if (status === 'PROCESSING') return 'Processing';
+  return status.toLowerCase().replaceAll('_', ' ');
+}
+
+function automationDeliveryStatus(status: string): string {
+  const labels: Record<string, string> = {
+    CANCELLED: 'Delivery cancelled',
+    FAILED: 'Delivery failed',
+    PROCESSING: 'Sending to Telegram',
+    QUEUED: 'Queued for Telegram',
+    SENT: 'Sent by Telegram',
+    UNKNOWN: 'Delivery outcome unknown',
+  };
+  return labels[status] ?? `Delivery ${status.toLowerCase().replaceAll('_', ' ')}`;
 }

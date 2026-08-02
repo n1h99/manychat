@@ -631,3 +631,15 @@ managers cannot enumerate another lead's schedule.
   After **Disable channel**, the same page immediately renders the disabled
   state and **Connect webhook** action; reconnecting restores the active state
   without navigation or reload.
+- Automation Studio derives its clean baseline from the same hydrated graph it
+  renders, so reload no longer produces a false `Unsaved changes` state. Save
+  invalidates scenario detail/version history immediately without requiring F5.
+- Version history has an immutable canvas preview; validation, Safe Test and
+  execution diagnostics use human node labels while keeping technical IDs in
+  opt-in details.
+- Node settings share one compact layout, palette search exposes every node,
+  Safe Test inputs are limited to node types present on the canvas, the current
+  scenario is excluded from Subflow choices, and canvas lock disables all edit
+  actions.
+- Connection handles use stable positions and enlarged hit targets with
+  click-to-connect support.

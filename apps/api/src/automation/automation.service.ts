@@ -58,6 +58,7 @@ export class AutomationService {
           orderBy: { version: 'desc' },
           select: {
             createdAt: true,
+            graph: true,
             id: true,
             publishedAt: true,
             status: true,
@@ -78,7 +79,7 @@ export class AutomationService {
 
   async executions(projectId: string, scenarioId: string) {
     await this.get(projectId, scenarioId);
-    return this.database.client.scenarioExecution.findMany({
+    const executions = await this.database.client.scenarioExecution.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
         completedAt: true,
@@ -107,6 +108,53 @@ export class AutomationService {
       take: 100,
       where: { projectId, scenarioId },
     });
+    const operationReferences = executions.flatMap((execution) =>
+      execution.nodeExecutions.flatMap((node) => {
+        const output = this.record(node.outputSafe);
+        return typeof output.outboxRecordId === 'string' && typeof output.messageId === 'string'
+          ? [{ messageId: output.messageId, outboxRecordId: output.outboxRecordId }]
+          : [];
+      }),
+    );
+    const [messages, outboxes] = await Promise.all([
+      operationReferences.length
+        ? this.database.client.message.findMany({
+            select: { id: true, status: true },
+            where: {
+              id: { in: operationReferences.map((item) => item.messageId) },
+              projectId,
+            },
+          })
+        : [],
+      operationReferences.length
+        ? this.database.client.outboxRecord.findMany({
+            select: { id: true, status: true },
+            where: {
+              id: { in: operationReferences.map((item) => item.outboxRecordId) },
+              projectId,
+            },
+          })
+        : [],
+    ]);
+    const messageStatuses = new Map(messages.map((message) => [message.id, message.status]));
+    const outboxStatuses = new Map(outboxes.map((outbox) => [outbox.id, outbox.status]));
+    return executions.map((execution) => ({
+      ...execution,
+      nodeExecutions: execution.nodeExecutions.map((node) => {
+        const output = this.record(node.outputSafe);
+        if (typeof output.outboxRecordId !== 'string' || typeof output.messageId !== 'string')
+          return node;
+        return {
+          ...node,
+          delivery: {
+            messageId: output.messageId,
+            messageStatus: messageStatuses.get(output.messageId) ?? 'UNKNOWN',
+            outboxRecordId: output.outboxRecordId,
+            outboxStatus: outboxStatuses.get(output.outboxRecordId) ?? 'UNKNOWN',
+          },
+        };
+      }),
+    }));
   }
 
   async testRun(projectId: string, dto: TestScenarioDto) {

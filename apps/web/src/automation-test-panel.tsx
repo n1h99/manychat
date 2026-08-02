@@ -13,12 +13,18 @@ export interface AutomationTestInput {
 
 export function AutomationTestPanel({
   loading,
+  nodeLabels,
+  nodeTypes,
   onRun,
   result,
+  validationErrors,
 }: {
   loading: boolean;
+  nodeLabels: Record<string, string>;
+  nodeTypes: string[];
   onRun(input: AutomationTestInput): Promise<void>;
   result?: AutomationSimulationResult;
+  validationErrors: string[];
 }) {
   const [customFieldsDraft, setCustomFieldsDraft] = useState('{}');
   const [customFieldsError, setCustomFieldsError] = useState(false);
@@ -28,6 +34,8 @@ export function AutomationTestPanel({
   const [firstName, setFirstName] = useState('Test customer');
   const [httpOutcome, setHttpOutcome] = useState<'success' | 'failure'>('success');
   const [waitOutcome, setWaitOutcome] = useState<'reply' | 'timeout'>('reply');
+  const includesWait = nodeTypes.includes('WAIT_FOR_REPLY');
+  const includesHttp = nodeTypes.includes('EXTERNAL_HTTP_REQUEST');
 
   const run = async () => {
     let customFields: Record<string, unknown>;
@@ -107,27 +115,44 @@ export function AutomationTestPanel({
             value={customFieldsDraft}
           />
         </Form.Item>
-        <Form.Item label="Wait for Reply outcome">
-          <Select
-            onChange={setWaitOutcome}
-            options={[
-              { label: 'Reply matched', value: 'reply' },
-              { label: 'Timeout', value: 'timeout' },
-            ]}
-            value={waitOutcome}
-          />
-        </Form.Item>
-        <Form.Item label="External HTTP outcome">
-          <Select
-            onChange={setHttpOutcome}
-            options={[
-              { label: 'Success path', value: 'success' },
-              { label: 'Failure path', value: 'failure' },
-            ]}
-            value={httpOutcome}
-          />
-        </Form.Item>
-        <Button loading={loading} onClick={() => void run()} type="primary">
+        {includesWait ? (
+          <Form.Item label="Wait for reply outcome">
+            <Select
+              onChange={setWaitOutcome}
+              options={[
+                { label: 'Reply matched', value: 'reply' },
+                { label: 'Timeout', value: 'timeout' },
+              ]}
+              value={waitOutcome}
+            />
+          </Form.Item>
+        ) : null}
+        {includesHttp ? (
+          <Form.Item label="External HTTP outcome">
+            <Select
+              onChange={setHttpOutcome}
+              options={[
+                { label: 'Success path', value: 'success' },
+                { label: 'Failure path', value: 'failure' },
+              ]}
+              value={httpOutcome}
+            />
+          </Form.Item>
+        ) : null}
+        {validationErrors.length ? (
+          <div className="automation-test-validation">
+            <strong>Fix the graph before testing</strong>
+            {validationErrors.map((error) => (
+              <small key={error}>{error}</small>
+            ))}
+          </div>
+        ) : null}
+        <Button
+          disabled={validationErrors.length > 0}
+          loading={loading}
+          onClick={() => void run()}
+          type="primary"
+        >
           Run safe test
         </Button>
       </Form>
@@ -142,16 +167,17 @@ export function AutomationTestPanel({
             items={result.steps.map((step) => ({
               children: (
                 <Space direction="vertical" size={0}>
-                  <Typography.Text strong>{step.nodeId}</Typography.Text>
+                  <Typography.Text strong>{nodeLabels[step.nodeId] ?? step.nodeId}</Typography.Text>
                   <Typography.Text type="secondary">
-                    {step.nodeType} · {step.result}
+                    {step.result === 'WOULD_EXECUTE' ? 'Would execute' : step.result.toLowerCase()}
                   </Typography.Text>
                   {step.reasonCode ? (
                     <Typography.Text type="secondary">{step.reasonCode}</Typography.Text>
                   ) : null}
                   {step.selectedOutput ? (
                     <Typography.Text type="secondary">
-                      {step.selectedOutput} → {step.nextNodeId ?? 'end'}
+                      {step.selectedOutput} →{' '}
+                      {step.nextNodeId ? (nodeLabels[step.nextNodeId] ?? step.nextNodeId) : 'End'}
                     </Typography.Text>
                   ) : null}
                 </Space>

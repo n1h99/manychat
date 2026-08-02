@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import { useEffect, useState } from 'react';
 
+import { ApiError } from './api';
 import type { ScenarioSummary } from './automation-api';
 import type {
   AutomationCustomField,
@@ -31,6 +32,7 @@ import {
   durationParts,
   durationSeconds,
   durationUnits,
+  externalHttpSafeErrorMessage,
   previewAutomationText,
   type DurationUnit,
 } from './automation-studio';
@@ -277,7 +279,12 @@ export function AutomationNodeConfig({
       />
     );
 
-  return <Typography.Text type="secondary">This node has no configurable fields.</Typography.Text>;
+  return (
+    <div className="automation-node-empty-config">
+      <strong>No additional settings</strong>
+      <small>This step is ready to use as soon as it is connected.</small>
+    </div>
+  );
 }
 
 function ExternalHttpFields({
@@ -301,7 +308,7 @@ function ExternalHttpFields({
   const [creatingSecret, setCreatingSecret] = useState(false);
   const [secretError, setSecretError] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testError, setTestError] = useState(false);
+  const [testError, setTestError] = useState<string>();
   const [testResult, setTestResult] = useState<ExternalHttpTestResult>();
   const [testVariablesDraft, setTestVariablesDraft] = useState('{}');
   const set = (key: string, value: unknown) => onChange({ ...config, [key]: value });
@@ -313,7 +320,7 @@ function ExternalHttpFields({
     typeof config.contentType === 'string' ? config.contentType : 'application/json';
 
   const requestTab = (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space className="automation-http-section" direction="vertical" style={{ width: '100%' }}>
       <Form.Item label="Method">
         <Select
           onChange={(value) => set('method', value)}
@@ -386,7 +393,7 @@ function ExternalHttpFields({
   );
 
   const headersTab = (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space className="automation-http-section" direction="vertical" style={{ width: '100%' }}>
       <Alert
         message="Authorization, Cookie and X-Api-Key values must use a write-only project secret."
         showIcon
@@ -494,7 +501,7 @@ function ExternalHttpFields({
   );
 
   const bodyTab = (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space className="automation-http-section" direction="vertical" style={{ width: '100%' }}>
       <Form.Item label="Content type">
         <Select
           disabled={method === 'GET'}
@@ -521,7 +528,7 @@ function ExternalHttpFields({
   );
 
   const responseTab = (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space className="automation-http-section" direction="vertical" style={{ width: '100%' }}>
       <Space.Compact block>
         <Form.Item label="Success from" style={{ width: '50%' }}>
           <InputNumber
@@ -610,7 +617,7 @@ function ExternalHttpFields({
   );
 
   const testTab = (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space className="automation-http-section" direction="vertical" style={{ width: '100%' }}>
       <Alert
         message="Test performs a real bounded HTTPS request and does not publish the scenario."
         showIcon
@@ -631,9 +638,10 @@ function ExternalHttpFields({
             const parsed = JSON.parse(testVariablesDraft) as unknown;
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
             setTestResult(await testRequest(config, parsed as Record<string, unknown>));
-            setTestError(false);
-          } catch {
-            setTestError(true);
+            setTestError(undefined);
+          } catch (error) {
+            setTestResult(undefined);
+            setTestError(error instanceof ApiError ? error.code : 'REQUEST_FAILED');
           } finally {
             setTesting(false);
           }
@@ -643,9 +651,11 @@ function ExternalHttpFields({
         Test request
       </Button>
       {testError ? (
-        <Typography.Text type="danger">
-          Test failed safely. Check the request and sample variables.
-        </Typography.Text>
+        <div className="automation-http-test-error" role="alert">
+          <strong>Request blocked safely</strong>
+          <span>{externalHttpSafeErrorMessage(testError)}</span>
+          <code>{testError}</code>
+        </div>
       ) : null}
       {testResult ? (
         <Alert
@@ -674,6 +684,7 @@ function ExternalHttpFields({
 
   return (
     <Tabs
+      className="automation-http-tabs"
       items={[
         { children: requestTab, key: 'request', label: 'Request' },
         { children: headersTab, key: 'headers', label: 'Headers' },

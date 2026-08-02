@@ -17,6 +17,8 @@ export interface Scenario extends ScenarioSummary {
   activeVersion: { graph: ScenarioGraph; id: string } | null;
   draftVersion: { graph: ScenarioGraph; id: string } | null;
   versions: Array<{
+    createdAt: string;
+    graph: ScenarioGraph;
     id: string;
     publishedAt: string | null;
     status: string;
@@ -36,6 +38,12 @@ export interface ScenarioExecution {
     nodeId: string;
     nodeType: string;
     outputSafe: unknown | null;
+    delivery?: {
+      messageId: string;
+      messageStatus: string;
+      outboxRecordId: string;
+      outboxStatus: string;
+    };
     startedAt: string | null;
     status: string;
   }>;
@@ -192,8 +200,9 @@ export function useScenarioMutations(projectId?: string) {
         graph?: ScenarioGraph;
         name?: string;
       }) => request<Scenario>(`/${id}`, 'PATCH', input),
-      onSuccess: async () => {
+      onSuccess: async (_data, variables) => {
         await client.invalidateQueries({ queryKey: ['scenarios', projectId] });
+        await client.invalidateQueries({ queryKey: ['scenario', projectId, variables.id] });
       },
     }),
   };

@@ -27,7 +27,14 @@ stored validation issues.
 
 ## Observability
 
-`ScenarioExecution` and `NodeExecution` form the execution journal. Continuation scans emit safe operational messages only; Telegram payloads, bot tokens, webhook secrets and contact data are never included.
+`ScenarioExecution` and `NodeExecution` form the execution journal. A completed
+send node records only the project-scoped Omnicus message and outbox IDs. The
+operator-facing inspector resolves those references to the current Telegram
+message/outbox statuses, so node completion is never presented as provider
+delivery. Missing message content or an unavailable active channel identity
+fails the node instead of silently completing it. Continuation scans emit safe
+operational messages only; Telegram payloads, bot tokens, webhook secrets and
+contact data are never included.
 
 ## External HTTP request
 
@@ -36,6 +43,10 @@ one project-scoped `HTTP` outbox record and suspends the execution. The worker
 loads the immutable published node, resolves write-only project secret
 references, validates and pins the public HTTPS target, then follows exactly one
 `success` or `failure` edge. Every redirect is resolved and validated again.
+IPv4 and IPv6 deny lists remain separate to avoid treating all public IPv4
+addresses as IPv4-mapped IPv6. If DNS returns mixed public and restricted
+answers, transport is pinned to one validated public address; execution is
+rejected when no public address remains.
 
 Known responses can map explicitly selected `response.data.*` or
 `response.status` values into `ScenarioExecution.variables`. Later conditions,

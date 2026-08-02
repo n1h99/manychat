@@ -39,6 +39,7 @@ interface RuntimeContext extends AutomationTriggerInput {
 
 interface NodeResult {
   next?: ScenarioGraphEdge | undefined;
+  operationSafe?: Prisma.InputJsonObject;
   reasonCode?: string;
   suspended?: boolean;
 }
@@ -351,6 +352,7 @@ export class AutomationRuntimeService {
           ...(result.next?.output ? { selectedOutput: result.next.output } : {}),
           ...(result.next?.to ? { nextNodeId: result.next.to } : {}),
           ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+          ...(result.operationSafe ?? {}),
           suspended: result.suspended === true,
         },
       );
@@ -605,7 +607,10 @@ export class AutomationRuntimeService {
     if (node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG')
       await this.applyTag(transaction, node, context);
     if (node.type === 'SEND_MESSAGE' || node.type === 'SEND_TEMPLATE')
-      await this.queueMessage(transaction, node, context, executionId);
+      return {
+        next: defaultEdge,
+        operationSafe: await this.queueMessage(transaction, node, context, executionId),
+      };
     if (node.type === 'CREATE_OR_UPDATE_LEAD' || node.type === 'FORWARD_TO_CRM')
       await this.queueCrmOperation(transaction, node, context, executionId);
     return { next: defaultEdge };
@@ -799,7 +804,7 @@ export class AutomationRuntimeService {
     node: ScenarioGraphNode,
     context: RuntimeContext,
     executionId: string,
-  ): Promise<void> {
+  ): Promise<Prisma.InputJsonObject> {
     const templateVersionId =
       typeof node.config.templateVersionId === 'string' ? node.config.templateVersionId : undefined;
     const templateVersion = templateVersionId
@@ -829,7 +834,8 @@ export class AutomationRuntimeService {
           : typeof node.config.text === 'string'
             ? node.config.text
             : undefined;
-    if (sourceText === undefined) return;
+    if (sourceText === undefined || sourceText.trim().length === 0)
+      throw new Error('automation_message_content_missing');
     const rendered = renderTemplate(sourceText, {
       ...this.object(context.variables),
       contact: context.contactVariables,
@@ -846,14 +852,19 @@ export class AutomationRuntimeService {
         status: 'ACTIVE',
       },
     });
-    if (!identity) return;
+    if (!identity) throw new Error('automation_channel_identity_unavailable');
     const idempotencyKey = `automation-${executionId}-${node.id}`;
-    if (
-      await transaction.outboxRecord.findUnique({
-        where: { projectId_idempotencyKey: { idempotencyKey, projectId: context.projectId } },
-      })
-    )
-      return;
+    const existing = await transaction.outboxRecord.findUnique({
+      where: { projectId_idempotencyKey: { idempotencyKey, projectId: context.projectId } },
+    });
+    if (existing) {
+      const payload = this.object(existing.payload);
+      return {
+        deliveryStatus: 'QUEUED',
+        ...(typeof payload.messageId === 'string' ? { messageId: payload.messageId } : {}),
+        outboxRecordId: existing.id,
+      };
+    }
     const message = await transaction.message.create({
       data: {
         connectionId: context.connectionId,
@@ -883,7 +894,7 @@ export class AutomationRuntimeService {
         type: templateVersion?.kind ?? 'TEXT',
       },
     });
-    await transaction.outboxRecord.create({
+    const outbox = await transaction.outboxRecord.create({
       data: {
         connectionId: context.connectionId,
         idempotencyKey,
@@ -892,6 +903,11 @@ export class AutomationRuntimeService {
         projectId: context.projectId,
       },
     });
+    return {
+      deliveryStatus: 'QUEUED',
+      messageId: message.id,
+      outboxRecordId: outbox.id,
+    };
   }
 
   private async nodeExecution(

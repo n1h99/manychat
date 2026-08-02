@@ -1174,3 +1174,33 @@ automation graph. PostgreSQL inbox/outbox durability, at-least-once delivery,
 per-message idempotency, media materialization and reconciliation rules stay
 unchanged. No Telegram payload, message text or credential is added to safe CRM
 operation metadata.
+
+## ADR-048: Automation authoring and delivery diagnostics use one stable human model
+
+**Status:** Accepted, 2026-08-02.
+
+**Context:** Hydrating API graphs into canvas defaults could immediately mark an
+unchanged draft dirty. Version history required a reload, validation and Safe
+Test exposed raw graph IDs, and a successful `SEND_MESSAGE` node did not prove
+that its Telegram outbox had delivered anything. External HTTP also used one
+Node `BlockList` for both address families; the IPv4-mapped IPv6 deny range then
+matched public IPv4 checks and rejected safe public targets.
+
+**Decision:** The editor computes its saved signature from the hydrated graph,
+keeps version detail synchronized after explicit save, previews immutable graph
+JSON directly, and uses stable human node labels throughout validation, test
+simulation and execution inspection. Safe Test exposes only outcomes used by
+the current graph and remains blocked by concrete validation issues. Canvas
+lock covers every mutation, connection handles have stable enlarged hit areas,
+and the palette is searchable. A scenario cannot offer itself as a Subflow.
+
+`SEND_MESSAGE` and `SEND_TEMPLATE` must either queue one message/outbox pair or
+fail. Their node journal stores only those IDs; the API resolves current scoped
+statuses for operator diagnostics. IPv4 and IPv6 target deny lists are separate.
+Mixed DNS answers may select and pin one validated public address, while a set
+with no public address remains forbidden and redirects repeat the same check.
+
+**Consequences:** Reloading an untouched draft stays clean, saved versions are
+visible immediately, and `Step completed` is distinct from Telegram delivery.
+No payload, rendered message, HTTP body, secret or credential is added to
+diagnostics. SSRF protections remain fail-closed when no public target exists.

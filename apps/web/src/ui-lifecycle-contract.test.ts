@@ -29,6 +29,23 @@ describe('workspace lifecycle UI contracts', () => {
     expect(editor).not.toContain('}, 1_500)');
   });
 
+  it('keeps Automation Studio discovery, locking and diagnostics operator-friendly', () => {
+    const editor = source('./pages/scenario-editor-page.tsx');
+    const testPanel = source('./automation-test-panel.tsx');
+    expect(editor).toContain('const hydratedGraph = flowToScenarioGraph');
+    expect(editor).toContain('placeholder="Find a step"');
+    expect(editor).toContain('disabled={!isCanvasInteractive || !historyPast.length}');
+    expect(editor).toContain(
+      "deleteKeyCode={isCanvasInteractive ? ['Backspace', 'Delete'] : null}",
+    );
+    expect(editor).toContain('candidate.id !== scenarioId');
+    expect(editor).toContain('<AutomationGraphPreview compact graph={version.graph} />');
+    expect(editor).toContain('Telegram delivery');
+    expect(testPanel).toContain("nodeTypes.includes('WAIT_FOR_REPLY')");
+    expect(testPanel).toContain("nodeTypes.includes('EXTERNAL_HTTP_REQUEST')");
+    expect(testPanel).toContain('Fix the graph before testing');
+  });
+
   it('uses an in-app template archive dialog and a deferred media selection', () => {
     const templates = source('./pages/templates-page.tsx');
     const media = source('./pages/media-assets-page.tsx');

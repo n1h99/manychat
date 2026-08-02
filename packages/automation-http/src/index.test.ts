@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { externalHttpRequestConfigSchema } from '@omnicus/automation-core';
 
-import { assertSafeExternalHttpUrl, executeExternalHttpRequest, ExternalHttpError } from './index';
+import {
+  assertSafeExternalHttpUrl,
+  executeExternalHttpRequest,
+  ExternalHttpError,
+  selectSafeLookupAddress,
+} from './index';
 
 describe('external HTTP target validation', () => {
   it.each([
@@ -13,6 +18,24 @@ describe('external HTTP target validation', () => {
     'https://[::1]/hook',
   ])('rejects unsafe target %s', async (url) => {
     await expect(assertSafeExternalHttpUrl(url)).rejects.toBeInstanceOf(ExternalHttpError);
+  });
+
+  it('pins a public address when platform DNS also returns a restricted address', () => {
+    expect(
+      selectSafeLookupAddress([
+        { address: '100.64.0.10', family: 4 },
+        { address: '104.20.23.154', family: 4 },
+      ]),
+    ).toEqual({ address: '104.20.23.154', family: 4 });
+  });
+
+  it('rejects a DNS result with no public address', () => {
+    expect(
+      selectSafeLookupAddress([
+        { address: '127.0.0.1', family: 4 },
+        { address: '::1', family: 6 },
+      ]),
+    ).toBeUndefined();
   });
 });
 

@@ -341,6 +341,12 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
     ) {
       errors.push(`Send Template node ${node.id} requires a pinned template version`);
     }
+    if (
+      node.type === 'SEND_MESSAGE' &&
+      (typeof node.config.text !== 'string' || node.config.text.trim().length === 0)
+    ) {
+      errors.push(`Send Message node ${node.id} requires message text`);
+    }
     if (node.type === 'EXTERNAL_HTTP_REQUEST') {
       const config = externalHttpRequestConfigSchema.safeParse(node.config);
       if (!config.success) errors.push(`External HTTP node ${node.id} has invalid request config`);

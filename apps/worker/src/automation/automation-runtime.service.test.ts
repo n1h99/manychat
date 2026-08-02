@@ -265,4 +265,86 @@ describe('AutomationRuntimeService Wait for Reply criteria', () => {
 
     expect(outboxFindUnique).not.toHaveBeenCalled();
   });
+
+  it('returns safe Telegram delivery references when a message is queued', async () => {
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      applyNode(
+        transaction: unknown,
+        node: unknown,
+        edges: unknown[],
+        context: unknown,
+        executionId: string,
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      service.applyNode(
+        {
+          channelIdentity: { findFirst: vi.fn().mockResolvedValue({ id: 'identity-a' }) },
+          message: { create: vi.fn().mockResolvedValue({ id: 'message-a' }) },
+          outboxRecord: {
+            create: vi.fn().mockResolvedValue({ id: 'outbox-a' }),
+            findUnique: vi.fn().mockResolvedValue(null),
+          },
+        },
+        { config: { text: 'Hello {{contact.firstName}}' }, id: 'send-a', type: 'SEND_MESSAGE' },
+        [{ from: 'send-a', to: 'stop-a' }],
+        {
+          connectionId: 'connection-a',
+          contactId: 'contact-a',
+          contactVariables: { firstName: 'Alex' },
+          conversationId: 'conversation-a',
+          customFields: {},
+          eventPayload: { type: 'MESSAGE' },
+          normalizedEventId: 'event-a',
+          projectId: 'project-a',
+          subflowDepth: 0,
+          variables: {},
+        },
+        'execution-a',
+      ),
+    ).resolves.toEqual({
+      next: { from: 'send-a', to: 'stop-a' },
+      operationSafe: {
+        deliveryStatus: 'QUEUED',
+        messageId: 'message-a',
+        outboxRecordId: 'outbox-a',
+      },
+    });
+  });
+
+  it('fails a send-message step when no active Telegram identity exists', async () => {
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      applyNode(
+        transaction: unknown,
+        node: unknown,
+        edges: unknown[],
+        context: unknown,
+        executionId: string,
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      service.applyNode(
+        {
+          channelIdentity: { findFirst: vi.fn().mockResolvedValue(null) },
+        },
+        { config: { text: 'Hello' }, id: 'send-a', type: 'SEND_MESSAGE' },
+        [],
+        {
+          connectionId: 'connection-a',
+          contactId: 'contact-a',
+          contactVariables: {},
+          conversationId: 'conversation-a',
+          customFields: {},
+          eventPayload: { type: 'MESSAGE' },
+          normalizedEventId: 'event-a',
+          projectId: 'project-a',
+          subflowDepth: 0,
+          variables: {},
+        },
+        'execution-a',
+      ),
+    ).rejects.toThrow('automation_channel_identity_unavailable');
+  });
 });

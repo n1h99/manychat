@@ -82,6 +82,22 @@ describe('automation graph validation', () => {
     );
   });
 
+  it('rejects a send-message step without message content', () => {
+    const result = validateScenarioGraph({
+      edges: [
+        { from: 'trigger', to: 'send' },
+        { from: 'send', to: 'stop' },
+      ],
+      nodes: [
+        { id: 'trigger', type: 'INCOMING_MESSAGE' },
+        { config: { text: '   ' }, id: 'send', type: 'SEND_MESSAGE' },
+        { id: 'stop', type: 'STOP' },
+      ],
+    });
+
+    expect(result.errors).toContain('Send Message node send requires message text');
+  });
+
   it('validates bounded Wait for Reply criteria while keeping legacy empty criteria compatible', () => {
     const valid = validateScenarioGraph({
       edges: [

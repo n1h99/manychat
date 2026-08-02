@@ -211,4 +211,59 @@ describe('AutomationService lifecycle', () => {
       ),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  it('enriches send steps with current Telegram delivery status', async () => {
+    const service = new AutomationService(
+      { record: vi.fn() } as never,
+      {
+        client: {
+          message: {
+            findMany: vi.fn().mockResolvedValue([{ id: 'message-a', status: 'SENT' }]),
+          },
+          outboxRecord: {
+            findMany: vi.fn().mockResolvedValue([{ id: 'outbox-a', status: 'SUCCEEDED' }]),
+          },
+          scenario: {
+            findUnique: vi.fn().mockResolvedValue({
+              activeVersion: null,
+              draftVersion: null,
+              id: 'scenario-a',
+              versions: [],
+            }),
+          },
+          scenarioExecution: {
+            findMany: vi.fn().mockResolvedValue([
+              {
+                id: 'execution-a',
+                nodeExecutions: [
+                  {
+                    nodeId: 'send-a',
+                    outputSafe: { messageId: 'message-a', outboxRecordId: 'outbox-a' },
+                  },
+                ],
+              },
+            ]),
+          },
+        },
+      } as never,
+    );
+
+    await expect(service.executions('project-a', 'scenario-a')).resolves.toEqual([
+      {
+        id: 'execution-a',
+        nodeExecutions: [
+          {
+            delivery: {
+              messageId: 'message-a',
+              messageStatus: 'SENT',
+              outboxRecordId: 'outbox-a',
+              outboxStatus: 'SUCCEEDED',
+            },
+            nodeId: 'send-a',
+            outputSafe: { messageId: 'message-a', outboxRecordId: 'outbox-a' },
+          },
+        ],
+      },
+    ]);
+  });
 });

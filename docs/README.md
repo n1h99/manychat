@@ -27,7 +27,18 @@ v3.3.
   notifications when the operator is viewing that channel.
 - Automation Studio 2.2 supports incomplete/disconnected drafts, explicit
   operator-controlled saving, edge deletion and durable SSRF-safe External
-  HTTP nodes. Editor changes remain local until **Save draft** is pressed.
+  HTTP nodes. Editor changes remain local until **Save draft** is pressed. The
+  editor now hydrates one stable saved baseline, refreshes version history
+  immediately, previews each immutable canvas, keeps connection handles stable,
+  and exposes only graph-relevant Safe Test controls.
+- Automation execution diagnostics distinguish node completion from actual
+  Telegram delivery. Send steps persist only safe message/outbox references;
+  missing content or channel identity fails the step instead of reporting a
+  false success.
+- External HTTP DNS pinning keeps IPv4 and IPv6 deny lists separate and selects
+  a public resolved address when a platform resolver also returns restricted
+  addresses. Private, loopback, mapped, reserved and redirect targets remain
+  blocked.
 - WhatsApp and Instagram are deliberately deferred until test accounts and a
   separately approved scope exist.
 

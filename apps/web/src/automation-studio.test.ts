@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  automationNodeLabel,
   conditionFieldType,
   durationParts,
   durationSeconds,
+  externalHttpSafeErrorMessage,
+  humanizeAutomationValidationIssue,
   previewAutomationText,
   safeDiagnosticJson,
 } from './automation-studio';
@@ -34,5 +37,20 @@ describe('Automation Studio helpers', () => {
       missing: ['contact.missing'],
       output: 'Hello Alex ',
     });
+  });
+
+  it('renders human automation labels and validation issues', () => {
+    expect(automationNodeLabel('EXTERNAL_HTTP_REQUEST')).toBe('External HTTP request');
+    expect(
+      humanizeAutomationValidationIssue('Node delay-a is unreachable', [
+        { id: 'delay-a', type: 'DELAY' },
+      ]),
+    ).toEqual({ message: 'Delay is not connected to the trigger.', nodeId: 'delay-a' });
+  });
+
+  it('maps external HTTP safety codes without exposing provider details', () => {
+    expect(externalHttpSafeErrorMessage('external_http_target_forbidden')).toContain(
+      'private or restricted',
+    );
   });
 });

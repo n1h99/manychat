@@ -150,6 +150,24 @@ test('opens the versioned template and visual automation workspace with mocked A
           updatedAt: '2026-07-27T00:00:00.000Z',
           versions: [
             {
+              createdAt: '2026-07-27T00:00:00.000Z',
+              graph: {
+                edges: [{ from: 'incoming', output: 'default', to: 'stop' }],
+                nodes: [
+                  {
+                    config: {},
+                    id: 'incoming',
+                    position: { x: 0, y: 100 },
+                    type: 'INCOMING_MESSAGE',
+                  },
+                  {
+                    config: {},
+                    id: 'stop',
+                    position: { x: 280, y: 100 },
+                    type: 'STOP',
+                  },
+                ],
+              },
               id: 'scenario-version-a',
               publishedAt: '2026-07-27T00:00:00.000Z',
               status: 'PUBLISHED',
@@ -249,7 +267,7 @@ test('opens the versioned template and visual automation workspace with mocked A
   await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
-  await expect(page.getByText('Graph validation passed')).toBeVisible();
+  await expect(page.getByText('Ready to publish', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Execution inspector' })).toBeVisible();
 
   await page.goto('/projects/project-a/templates');
