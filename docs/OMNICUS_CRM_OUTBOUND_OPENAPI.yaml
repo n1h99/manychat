@@ -91,8 +91,9 @@ paths:
       description: >-
         messageEffects.limits.availableEffects is intentionally empty because Telegram Bot API
         10.2 has no bot method for discovering effect IDs. editMessage.limits defines editable,
-        immutable, preserved, and omission semantics. userReactionEvents remains false until the
-        Omnicus-to-CRM reaction contract is live-verified end to end.
+        immutable, preserved, and omission semantics. userReactionEvents is enabled after live
+        verification of add/change/remove, duplicate delivery, reaction-before-source, routing
+        isolation and the post-fix transactional worker result.
       parameters:
         - $ref: '#/components/parameters/CrmProjectId'
         - $ref: '#/components/parameters/OmnicusProjectId'

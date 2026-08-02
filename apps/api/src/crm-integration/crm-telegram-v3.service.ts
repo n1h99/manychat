@@ -154,11 +154,7 @@ export class CrmTelegramV3Service {
         protectContent: supported(),
         quote: supported({ maximumLength: 1024, requiresReplyToMessage: true }),
         reactions: supported({ maximumBotReactions: 1, paidReactions: false }),
-        userReactionEvents: {
-          supported: false,
-          reasonCode: 'CRM_REACTION_ENDPOINT_NOT_LIVE_VERIFIED',
-          limits: { contractPublished: true, privateChatsOnly: true },
-        },
+        userReactionEvents: supported({ contractPublished: true, privateChatsOnly: true }),
         scheduling: supported({
           applicationOwned: true,
           recurring: false,

@@ -85,8 +85,10 @@ The event is idempotent by `normalizedEventId` and the request
 never the Telegram provider ID. The CRM must accept add/change/remove as the
 complete `oldReactions` and `newReactions` sets. It must preserve project,
 connection and identity isolation and tolerate the source history message being
-inserted later. Omnicus will keep the advertised `userReactionEvents`
-capability disabled until this endpoint is deployed and verified end to end.
+inserted later. The advertised `userReactionEvents` capability was enabled only
+after live verification of add/change/remove, duplicate delivery,
+reaction-before-source, routing isolation and a post-fix operation completing as
+`SUCCEEDED` on its first worker attempt.
 
 The direct response and the nested reconciliation `result` use the same shape:
 

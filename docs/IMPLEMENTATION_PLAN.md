@@ -573,6 +573,13 @@ reconcilable by `operationId`. Both direct and reconciliation responses use the
 same versioned result so a successful CRM side effect cannot be left `UNKNOWN`
 because Omnicus expected a synthetic reaction-record identifier.
 
+The full reaction capability is live-verified: add/change/remove update the
+source bubble, duplicate `normalizedEventId` delivery is idempotent,
+reaction-before-source attaches after the source arrives, invalid project/contact/
+connection routing is rejected, and a post-fix production worker operation
+completed `SUCCEEDED` on its first attempt. Connection-scoped capability
+discovery now advertises `userReactionEvents.supported=true`.
+
 Provider contract 3.2.0 adds the CRM-requested durable boundary for safe
 scenario/broadcast `sourceContext`, client edit/contact events, temporary
 conversation pause with automatic resume, application-owned scheduling,

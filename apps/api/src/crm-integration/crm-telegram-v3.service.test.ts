@@ -160,8 +160,8 @@ describe('CrmTelegramV3Service', () => {
         },
         streamingDraft: { supported: true },
         userReactionEvents: {
-          reasonCode: 'CRM_REACTION_ENDPOINT_NOT_LIVE_VERIFIED',
-          supported: false,
+          limits: expect.objectContaining({ contractPublished: true, privateChatsOnly: true }),
+          supported: true,
         },
       },
       contractVersion: '3.2.0',
