@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@omnicus/database';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CrmOutboundService } from './crm-outbound.service';
@@ -34,6 +35,7 @@ function database(options: { existing?: boolean; mediaKind?: string; projectId?:
     scheduledMessage: {
       create: vi.fn().mockResolvedValue({ id: 'schedule-a' }),
       findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
   };
@@ -57,6 +59,7 @@ function database(options: { existing?: boolean; mediaKind?: string; projectId?:
           displayName: 'Contact A',
         }),
       },
+      idempotencyRecord: { findUnique: vi.fn().mockResolvedValue(null) },
       outboxRecord: {
         findUnique: vi.fn().mockResolvedValue(
           options.existing
@@ -172,6 +175,189 @@ describe('CrmOutboundService', () => {
       }),
     );
     expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('persists a bounded recurring schedule and its first occurrence', async () => {
+    const db = database();
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+    const scheduledAt = new Date(Date.now() + 60_000).toISOString();
+
+    await service.queue(
+      {
+        ...dto,
+        recurrence: { count: 4, frequency: 'WEEKLY', interval: 2 },
+        scheduledAt,
+        timezone: 'Asia/Baku',
+      },
+      'crm-recurring-a',
+      'correlation-a',
+    );
+
+    expect(db.transaction.scheduledMessage.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          occurrence: 1,
+          recurrence: { count: 4, frequency: 'WEEKLY', interval: 2 },
+          seriesId: 'outbox-a',
+        }),
+      }),
+    );
+  });
+
+  it('rejects a recurrence that ends before its first scheduled occurrence', async () => {
+    const db = database();
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+    const scheduledAt = new Date(Date.now() + 120_000);
+
+    await expect(
+      service.queue(
+        {
+          ...dto,
+          recurrence: {
+            frequency: 'DAILY',
+            interval: 1,
+            until: new Date(Date.now() + 60_000).toISOString(),
+          },
+          scheduledAt: scheduledAt.toISOString(),
+          timezone: 'UTC',
+        },
+        'crm-invalid-recurrence-a',
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ response: { code: 'CRM_RECURRENCE_END_INVALID' } });
+    expect(db.transaction.message.create).not.toHaveBeenCalled();
+  });
+
+  it('updates a queued schedule once and replays the safe idempotent result', async () => {
+    const db = database();
+    const scheduledAt = new Date(Date.now() + 120_000).toISOString();
+    const schedule = {
+      cancelledAt: null,
+      channelIdentityId: 'identity-a',
+      completedAt: null,
+      connectionId: 'connection-a',
+      contact: { crmLeadId: 'crm-lead-a' },
+      contactId: 'contact-a',
+      id: 'schedule-a',
+      messageId: 'message-a',
+      occurrence: 1,
+      outboxRecordId: 'outbox-a',
+      projectId: 'project-a',
+      recurrence: null,
+      revision: 1,
+      scheduledAt: new Date(Date.now() + 60_000),
+      seriesId: 'outbox-a',
+      status: 'QUEUED',
+      timezone: 'Asia/Baku',
+    };
+    db.transaction.scheduledMessage.findFirst.mockResolvedValue(schedule);
+    db.transaction.scheduledMessage.findUniqueOrThrow.mockResolvedValue({
+      ...schedule,
+      recurrence: { count: 3, frequency: 'DAILY', interval: 1 },
+      revision: 2,
+      scheduledAt: new Date(scheduledAt),
+    });
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+    const query = {
+      connectionId: 'connection-a',
+      crmLeadId: 'crm-lead-a',
+      crmProjectId: 'cyber-pulse-staging',
+      omnicusContactId: 'contact-a',
+      omnicusProjectId: 'project-a',
+    };
+    const update = {
+      expectedRevision: 1,
+      recurrence: { count: 3, frequency: 'DAILY' as const, interval: 1 },
+      scheduledAt,
+    };
+
+    const first = await service.updateScheduled(
+      'schedule-a',
+      update,
+      query,
+      'schedule-update-a',
+      'correlation-a',
+    );
+    expect(first).toMatchObject({ id: 'schedule-a', replayed: false, revision: 2 });
+    expect(db.transaction.idempotencyRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          key: 'schedule-update-a',
+          scope: 'crm-scheduled-update',
+        }),
+      }),
+    );
+
+    const resultSafe = db.transaction.idempotencyRecord.create.mock.calls[0]?.[0].data.resultSafe;
+    db.client.idempotencyRecord.findUnique.mockResolvedValue({ resultSafe });
+    const replay = await service.updateScheduled(
+      'schedule-a',
+      update,
+      query,
+      'schedule-update-a',
+      'another-correlation',
+    );
+    expect(replay).toMatchObject({ id: 'schedule-a', replayed: true, revision: 2 });
+    expect(db.transaction.scheduledMessage.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('distinguishes preserving recurrence from explicitly clearing it', async () => {
+    const db = database();
+    const schedule = {
+      cancelledAt: null,
+      channelIdentityId: 'identity-a',
+      completedAt: null,
+      connectionId: 'connection-a',
+      contact: { crmLeadId: 'crm-lead-a' },
+      contactId: 'contact-a',
+      id: 'schedule-a',
+      messageId: 'message-a',
+      occurrence: 1,
+      outboxRecordId: 'outbox-a',
+      projectId: 'project-a',
+      recurrence: { count: 3, frequency: 'DAILY', interval: 1 },
+      revision: 1,
+      scheduledAt: new Date(Date.now() + 60_000),
+      seriesId: 'outbox-a',
+      status: 'QUEUED',
+      timezone: 'UTC',
+    };
+    db.transaction.scheduledMessage.findFirst.mockResolvedValue(schedule);
+    db.transaction.scheduledMessage.findUniqueOrThrow.mockResolvedValue({
+      ...schedule,
+      recurrence: null,
+      revision: 2,
+    });
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await service.updateScheduled(
+      'schedule-a',
+      { expectedRevision: 1, recurrence: null },
+      {
+        connectionId: 'connection-a',
+        crmLeadId: 'crm-lead-a',
+        crmProjectId: 'cyber-pulse-staging',
+        omnicusContactId: 'contact-a',
+        omnicusProjectId: 'project-a',
+      },
+      'clear-recurrence-a',
+      'correlation-a',
+    );
+
+    expect(db.transaction.scheduledMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ recurrence: Prisma.DbNull }),
+      }),
+    );
+    expect(db.transaction.idempotencyRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resultSafe: expect.objectContaining({
+            request: expect.objectContaining({ recurrenceMode: 'CLEAR' }),
+          }),
+        }),
+      }),
+    );
   });
 
   it('lists only schedules inside the required lead and connection scope', async () => {
@@ -349,6 +535,40 @@ describe('CrmOutboundService', () => {
             replyToMessageId: 'telegram-message-42',
           }),
           type: 'VOICE',
+        }),
+      }),
+    );
+  });
+
+  it('queues a native rich message with a validated reply keyboard', async () => {
+    const db = database();
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await service.queue(
+      {
+        crmProjectId: dto.crmProjectId,
+        identity: dto.identity,
+        omnicusContactId: dto.omnicusContactId,
+        omnicusProjectId: dto.omnicusProjectId,
+        replyMarkup: {
+          inputFieldPlaceholder: 'Choose an action',
+          keyboard: [[{ text: 'Share location', requestLocation: true }]],
+          type: 'reply_keyboard',
+        },
+        richMessage: { markdown: '**Safe rich text**' },
+      },
+      'crm-rich-request-a',
+      'correlation-a',
+    );
+
+    expect(db.transaction.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: { richMessage: { markdown: '**Safe rich text**' } },
+          metadata: expect.objectContaining({
+            replyMarkup: expect.objectContaining({ type: 'reply_keyboard' }),
+          }),
+          type: 'RICH',
         }),
       }),
     );

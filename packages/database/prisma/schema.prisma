@@ -185,6 +185,7 @@ enum MessageType {
   CONTACT
   LOCATION
   POLL
+  RICH
   CALLBACK_QUERY
   SYSTEM
   UNSUPPORTED
@@ -1282,6 +1283,7 @@ model ScheduledMessage {
   outboxRecordId    String                 @unique
   seriesId          String
   occurrence        Int                    @default(1)
+  revision          Int                    @default(1)
   status            ScheduledMessageStatus @default(QUEUED)
   request           Json
   timezone          String

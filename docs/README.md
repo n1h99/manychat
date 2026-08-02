@@ -1,7 +1,7 @@
 # Omnicus documentation index
 
 Status reviewed: 2026-08-02, `main` at Automation Studio 2.2 and Telegram Chat
-v3.2.
+v3.3.
 
 ## Current product status
 
@@ -13,6 +13,11 @@ v3.2.
   delivery, reaction-before-source and routing isolation.
 - Connection-scoped discovery advertises
   `userReactionEvents.supported=true`.
+- Telegram Chat v3.3 adds bounded reply keyboards/Force Reply, application-owned
+  DAILY/WEEKLY recurring schedules with revision-safe updates, native Telegram
+  rich Markdown messages and rich draft previews that reuse provider media IDs.
+- Rich content never accepts arbitrary media URLs; durable media is resolved
+  only from a project/connection-scoped Omnicus asset.
 - Automation Studio 2.2 supports incomplete/disconnected drafts, quiet
   autosave, explicit edge deletion and durable SSRF-safe External HTTP nodes.
 - WhatsApp and Instagram are deliberately deferred until test accounts and a
@@ -50,7 +55,7 @@ The following files are retained for audit/history and are not current blockers:
 - [CRM_OUTBOUND_HISTORY_HANDOFF.md](CRM_OUTBOUND_HISTORY_HANDOFF.md): completed
   outbound-history handoff.
 - [CRM_TELEGRAM_STICKER_MEDIA_HANDOFF.md](CRM_TELEGRAM_STICKER_MEDIA_HANDOFF.md):
-  completed 3.1 media handoff; current capability values come from v3.2
+  completed 3.1 media handoff; current capability values come from v3.3
   discovery and OpenAPI.
 - [PILOT_EXTERNAL_GATES.md](PILOT_EXTERNAL_GATES.md): gate ledger showing what
   is complete and what remains deliberately deferred.

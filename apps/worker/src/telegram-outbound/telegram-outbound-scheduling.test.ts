@@ -106,4 +106,90 @@ describe('Telegram outbound initial scheduling', () => {
       }),
     );
   });
+
+  it('preserves the configured local wall clock across a daylight-saving transition', () => {
+    const service = new TelegramOutboundProcessorService(
+      config() as never,
+      { client: {} } as never,
+      {
+        close: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+        waitUntilReady: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+    const internals = service as unknown as {
+      addZonedDays(date: Date, days: number, timezone: string): Date;
+    };
+
+    expect(
+      internals.addZonedDays(new Date('2026-03-28T09:00:00.000Z'), 1, 'Europe/Berlin'),
+    ).toEqual(new Date('2026-03-29T08:00:00.000Z'));
+  });
+
+  it('creates exactly one durable next occurrence for a recurring schedule', async () => {
+    const service = new TelegramOutboundProcessorService(
+      config() as never,
+      { client: {} } as never,
+      {
+        close: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+        waitUntilReady: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+    const transaction = {
+      message: { create: vi.fn().mockResolvedValue({ id: 'message-b' }) },
+      outboxRecord: { create: vi.fn().mockResolvedValue({ id: 'outbox-b' }) },
+      scheduledMessage: {
+        create: vi.fn().mockResolvedValue({ id: 'schedule-b' }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+    };
+    const internals = service as unknown as {
+      createNextScheduledOccurrence(
+        transaction: unknown,
+        scheduled: unknown,
+        message: unknown,
+      ): Promise<void>;
+    };
+
+    await internals.createNextScheduledOccurrence(
+      transaction,
+      {
+        channelIdentityId: 'identity-a',
+        connectionId: 'connection-a',
+        contactId: 'contact-a',
+        occurrence: 1,
+        projectId: 'project-a',
+        recurrence: { count: 3, frequency: 'DAILY', interval: 1 },
+        request: { kind: 'TEXT' },
+        scheduledAt: new Date('2026-03-28T09:00:00.000Z'),
+        seriesId: 'series-a',
+        timezone: 'Europe/Berlin',
+      },
+      {
+        connectionId: 'connection-a',
+        contactId: 'contact-a',
+        content: { text: 'Stored content' },
+        conversationId: 'conversation-a',
+        mediaAssetId: null,
+        metadata: {},
+        projectId: 'project-a',
+        type: 'TEXT',
+      },
+    );
+
+    expect(transaction.outboxRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          idempotencyKey: 'scheduled-series-series-a-2',
+          nextAttemptAt: new Date('2026-03-29T08:00:00.000Z'),
+        }),
+      }),
+    );
+    expect(transaction.scheduledMessage.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ occurrence: 2, seriesId: 'series-a' }),
+      }),
+    );
+  });
 });

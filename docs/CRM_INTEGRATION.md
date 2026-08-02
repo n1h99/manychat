@@ -1,7 +1,8 @@
 # Cyber Pulse CRM integration
 
-Status reviewed: 2026-08-02. Telegram Chat v3.2 is deployed and its final
-reaction-event acceptance gate has passed.
+Status reviewed: 2026-08-02. Telegram Chat v3.2 live acceptance is complete;
+the v3.3 contract and implementation add the remaining approved Telegram UI,
+recurrence and rich-content scope.
 
 ## Verified contract
 
@@ -123,11 +124,26 @@ invents effect IDs. Empty streaming draft updates are ignored because Telegram
 uses them as a Thinking placeholder, not as cancellation.
 
 Conversation automation control exposes `AUTO`, `MANUAL` and temporary
-`PAUSED` with revision concurrency and automatic resume. Contract 3.2.0 also
-supports application-owned one-shot scheduling, durable Telegram media groups,
+`PAUSED` with revision concurrency and automatic resume. Contract 3.2.0 added
+application-owned one-shot scheduling, durable Telegram media groups,
 structured contact/location/poll messages, scenario/broadcast `sourceContext`
-and bot commands/menu configuration. Recurring schedules, reply keyboards,
-rich-message blocks and external callbacks remain machine-readably unsupported.
+and bot commands/menu configuration. Contract 3.3.0 adds bounded DAILY/WEEKLY
+recurrence, revision-safe schedule updates, reply keyboards/Force Reply, native
+Telegram rich Markdown and rich draft previews that reuse existing provider
+media IDs. External action callbacks remain unsupported until a separate safe
+callback contract is approved.
+
+Recurring occurrences are created transactionally in PostgreSQL after the
+previous occurrence reaches `SENT`; Redis does not own the series. Series use
+stable `seriesId` plus `occurrence`, preserve the configured IANA timezone wall
+clock, and stop at the required `count` or `until` bound. A schedule update is
+QUEUED-only, uses `expectedRevision`, `Idempotency-Key` and correlation audit,
+and cannot be replayed into a second state transition.
+
+Reply markup is bounded to text, contact and location buttons. Rich Markdown is
+limited to Telegram Bot API 10.2 limits and at most one CRM-owned media asset;
+arbitrary remote rich-media URLs and direct media upload in draft previews are
+rejected.
 
 Contract 3.1.0 exposes stickers and media spoilers separately. CRM must gate
 sticker UI on `stickers.supported` and spoiler UI on

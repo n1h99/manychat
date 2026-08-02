@@ -1,7 +1,7 @@
 # Omnicus response to Telegram Chat v3 contract gaps
 
-Status: implemented, deployed and live-verified CRM-to-Omnicus contract 3.2.0
-and Omnicus-to-CRM delivery contract 3.2.1, 2026-08-02.
+Status: CRM-to-Omnicus contract 3.3.0 implemented; 3.2.0 live acceptance and
+Omnicus-to-CRM delivery contract 3.2.1 remain verified, 2026-08-02.
 
 Input: Cyber Pulse `OMNICUS_TELEGRAM_CHAT_V3_GAPS.md`, based on Omnicus
 baseline `4345938027ccf0b323bff1a41b4799b0e28bf2d2`.
@@ -10,10 +10,10 @@ Authoritative provider reference: Telegram Bot API 10.2, reviewed on
 2026-08-02 at `https://core.telegram.org/bots/api` and
 `https://core.telegram.org/bots/api-changelog`.
 
-## Released in contracts 3.0.0 through 3.2.0
+## Released in contracts 3.0.0 through 3.3.0
 
 The authoritative CRM-to-Omnicus contract is
-`OMNICUS_CRM_OUTBOUND_OPENAPI.yaml` 3.2.0.
+`OMNICUS_CRM_OUTBOUND_OPENAPI.yaml` 3.3.0.
 
 | Gap | Released behavior                                                                                                 |
 | --- | ----------------------------------------------------------------------------------------------------------------- |
@@ -30,6 +30,9 @@ The authoritative CRM-to-Omnicus contract is
 | V32 | Safe source context, inbound message edits and explicit contact-share events                                      |
 | V32 | One-shot scheduling, durable media-group aggregate, structured messages and bot commands/menu                     |
 | V32 | Inbound user reactions advertised after duplicate, pending-source and routing-isolation live verification         |
+| V33 | Reply keyboard, keyboard removal and Force Reply with bounded button kinds                                        |
+| V33 | DAILY/WEEKLY recurring schedules, series occurrences and revision-safe schedule updates                           |
+| V33 | Native rich Markdown messages and rich streaming drafts with provider-media reuse only                            |
 
 The capability response explicitly publishes `quote`, `linkPreviewOptions`
 and `explicitRetry`. CRM must gate these features by those keys rather than
@@ -58,8 +61,10 @@ OutboxRecord and are never represented as delivered content.
 - Edit capability limits explicitly list text, caption, entities, inline
   keyboard and link-preview options as editable. Protected-content, message
   effect, reply and quote state are immutable and preserved.
-- Telegram's scheduled-message API is not a Bot API facility. Omnicus 3.2.0
-  provides an application-owned one-shot PostgreSQL/outbox scheduler instead.
+- Telegram's scheduled-message API is not a Bot API facility. Omnicus provides
+  an application-owned PostgreSQL/outbox scheduler. Contract 3.3.0 extends it
+  with bounded DAILY/WEEKLY recurrence and revision-safe QUEUED updates; each
+  occurrence remains an independently reconciled durable operation.
 - Scheduled create/get/list/cancel responses include `connectionId`,
   `channelIdentityId`, `omnicusContactId` and nullable `crmLeadId`. Public
   get/list/cancel calls require connection and contact scope, while optional
@@ -73,20 +78,18 @@ photo, video and animation events preserve `hasSpoiler`; inbound media also
 preserves `mediaGroupId` so CRM can group existing Telegram albums without
 mistaking that metadata for an outbound album operation.
 
-## Still disabled in 3.2.0
+## Still disabled in 3.3.0
 
 Capability discovery returns `supported=false` with a stable reason code for:
 
-- G09 reply keyboards and Force Reply;
 - G13 external action callbacks;
-- recurring schedules, rich-message blocks and media-rich streaming drafts.
 
 `userReactionEvents.supported=true` is now published connection-by-connection.
 Live acceptance confirmed add/change/remove, duplicate `normalizedEventId`,
 reaction-before-source, routing isolation and a final worker result of
 `SUCCEEDED`. CRM must not infer or enable any other absent/false capability.
-The remaining groups need an approved persistence and recovery contract before
-their OpenAPI paths are published.
+External callbacks still need an approved ownership, authentication and
+recovery contract before an OpenAPI path can be published.
 
 ## Security and isolation
 

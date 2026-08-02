@@ -148,7 +148,16 @@ describe('CrmTelegramV3Service', () => {
         contactShare: { supported: true },
         mediaGroups: { supported: true },
         scheduling: {
-          limits: expect.objectContaining({ applicationOwned: true, recurring: false }),
+          limits: expect.objectContaining({
+            applicationOwned: true,
+            frequencies: ['DAILY', 'WEEKLY'],
+            recurring: true,
+          }),
+          supported: true,
+        },
+        replyKeyboard: { supported: true },
+        richMessages: {
+          limits: expect.objectContaining({ externalMediaUrls: false, maximumMediaAssets: 1 }),
           supported: true,
         },
         stickers: {
@@ -158,13 +167,16 @@ describe('CrmTelegramV3Service', () => {
           }),
           supported: true,
         },
-        streamingDraft: { supported: true },
+        streamingDraft: {
+          limits: expect.objectContaining({ mediaDirectUpload: false, mediaReuseOnly: true }),
+          supported: true,
+        },
         userReactionEvents: {
           limits: expect.objectContaining({ contractPublished: true, privateChatsOnly: true }),
           supported: true,
         },
       },
-      contractVersion: '3.2.0',
+      contractVersion: '3.3.0',
       telegramBotApiVersion: '10.2',
     });
   });

@@ -54,6 +54,7 @@ import {
   CrmRetryOperationDto,
   CrmScheduledMessageDto,
   CrmScheduledMessageQueryDto,
+  CrmScheduledMessageUpdateDto,
   CrmTelegramScopeDto,
 } from './dto';
 
@@ -76,6 +77,7 @@ import {
   CrmRetryOperationDto,
   CrmScheduledMessageDto,
   CrmScheduledMessageQueryDto,
+  CrmScheduledMessageUpdateDto,
   CrmTelegramScopeDto,
 )
 @UseGuards(CrmIntegrationAuthGuard)
@@ -299,6 +301,29 @@ export class CrmIntegrationController {
     @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
     return this.outbound.scheduled(scheduleId, query, request.crmIntegration?.projectId);
+  }
+
+  @Patch('messages/scheduled/:scheduleId')
+  @HttpCode(200)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiHeader({ name: 'X-Correlation-Id', required: true })
+  updateScheduledMessage(
+    @Param('scheduleId') scheduleId: string,
+    @Query() query: CrmScheduledMessageQueryDto,
+    @Body() dto: CrmScheduledMessageUpdateDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    this.assertHeaders(idempotencyKey, correlationId);
+    return this.outbound.updateScheduled(
+      scheduleId,
+      dto,
+      query,
+      idempotencyKey!,
+      correlationId!,
+      request.crmIntegration?.projectId,
+    );
   }
 
   @Delete('messages/scheduled/:scheduleId')

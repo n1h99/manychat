@@ -3,9 +3,11 @@ import {
   type TelegramInlineKeyboard,
   type TelegramLinkPreviewOptions,
   type TelegramMessageEntity,
+  type TelegramReplyMarkup,
   validateTelegramInlineKeyboard,
   validateTelegramLinkPreviewOptions,
   validateTelegramMessageEntities,
+  validateTelegramReplyMarkup,
 } from '@omnicus/channel-telegram';
 import { Prisma } from '@omnicus/database';
 
@@ -15,6 +17,7 @@ import type {
   CrmOutboundMessageDto,
   CrmScheduledMessageDto,
   CrmScheduledMessageQueryDto,
+  CrmScheduledMessageUpdateDto,
 } from './dto';
 
 export interface CrmOutboundQueuedResult {
@@ -91,11 +94,22 @@ export class CrmOutboundService {
     authenticatedProjectId?: string,
   ): Promise<CrmOutboundQueuedResult> {
     const structured = this.structured(dto.structured);
-    if (structured && (dto.text !== undefined || dto.media !== undefined))
+    const richMessage = this.richMessage(dto.richMessage);
+    if (
+      (structured &&
+        (dto.text !== undefined || dto.media !== undefined || richMessage !== undefined)) ||
+      (richMessage && (dto.text !== undefined || dto.media !== undefined))
+    )
       throw new ConflictException({ code: 'CRM_STRUCTURED_MESSAGE_CONFLICT' });
+    if (dto.inlineKeyboard !== undefined && dto.replyMarkup !== undefined)
+      throw new ConflictException({ code: 'CRM_REPLY_MARKUP_CONFLICT' });
     const schedule =
       'scheduledAt' in dto
-        ? { scheduledAt: new Date(dto.scheduledAt), timezone: dto.timezone }
+        ? {
+            recurrence: this.recurrence(dto.recurrence),
+            scheduledAt: new Date(dto.scheduledAt),
+            timezone: dto.timezone,
+          }
         : undefined;
     if (schedule) {
       if (
@@ -108,6 +122,11 @@ export class CrmOutboundService {
       } catch {
         throw new ConflictException({ code: 'CRM_SCHEDULE_TIMEZONE_INVALID' });
       }
+      if (
+        typeof schedule.recurrence?.until === 'string' &&
+        Date.parse(schedule.recurrence.until) <= schedule.scheduledAt.getTime()
+      )
+        throw new ConflictException({ code: 'CRM_RECURRENCE_END_INVALID' });
     }
     if (
       dto.media?.kind === 'STICKER' &&
@@ -207,23 +226,27 @@ export class CrmOutboundService {
             },
           },
         });
-        const mediaAsset = dto.media
+        const richMedia = richMessage?.media;
+        const requestedMedia =
+          dto.media ??
+          (richMedia ? { kind: richMedia.kind, mediaAssetId: richMedia.mediaAssetId } : undefined);
+        const mediaAsset = requestedMedia
           ? await transaction.mediaAsset.findFirst({
               select: { id: true, kind: true },
               where: {
-                id: dto.media.mediaAssetId,
-                kind: dto.media.kind,
+                id: requestedMedia.mediaAssetId,
+                kind: requestedMedia.kind,
                 projectId: dto.omnicusProjectId,
                 status: 'AVAILABLE',
               },
             })
           : undefined;
-        if (dto.media && !mediaAsset)
+        if (requestedMedia && !mediaAsset)
           throw new NotFoundException({
             code: 'CRM_MEDIA_ASSET_NOT_FOUND',
             message: 'CRM media asset was not found',
           });
-        if (!dto.text && !mediaAsset && !structured)
+        if (!dto.text && !mediaAsset && !structured && !richMessage)
           throw new ConflictException({
             code: 'CRM_OUTBOUND_CONTENT_REQUIRED',
             message: 'Text or media is required',
@@ -236,6 +259,16 @@ export class CrmOutboundService {
             throw new ConflictException({
               code: 'CRM_INLINE_KEYBOARD_INVALID',
               message: 'Inline keyboard is invalid',
+            });
+          }
+        let replyMarkup: TelegramReplyMarkup | undefined;
+        if (dto.replyMarkup !== undefined)
+          try {
+            replyMarkup = validateTelegramReplyMarkup(dto.replyMarkup);
+          } catch {
+            throw new ConflictException({
+              code: 'CRM_REPLY_MARKUP_INVALID',
+              message: 'Reply markup is invalid',
             });
           }
         let entities: TelegramMessageEntity[] | undefined;
@@ -284,19 +317,28 @@ export class CrmOutboundService {
           data: {
             connectionId: identity.connectionId,
             contactId: identity.contactId,
-            content: (structured
-              ? { structured }
-              : mediaAsset
-                ? {
-                    caption: ['STICKER', 'VIDEO_NOTE'].includes(dto.media?.kind ?? '')
-                      ? ''
-                      : (dto.text ?? ''),
-                    ...(inlineKeyboard ? { inlineKeyboard } : {}),
-                  }
-                : {
-                    text: dto.text!,
-                    ...(inlineKeyboard ? { inlineKeyboard } : {}),
-                  }) as unknown as Prisma.InputJsonValue,
+            content: (richMessage
+              ? {
+                  richMessage: {
+                    ...(richMessage.isRtl ? { isRtl: true } : {}),
+                    markdown: richMessage.markdown,
+                    ...(richMedia ? { media: { id: richMedia.id, kind: richMedia.kind } } : {}),
+                    ...(richMessage.skipEntityDetection ? { skipEntityDetection: true } : {}),
+                  },
+                }
+              : structured
+                ? { structured }
+                : mediaAsset
+                  ? {
+                      caption: ['STICKER', 'VIDEO_NOTE'].includes(dto.media?.kind ?? '')
+                        ? ''
+                        : (dto.text ?? ''),
+                      ...(inlineKeyboard ? { inlineKeyboard } : {}),
+                    }
+                  : {
+                      text: dto.text!,
+                      ...(inlineKeyboard ? { inlineKeyboard } : {}),
+                    }) as unknown as Prisma.InputJsonValue,
             conversationId: conversation.id,
             direction: 'OUTBOUND',
             mediaAssetId: mediaAsset?.id ?? null,
@@ -305,6 +347,7 @@ export class CrmOutboundService {
               ...(entities ? { entities } : {}),
               ...(dto.hasSpoiler ? { hasSpoiler: true } : {}),
               ...(inlineKeyboard ? { inlineKeyboard } : {}),
+              ...(replyMarkup ? { replyMarkup } : {}),
               ...(linkPreviewOptions ? { linkPreviewOptions } : {}),
               ...(dto.messageEffectId ? { messageEffectId: dto.messageEffectId } : {}),
               protectContent: dto.protectContent ?? false,
@@ -323,7 +366,9 @@ export class CrmOutboundService {
                   ? 'LOCATION'
                   : structured?.type === 'poll'
                     ? 'POLL'
-                    : (dto.media?.kind ?? 'TEXT'),
+                    : richMessage
+                      ? 'RICH'
+                      : (dto.media?.kind ?? 'TEXT'),
           },
         });
         const outbox = await transaction.outboxRecord.create({
@@ -347,9 +392,10 @@ export class CrmOutboundService {
                 outboxRecordId: outbox.id,
                 projectId: dto.omnicusProjectId,
                 request: {
-                  kind: dto.media?.kind ?? 'TEXT',
+                  kind: richMessage ? 'RICH' : (dto.media?.kind ?? 'TEXT'),
                   ...(dto.text ? { text: dto.text } : {}),
                 },
+                ...(schedule.recurrence ? { recurrence: schedule.recurrence } : {}),
                 scheduledAt: schedule.scheduledAt,
                 seriesId: outbox.id,
                 timezone: schedule.timezone,
@@ -436,6 +482,8 @@ export class CrmOutboundService {
         messageId: true,
         occurrence: true,
         outboxRecordId: true,
+        recurrence: true,
+        revision: true,
         scheduledAt: true,
         seriesId: true,
         status: true,
@@ -466,6 +514,8 @@ export class CrmOutboundService {
         messageId: true,
         occurrence: true,
         outboxRecordId: true,
+        recurrence: true,
+        revision: true,
         scheduledAt: true,
         seriesId: true,
         status: true,
@@ -475,6 +525,137 @@ export class CrmOutboundService {
       where: this.scheduleScope(query),
     });
     return schedules.map((schedule) => this.scheduleResponse(schedule));
+  }
+
+  async updateScheduled(
+    scheduleId: string,
+    dto: CrmScheduledMessageUpdateDto,
+    query: CrmScheduledMessageQueryDto,
+    idempotencyKey: string,
+    correlationId: string,
+    authenticatedProjectId?: string,
+  ) {
+    await this.assertProjectRoute(
+      query.crmProjectId,
+      query.omnicusProjectId,
+      authenticatedProjectId,
+    );
+    const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : undefined;
+    if (scheduledAt && (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()))
+      throw new ConflictException({ code: 'CRM_SCHEDULE_TIME_INVALID' });
+    const recurrence =
+      dto.recurrence === undefined
+        ? undefined
+        : dto.recurrence === null
+          ? null
+          : this.recurrence(dto.recurrence);
+    const request = {
+      expectedRevision: dto.expectedRevision,
+      recurrence: recurrence ?? null,
+      recurrenceMode: recurrence === undefined ? 'PRESERVE' : recurrence === null ? 'CLEAR' : 'SET',
+      scheduleId,
+      scheduledAt: scheduledAt?.toISOString() ?? null,
+    };
+    const existing = await this.database.client.idempotencyRecord.findUnique({
+      where: {
+        projectId_scope_key: {
+          key: idempotencyKey,
+          projectId: query.omnicusProjectId,
+          scope: 'crm-scheduled-update',
+        },
+      },
+    });
+    if (existing) {
+      const replay = this.scheduledUpdateReplay(existing.resultSafe);
+      if (!replay || JSON.stringify(replay.request) !== JSON.stringify(request))
+        throw new ConflictException({ code: 'CRM_SCHEDULE_IDEMPOTENCY_CONFLICT' });
+      return { ...replay.response, replayed: true };
+    }
+    return this.database.client.$transaction(async (transaction) => {
+      const schedule = await transaction.scheduledMessage.findFirst({
+        include: { contact: { select: { crmLeadId: true } } },
+        where: { id: scheduleId, ...this.scheduleScope(query) },
+      });
+      if (!schedule) throw new NotFoundException({ code: 'CRM_SCHEDULE_NOT_FOUND' });
+      if (schedule.status !== 'QUEUED')
+        throw new ConflictException({ code: 'CRM_SCHEDULE_ALREADY_PROCESSING' });
+      if (schedule.revision !== dto.expectedRevision)
+        throw new ConflictException({ code: 'CRM_SCHEDULE_REVISION_CONFLICT' });
+      const nextAt = scheduledAt ?? schedule.scheduledAt;
+      const effectiveRecurrence = recurrence === undefined ? schedule.recurrence : recurrence;
+      if (
+        effectiveRecurrence &&
+        typeof effectiveRecurrence === 'object' &&
+        !Array.isArray(effectiveRecurrence)
+      ) {
+        const rule = effectiveRecurrence as Prisma.JsonObject;
+        if (
+          (typeof rule.until === 'string' && Date.parse(rule.until) <= nextAt.getTime()) ||
+          (typeof rule.count === 'number' && rule.count < schedule.occurrence)
+        )
+          throw new ConflictException({ code: 'CRM_RECURRENCE_END_INVALID' });
+      }
+      const changed = await transaction.scheduledMessage.updateMany({
+        data: {
+          ...(recurrence === undefined
+            ? {}
+            : { recurrence: recurrence === null ? Prisma.DbNull : recurrence }),
+          ...(scheduledAt ? { scheduledAt } : {}),
+          revision: { increment: 1 },
+        },
+        where: {
+          id: schedule.id,
+          projectId: query.omnicusProjectId,
+          revision: dto.expectedRevision,
+          status: 'QUEUED',
+        },
+      });
+      if (changed.count !== 1)
+        throw new ConflictException({ code: 'CRM_SCHEDULE_REVISION_CONFLICT' });
+      await transaction.outboxRecord.updateMany({
+        data: { nextAttemptAt: nextAt },
+        where: {
+          id: schedule.outboxRecordId,
+          projectId: query.omnicusProjectId,
+          status: 'PENDING',
+        },
+      });
+      const updated = await transaction.scheduledMessage.findUniqueOrThrow({
+        include: { contact: { select: { crmLeadId: true } } },
+        where: {
+          projectId_id: { id: schedule.id, projectId: query.omnicusProjectId },
+        },
+      });
+      const response = this.scheduleResponse(updated);
+      const storedResponse = JSON.parse(JSON.stringify(response)) as Prisma.InputJsonObject;
+      await transaction.idempotencyRecord.create({
+        data: {
+          key: idempotencyKey,
+          projectId: query.omnicusProjectId,
+          resultSafe: { request, response: storedResponse },
+          scope: 'crm-scheduled-update',
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          action: 'crm.scheduled_message.updated',
+          actorType: 'SERVICE',
+          afterSafeJson: {
+            recurrence: recurrence ?? null,
+            revision: response.revision,
+            scheduledAt: response.scheduledAt,
+          },
+          correlationId,
+          entityId: schedule.id,
+          entityType: 'ScheduledMessage',
+          projectId: query.omnicusProjectId,
+          projectNameSnapshot: null,
+          projectSlugSnapshot: null,
+          purgeAfter: new Date(Date.now() + 180 * 24 * 60 * 60 * 1_000),
+        },
+      });
+      return { ...response, replayed: false };
+    });
   }
 
   async cancelScheduled(
@@ -663,6 +844,41 @@ export class CrmOutboundService {
     };
   }
 
+  private scheduledUpdateReplay(value: Prisma.JsonValue | null | undefined):
+    | {
+        request: {
+          expectedRevision: number;
+          recurrence: Prisma.JsonValue;
+          recurrenceMode: 'CLEAR' | 'PRESERVE' | 'SET';
+          scheduleId: string;
+          scheduledAt: string | null;
+        };
+        response: Record<string, unknown>;
+      }
+    | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const stored = value as Prisma.JsonObject;
+    if (
+      !stored.request ||
+      typeof stored.request !== 'object' ||
+      Array.isArray(stored.request) ||
+      !stored.response ||
+      typeof stored.response !== 'object' ||
+      Array.isArray(stored.response)
+    )
+      return undefined;
+    return stored as unknown as {
+      request: {
+        expectedRevision: number;
+        recurrence: Prisma.JsonValue;
+        recurrenceMode: 'CLEAR' | 'PRESERVE' | 'SET';
+        scheduleId: string;
+        scheduledAt: string | null;
+      };
+      response: Record<string, unknown>;
+    };
+  }
+
   private scheduleRouting(schedule: {
     channelIdentityId: string;
     connectionId: string;
@@ -688,6 +904,104 @@ export class CrmOutboundService {
 
   private isUniqueConstraint(error: unknown): boolean {
     return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+  }
+
+  private recurrence(
+    value: Record<string, unknown> | undefined,
+  ): Prisma.InputJsonObject | undefined {
+    if (!value) return undefined;
+    if (
+      Object.keys(value).some(
+        (key) => !['count', 'frequency', 'interval', 'until'].includes(key),
+      ) ||
+      !['DAILY', 'WEEKLY'].includes(String(value.frequency)) ||
+      !Number.isInteger(value.interval) ||
+      Number(value.interval) < 1 ||
+      Number(value.interval) > 30 ||
+      (value.count !== undefined &&
+        (!Number.isInteger(value.count) ||
+          Number(value.count) < 2 ||
+          Number(value.count) > 1_000)) ||
+      (value.until !== undefined &&
+        (typeof value.until !== 'string' ||
+          Number.isNaN(Date.parse(value.until)) ||
+          Date.parse(value.until) <= Date.now())) ||
+      (value.count === undefined && value.until === undefined)
+    )
+      throw new ConflictException({ code: 'CRM_RECURRENCE_INVALID' });
+    return {
+      ...(typeof value.count === 'number' ? { count: value.count } : {}),
+      frequency: String(value.frequency),
+      interval: Number(value.interval),
+      ...(typeof value.until === 'string' ? { until: new Date(value.until).toISOString() } : {}),
+    };
+  }
+
+  private richMessage(value: Record<string, unknown> | undefined):
+    | {
+        isRtl?: boolean;
+        markdown: string;
+        media?: {
+          id: string;
+          kind: 'ANIMATION' | 'AUDIO' | 'PHOTO' | 'VIDEO' | 'VOICE';
+          mediaAssetId: string;
+        };
+        skipEntityDetection?: boolean;
+      }
+    | undefined {
+    if (!value) return undefined;
+    if (
+      Object.keys(value).some(
+        (key) => !['isRtl', 'markdown', 'media', 'skipEntityDetection'].includes(key),
+      ) ||
+      typeof value.markdown !== 'string' ||
+      value.markdown.length < 1 ||
+      Buffer.byteLength(value.markdown, 'utf8') > 32_768 ||
+      (value.isRtl !== undefined && typeof value.isRtl !== 'boolean') ||
+      (value.skipEntityDetection !== undefined && typeof value.skipEntityDetection !== 'boolean') ||
+      /!\[[^\]]*\]\(https?:\/\//i.test(value.markdown) ||
+      /<(?:audio|img|video)\b[^>]*\bsrc\s*=\s*["']https?:\/\//i.test(value.markdown)
+    )
+      throw new ConflictException({ code: 'CRM_RICH_MESSAGE_INVALID' });
+    let media:
+      | {
+          id: string;
+          kind: 'ANIMATION' | 'AUDIO' | 'PHOTO' | 'VIDEO' | 'VOICE';
+          mediaAssetId: string;
+        }
+      | undefined;
+    if (value.media !== undefined) {
+      if (!value.media || typeof value.media !== 'object' || Array.isArray(value.media))
+        throw new ConflictException({ code: 'CRM_RICH_MESSAGE_MEDIA_INVALID' });
+      const candidate = value.media as Record<string, unknown>;
+      if (
+        Object.keys(candidate).some((key) => !['id', 'kind', 'mediaAssetId'].includes(key)) ||
+        typeof candidate.id !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,64}$/.test(candidate.id) ||
+        typeof candidate.kind !== 'string' ||
+        !['ANIMATION', 'AUDIO', 'PHOTO', 'VIDEO', 'VOICE'].includes(candidate.kind) ||
+        typeof candidate.mediaAssetId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          candidate.mediaAssetId,
+        )
+      )
+        throw new ConflictException({ code: 'CRM_RICH_MESSAGE_MEDIA_INVALID' });
+      const scheme =
+        candidate.kind === 'PHOTO'
+          ? 'photo'
+          : candidate.kind === 'VIDEO' || candidate.kind === 'ANIMATION'
+            ? 'video'
+            : 'audio';
+      if (!value.markdown.includes(`tg://${scheme}?id=${candidate.id}`))
+        throw new ConflictException({ code: 'CRM_RICH_MESSAGE_MEDIA_REFERENCE_MISSING' });
+      media = candidate as typeof media;
+    }
+    return {
+      ...(value.isRtl === true ? { isRtl: true } : {}),
+      markdown: value.markdown,
+      ...(media ? { media } : {}),
+      ...(value.skipEntityDetection === true ? { skipEntityDetection: true } : {}),
+    };
   }
 
   private structured(value: Record<string, unknown> | undefined):

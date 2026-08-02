@@ -22,6 +22,8 @@ import {
   type TelegramMediaGroupItem as TelegramAdapterMediaGroupItem,
   type TelegramOutboundJob,
   type TelegramReaction,
+  type TelegramReplyMarkup,
+  type TelegramRichMessage,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
 import type { Prisma } from '@omnicus/database';
@@ -245,6 +247,7 @@ export class TelegramOutboundProcessorService
         protectContent?: boolean;
         quote?: string;
         quotePosition?: number;
+        replyMarkup?: TelegramReplyMarkup;
         replyToMessageId?: string;
       } | null;
       const content = message.content as {
@@ -271,6 +274,12 @@ export class TelegramOutboundProcessorService
               question: string;
               type: 'poll';
             };
+        richMessage?: Omit<TelegramRichMessage, 'media'> & {
+          media?: {
+            id: string;
+            kind: 'ANIMATION' | 'AUDIO' | 'PHOTO' | 'VIDEO' | 'VOICE';
+          };
+        };
         text?: string;
       };
       const sendOptions = {
@@ -280,6 +289,7 @@ export class TelegramOutboundProcessorService
           ? { inlineKeyboard: metadata?.inlineKeyboard ?? content.inlineKeyboard }
           : {}),
         ...(metadata?.protectContent ? { protectContent: true } : {}),
+        ...(metadata?.replyMarkup ? { replyMarkup: metadata.replyMarkup } : {}),
         ...(metadata?.replyToMessageId
           ? {
               reply: {
@@ -293,7 +303,30 @@ export class TelegramOutboundProcessorService
           : {}),
       };
       let sent: { messageId: string };
-      if (['CONTACT', 'LOCATION', 'POLL'].includes(message.type) && content.structured) {
+      if (message.type === 'RICH' && content.richMessage) {
+        const richMedia = content.richMessage.media;
+        sent = await this.adapter.sendRichMessage(token, {
+          ...sendOptions,
+          richMessage: {
+            ...(content.richMessage.isRtl ? { isRtl: true } : {}),
+            markdown: content.richMessage.markdown,
+            ...(richMedia && message.mediaAsset
+              ? {
+                  media: {
+                    id: richMedia.id,
+                    kind: richMedia.kind,
+                    media: await this.mediaReference(
+                      message.mediaAsset,
+                      claimed.connectionId,
+                      richMedia.kind,
+                    ),
+                  },
+                }
+              : {}),
+            ...(content.richMessage.skipEntityDetection ? { skipEntityDetection: true } : {}),
+          },
+        });
+      } else if (['CONTACT', 'LOCATION', 'POLL'].includes(message.type) && content.structured) {
         sent = await this.adapter.sendStructuredMessage(token, {
           chatId: identity.externalUserId,
           ...(metadata?.disableNotification === undefined
@@ -376,6 +409,7 @@ export class TelegramOutboundProcessorService
               status: { in: ['QUEUED', 'PROCESSING'] },
             },
           });
+        if (scheduled) await this.createNextScheduledOccurrence(tx, scheduled, message);
         await ensureCrmOutboundHistoryIntent(tx, claimed.projectId, message.id);
         if (recipient) {
           await tx.broadcastRecipient.updateMany({
@@ -686,6 +720,186 @@ export class TelegramOutboundProcessorService
       bytes: prepared.bytes,
       contentType: prepared.mimeType,
       filename: `${originalStem}.${prepared.extension}`,
+    };
+  }
+  private async createNextScheduledOccurrence(
+    transaction: Prisma.TransactionClient,
+    scheduled: {
+      channelIdentityId: string;
+      connectionId: string;
+      contactId: string;
+      occurrence: number;
+      projectId: string;
+      recurrence: Prisma.JsonValue | null;
+      request: Prisma.JsonValue;
+      scheduledAt: Date;
+      seriesId: string;
+      timezone: string;
+    },
+    message: {
+      connectionId: string;
+      contactId: string;
+      content: Prisma.JsonValue;
+      conversationId: string;
+      mediaAssetId: string | null;
+      metadata: Prisma.JsonValue | null;
+      projectId: string;
+      type: string;
+    },
+  ): Promise<void> {
+    const recurrence = this.recurrenceRule(scheduled.recurrence);
+    if (!recurrence || (recurrence.count && scheduled.occurrence >= recurrence.count)) return;
+    const nextAt = this.addZonedDays(
+      scheduled.scheduledAt,
+      recurrence.frequency === 'WEEKLY' ? recurrence.interval * 7 : recurrence.interval,
+      scheduled.timezone,
+    );
+    if (recurrence.until && nextAt.getTime() > recurrence.until.getTime()) return;
+    const occurrence = scheduled.occurrence + 1;
+    const existing = await transaction.scheduledMessage.findUnique({
+      where: {
+        projectId_seriesId_occurrence: {
+          occurrence,
+          projectId: scheduled.projectId,
+          seriesId: scheduled.seriesId,
+        },
+      },
+    });
+    if (existing) return;
+    const metadata =
+      message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+        ? (message.metadata as Prisma.JsonObject)
+        : {};
+    const nextMessage = await transaction.message.create({
+      data: {
+        connectionId: message.connectionId,
+        contactId: message.contactId,
+        content: message.content as Prisma.InputJsonValue,
+        conversationId: message.conversationId,
+        direction: 'OUTBOUND',
+        mediaAssetId: message.mediaAssetId,
+        metadata: {
+          ...metadata,
+          scheduleOccurrence: occurrence,
+          scheduleSeriesId: scheduled.seriesId,
+          source: 'system',
+        } as Prisma.InputJsonValue,
+        projectId: message.projectId,
+        status: 'QUEUED',
+        type: message.type as never,
+      },
+    });
+    const outbox = await transaction.outboxRecord.create({
+      data: {
+        connectionId: scheduled.connectionId,
+        idempotencyKey: `scheduled-series-${scheduled.seriesId}-${occurrence}`,
+        kind: 'TELEGRAM',
+        nextAttemptAt: nextAt,
+        payload: {
+          channelIdentityId: scheduled.channelIdentityId,
+          messageId: nextMessage.id,
+        },
+        projectId: scheduled.projectId,
+      },
+    });
+    await transaction.scheduledMessage.create({
+      data: {
+        channelIdentityId: scheduled.channelIdentityId,
+        connectionId: scheduled.connectionId,
+        contactId: scheduled.contactId,
+        messageId: nextMessage.id,
+        occurrence,
+        outboxRecordId: outbox.id,
+        projectId: scheduled.projectId,
+        recurrence: scheduled.recurrence as Prisma.InputJsonValue,
+        request: scheduled.request as Prisma.InputJsonValue,
+        scheduledAt: nextAt,
+        seriesId: scheduled.seriesId,
+        timezone: scheduled.timezone,
+      },
+    });
+  }
+
+  private recurrenceRule(value: Prisma.JsonValue | null):
+    | {
+        count?: number;
+        frequency: 'DAILY' | 'WEEKLY';
+        interval: number;
+        until?: Date;
+      }
+    | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const rule = value as Prisma.JsonObject;
+    if (
+      !['DAILY', 'WEEKLY'].includes(String(rule.frequency)) ||
+      typeof rule.interval !== 'number' ||
+      !Number.isInteger(rule.interval) ||
+      rule.interval < 1 ||
+      rule.interval > 30
+    )
+      return undefined;
+    const until = typeof rule.until === 'string' ? new Date(rule.until) : undefined;
+    return {
+      ...(typeof rule.count === 'number' ? { count: rule.count } : {}),
+      frequency: rule.frequency as 'DAILY' | 'WEEKLY',
+      interval: rule.interval,
+      ...(until && !Number.isNaN(until.getTime()) ? { until } : {}),
+    };
+  }
+
+  private addZonedDays(date: Date, days: number, timezone: string): Date {
+    const parts = this.zonedParts(date, timezone);
+    const wanted = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day + days,
+      parts.hour,
+      parts.minute,
+      parts.second,
+      date.getUTCMilliseconds(),
+    );
+    let guess = wanted;
+    for (let index = 0; index < 4; index += 1) {
+      const actual = this.zonedParts(new Date(guess), timezone);
+      const actualWall = Date.UTC(
+        actual.year,
+        actual.month - 1,
+        actual.day,
+        actual.hour,
+        actual.minute,
+        actual.second,
+        date.getUTCMilliseconds(),
+      );
+      const correction = wanted - actualWall;
+      guess += correction;
+      if (correction === 0) break;
+    }
+    return new Date(guess);
+  }
+
+  private zonedParts(date: Date, timezone: string) {
+    const values = Object.fromEntries(
+      new Intl.DateTimeFormat('en-CA', {
+        day: '2-digit',
+        hour: '2-digit',
+        hourCycle: 'h23',
+        minute: '2-digit',
+        month: '2-digit',
+        second: '2-digit',
+        timeZone: timezone,
+        year: 'numeric',
+      })
+        .formatToParts(date)
+        .filter((part) => part.type !== 'literal')
+        .map((part) => [part.type, Number(part.value)]),
+    );
+    return {
+      day: values.day!,
+      hour: values.hour!,
+      minute: values.minute!,
+      month: values.month!,
+      second: values.second!,
+      year: values.year!,
     };
   }
   private async claim(id: string): Promise<Claimed | undefined> {

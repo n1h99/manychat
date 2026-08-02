@@ -6,7 +6,10 @@ CRM, broadcasts, media/templates, Automation Studio 2.1 and Automation Studio
 acceptance is complete and `userReactionEvents.supported=true`. WhatsApp and
 Instagram remain intentionally deferred until test accounts and a separate
 scope are approved. Earlier stage sections below are retained as implementation
-history, not as the current deployment status.
+history, not as the current deployment status. Telegram Chat v3.3 implements
+the approved reply-keyboard, recurring-schedule and native rich-message slices;
+their broad manual/live regression is intentionally grouped into the final
+verification stage.
 
 ## Stage 3C.2 — Telegram channel UI
 

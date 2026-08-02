@@ -1070,3 +1070,44 @@ worker loss cannot lose it. The first release supports bounded methods, headers,
 query/body templates, response mapping, safe test requests and explicit outcome
 edges. It does not provide arbitrary code, `eval`, unrestricted redirects,
 cookies, raw response retention or automatic retry of uncertain mutations.
+
+## ADR-045: Telegram 10.2 rich content and recurrence extend the existing outbox
+
+**Status:** Accepted, 2026-08-02.
+
+**Decision:** Contract 3.3 adds reply keyboards, Force Reply, application-owned
+recurring schedules and Telegram-native rich messages without creating a second
+delivery path. Reply markup is a bounded discriminated value stored with the
+ordinary message metadata and delivered by the existing Telegram outbox. The
+first reply-keyboard slice supports text, request-contact and request-location
+buttons; arbitrary Web Apps and user/chat request payloads remain outside this
+contract.
+
+Recurring schedules keep exactly one future occurrence durable at a time. A
+successful occurrence transactionally creates the next `Message`,
+`OutboxRecord` and `ScheduledMessage` in the same series. PostgreSQL remains the
+source of truth; worker timers only wake due outbox rows. The reviewed recurrence
+rule is `DAILY | WEEKLY`, an interval from 1 through 30, and an optional total
+count or inclusive `until` bound. Occurrences retain the original IANA timezone
+and local wall-clock intent across DST. Cancellation of the current queued
+occurrence terminates the series. A revision guards schedule updates and no
+update may rewrite a processing or terminal occurrence.
+
+Telegram Bot API 10.2 is the authoritative rich-message provider contract.
+Omnicus accepts bounded rich Markdown and at most one typed CRM-owned media
+asset in the first release. Rich Markdown may contain links, but external media
+URLs are rejected; Telegram receives either the already scoped provider media
+ID or bytes read from Omnicus private storage. `sendRichMessageDraft` is
+ephemeral and never creates a message. Because Telegram forbids direct uploads
+in rich drafts, a media-rich draft is accepted only when that asset already has
+a reusable media ID for the same connection. Capability discovery exposes this
+restriction explicitly.
+
+External action callbacks remain disabled. They require a separate decision on
+public endpoint ownership, authentication, replay window and retry semantics.
+
+**Consequences:** all durable rich sends and recurring occurrences preserve the
+ordinary `QUEUED → PROCESSING → SENT | FAILED | UNKNOWN` lifecycle and
+idempotency rules. No provider token, signed URL, raw Telegram response or
+arbitrary remote media URL is persisted. CRM can safely gate each feature and
+must finalize a draft through the ordinary durable outbound endpoint.

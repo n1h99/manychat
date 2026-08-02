@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Omnicus API for Cyber Pulse CRM
-  version: 3.2.0
+  version: 3.3.0
   description: Project-scoped CRM to Omnicus Telegram messaging, mutations, ephemeral actions and capability contract.
 security:
   - serviceBearer: []
@@ -150,10 +150,9 @@ paths:
       operationId: updateCrmTelegramDraft
       summary: Update a private-chat 30-second Telegram draft preview
       description: >-
-        The preview is ephemeral and never SENT. Empty text is ignored because Telegram interprets
-        it as a Thinking placeholder rather than cancellation. Bot API 10.2 has no explicit draft
-        cancellation call; final content must use messages/outbound and the preview expires within
-        30 seconds.
+        The preview is ephemeral and never SENT. Empty text/rich content is ignored. Rich media
+        can reuse only a same-connection Telegram media ID because sendRichMessageDraft rejects
+        direct uploads. Final content must use messages/outbound; previews expire within 30 seconds.
       requestBody:
         required: true
         content:
@@ -170,6 +169,7 @@ paths:
                       type: array
                       maxItems: 100
                       items: { $ref: '#/components/schemas/MessageEntity' }
+                    richMessage: { $ref: '#/components/schemas/RichMessage' }
       responses:
         '200': { $ref: '#/components/responses/DraftUpdate' }
         '401': { $ref: '#/components/responses/SafeError' }
@@ -443,6 +443,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ScheduledMessage' }
+    patch:
+      operationId: updateScheduledCrmMessage
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision]
+              properties:
+                expectedRevision: { type: integer, minimum: 1 }
+                scheduledAt: { type: string, format: date-time }
+                recurrence: { $ref: '#/components/schemas/Recurrence' }
+      responses:
+        '200':
+          description: Queued occurrence updated with optimistic concurrency.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ScheduledMessage'
+                  - type: object
+                    required: [replayed]
+                    properties:
+                      replayed: { type: boolean }
+        '409': { $ref: '#/components/responses/SafeError' }
     delete:
       operationId: cancelScheduledCrmMessage
       responses:
@@ -610,6 +640,10 @@ components:
           $ref: '#/components/schemas/OutboundMedia'
         inlineKeyboard:
           $ref: '#/components/schemas/InlineKeyboard'
+        replyMarkup:
+          $ref: '#/components/schemas/ReplyMarkup'
+        richMessage:
+          $ref: '#/components/schemas/RichMessage'
         disableNotification:
           type: boolean
         protectContent:
@@ -649,6 +683,8 @@ components:
             - media
         - required:
             - structured
+        - required:
+            - richMessage
     StructuredMessage:
       oneOf:
         - type: object
@@ -689,6 +725,19 @@ components:
           properties:
             scheduledAt: { type: string, format: date-time }
             timezone: { type: string, description: IANA timezone name. }
+            recurrence: { $ref: '#/components/schemas/Recurrence' }
+    Recurrence:
+      type: object
+      additionalProperties: false
+      required: [frequency, interval]
+      properties:
+        frequency: { type: string, enum: [DAILY, WEEKLY] }
+        interval: { type: integer, minimum: 1, maximum: 30 }
+        count: { type: integer, minimum: 2, maximum: 1000 }
+        until: { type: string, format: date-time }
+      anyOf:
+        - required: [count]
+        - required: [until]
     ScheduledMessage:
       type: object
       additionalProperties: false
@@ -698,6 +747,8 @@ components:
         - outboxRecordId
         - seriesId
         - occurrence
+        - revision
+        - recurrence
         - status
         - timezone
         - scheduledAt
@@ -714,7 +765,12 @@ components:
         messageId: { type: string, format: uuid }
         outboxRecordId: { type: string, format: uuid }
         seriesId: { type: string, format: uuid }
-        occurrence: { type: integer, minimum: 1, const: 1 }
+        occurrence: { type: integer, minimum: 1 }
+        revision: { type: integer, minimum: 1 }
+        recurrence:
+          oneOf:
+            - $ref: '#/components/schemas/Recurrence'
+            - type: 'null'
         status: { type: string, enum: [QUEUED, PROCESSING, SENT, FAILED, UNKNOWN, CANCELLED] }
         timezone: { type: string, description: IANA timezone name. }
         scheduledAt: { type: string, format: date-time }
@@ -908,6 +964,69 @@ components:
             - callbackData
         - required:
             - url
+    ReplyMarkup:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, keyboard]
+          properties:
+            type: { type: string, const: reply_keyboard }
+            keyboard:
+              type: array
+              minItems: 1
+              maxItems: 8
+              items:
+                type: array
+                minItems: 1
+                maxItems: 8
+                items: { $ref: '#/components/schemas/ReplyKeyboardButton' }
+            isPersistent: { type: boolean }
+            resizeKeyboard: { type: boolean }
+            oneTimeKeyboard: { type: boolean }
+            inputFieldPlaceholder: { type: string, minLength: 1, maxLength: 64 }
+            selective: { type: boolean }
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { type: string, const: reply_keyboard_remove }
+            selective: { type: boolean }
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { type: string, const: force_reply }
+            inputFieldPlaceholder: { type: string, minLength: 1, maxLength: 64 }
+            selective: { type: boolean }
+    ReplyKeyboardButton:
+      type: object
+      additionalProperties: false
+      required: [text]
+      description: requestContact and requestLocation cannot both be true.
+      properties:
+        text: { type: string, minLength: 1, maxLength: 64 }
+        requestContact: { type: boolean }
+        requestLocation: { type: boolean }
+    RichMessage:
+      type: object
+      additionalProperties: false
+      required: [markdown]
+      properties:
+        markdown:
+          type: string
+          minLength: 1
+          maxLength: 32768
+          description: Up to 32768 UTF-8 bytes. Arbitrary remote media URLs are rejected.
+        isRtl: { type: boolean }
+        skipEntityDetection: { type: boolean }
+        media:
+          type: object
+          additionalProperties: false
+          required: [id, kind, mediaAssetId]
+          properties:
+            id: { type: string, pattern: '^[A-Za-z0-9_-]{1,64}$' }
+            kind: { type: string, enum: [ANIMATION, AUDIO, PHOTO, VIDEO, VOICE] }
+            mediaAssetId: { type: string, format: uuid }
     TelegramScope:
       type: object
       required: [crmProjectId, omnicusProjectId, omnicusContactId, identity]
@@ -969,17 +1088,28 @@ components:
       type: object
       required: [contractVersion, telegramBotApiVersion, capabilities]
       properties:
-        contractVersion: { type: string, enum: [3.2.0] }
+        contractVersion: { type: string, enum: [3.3.0] }
         telegramBotApiVersion: { type: string, enum: ['10.2'] }
         capabilities:
           type: object
-          required: [quote, linkPreviewOptions, explicitRetry, stickers, mediaSpoilers]
+          required:
+            [
+              quote,
+              linkPreviewOptions,
+              explicitRetry,
+              stickers,
+              mediaSpoilers,
+              replyKeyboard,
+              richMessages,
+            ]
           properties:
             quote: { $ref: '#/components/schemas/Capability' }
             linkPreviewOptions: { $ref: '#/components/schemas/Capability' }
             explicitRetry: { $ref: '#/components/schemas/Capability' }
             stickers: { $ref: '#/components/schemas/Capability' }
             mediaSpoilers: { $ref: '#/components/schemas/Capability' }
+            replyKeyboard: { $ref: '#/components/schemas/Capability' }
+            richMessages: { $ref: '#/components/schemas/Capability' }
           additionalProperties:
             $ref: '#/components/schemas/Capability'
     UploadedMedia:

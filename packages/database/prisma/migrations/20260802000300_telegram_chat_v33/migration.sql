@@ -1,0 +1,4 @@
+ALTER TYPE "MessageType" ADD VALUE IF NOT EXISTS 'RICH';
+
+ALTER TABLE "scheduled_messages"
+ADD COLUMN "revision" INTEGER NOT NULL DEFAULT 1;

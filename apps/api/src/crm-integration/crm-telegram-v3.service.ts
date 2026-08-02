@@ -6,6 +6,7 @@ import {
   TelegramHttpTransport,
   type TelegramMessageEntity,
   type TelegramReaction,
+  type TelegramRichMessage,
   validateTelegramInlineKeyboard,
   validateTelegramLinkPreviewOptions,
   validateTelegramMessageEntities,
@@ -157,8 +158,11 @@ export class CrmTelegramV3Service {
         userReactionEvents: supported({ contractPublished: true, privateChatsOnly: true }),
         scheduling: supported({
           applicationOwned: true,
-          recurring: false,
-          recurringReasonCode: 'RECURRENCE_NOT_RELEASED',
+          frequencies: ['DAILY', 'WEEKLY'],
+          maximumCount: 1_000,
+          maximumInterval: 30,
+          optimisticConcurrency: 'revision',
+          recurring: true,
           timezone: 'IANA',
         }),
         stickers: supported({
@@ -169,11 +173,29 @@ export class CrmTelegramV3Service {
           videoMaximumBytes: 256 * 1024,
         }),
         structuredMessages: supported({ types: ['contact', 'location', 'poll'] }),
-        replyKeyboard: { supported: false, reasonCode: 'REPLY_KEYBOARD_NOT_RELEASED' },
-        richMessages: { supported: false, reasonCode: 'RICH_MESSAGES_NOT_RELEASED' },
-        streamingDraft: supported({ privateChatsOnly: true, ttlSeconds: 30 }),
+        replyKeyboard: supported({
+          buttonTypes: ['text', 'request_contact', 'request_location'],
+          forceReply: true,
+          maximumButtonsPerRow: 8,
+          maximumRows: 8,
+          remove: true,
+        }),
+        richMessages: supported({
+          externalMediaUrls: false,
+          format: 'markdown',
+          maximumMediaAssets: 1,
+          maximumUtf8Bytes: 32_768,
+          nativeTelegram: true,
+        }),
+        streamingDraft: supported({
+          mediaDirectUpload: false,
+          mediaReuseOnly: true,
+          modes: ['text', 'rich_markdown'],
+          privateChatsOnly: true,
+          ttlSeconds: 30,
+        }),
       },
-      contractVersion: '3.2.0',
+      contractVersion: '3.3.0',
       telegramBotApiVersion: '10.2',
     };
   }
@@ -610,16 +632,29 @@ export class CrmTelegramV3Service {
   }
 
   async draft(dto: CrmDraftDto, authenticatedProjectId?: string) {
-    if (!dto.text)
+    if (dto.text && dto.richMessage)
+      throw new ConflictException({ code: 'DRAFT_CONTENT_CONFLICT' });
+    if (!dto.text && !dto.richMessage)
       return {
         accepted: false,
         expiresAt: null,
         reasonCode: 'EMPTY_DRAFT_IGNORED',
       };
     const route = await this.resolveIdentity(dto, authenticatedProjectId);
+    if (dto.richMessage) {
+      const rich = await this.richDraft(dto.richMessage, route.projectId, route.connectionId);
+      await this.adapter.sendRichMessageDraft(this.tokenFor(route), {
+        chatId: route.externalChatId,
+        draftId: dto.draftId,
+        richMessage: rich,
+      });
+      return { accepted: true, expiresAt: new Date(Date.now() + 30_000).toISOString() };
+    }
     let entities: TelegramMessageEntity[] | undefined;
     try {
-      entities = dto.entities ? validateTelegramMessageEntities(dto.entities, dto.text) : undefined;
+      entities = dto.entities
+        ? validateTelegramMessageEntities(dto.entities, dto.text!)
+        : undefined;
     } catch {
       throw new ConflictException({ code: 'MESSAGE_ENTITIES_INVALID' });
     }
@@ -627,9 +662,67 @@ export class CrmTelegramV3Service {
       chatId: route.externalChatId,
       draftId: dto.draftId,
       ...(entities ? { entities } : {}),
-      text: dto.text,
+      text: dto.text!,
     });
     return { accepted: true, expiresAt: new Date(Date.now() + 30_000).toISOString() };
+  }
+
+  private async richDraft(
+    value: Record<string, unknown>,
+    projectId: string,
+    connectionId: string,
+  ): Promise<TelegramRichMessage> {
+    if (
+      Object.keys(value).some(
+        (key) => !['isRtl', 'markdown', 'media', 'skipEntityDetection'].includes(key),
+      ) ||
+      typeof value.markdown !== 'string' ||
+      value.markdown.length < 1 ||
+      Buffer.byteLength(value.markdown, 'utf8') > 32_768 ||
+      (value.isRtl !== undefined && typeof value.isRtl !== 'boolean') ||
+      (value.skipEntityDetection !== undefined && typeof value.skipEntityDetection !== 'boolean') ||
+      /!\[[^\]]*\]\(https?:\/\//i.test(value.markdown) ||
+      /<(?:audio|img|video)\b[^>]*\bsrc\s*=\s*["']https?:\/\//i.test(value.markdown)
+    )
+      throw new ConflictException({ code: 'RICH_DRAFT_INVALID' });
+    let media: TelegramRichMessage['media'];
+    if (value.media !== undefined) {
+      if (!value.media || typeof value.media !== 'object' || Array.isArray(value.media))
+        throw new ConflictException({ code: 'RICH_DRAFT_MEDIA_INVALID' });
+      const candidate = value.media as Record<string, unknown>;
+      if (
+        Object.keys(candidate).some((key) => !['id', 'kind', 'mediaAssetId'].includes(key)) ||
+        typeof candidate.id !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,64}$/.test(candidate.id) ||
+        typeof candidate.kind !== 'string' ||
+        !['ANIMATION', 'AUDIO', 'PHOTO', 'VIDEO', 'VOICE'].includes(candidate.kind) ||
+        typeof candidate.mediaAssetId !== 'string'
+      )
+        throw new ConflictException({ code: 'RICH_DRAFT_MEDIA_INVALID' });
+      const asset = await this.database.client.mediaAsset.findFirst({
+        select: { providerMediaId: true },
+        where: {
+          connectionId,
+          id: candidate.mediaAssetId,
+          kind: candidate.kind as 'ANIMATION' | 'AUDIO' | 'PHOTO' | 'VIDEO' | 'VOICE',
+          projectId,
+          providerMediaId: { not: null },
+        },
+      });
+      if (!asset?.providerMediaId)
+        throw new ConflictException({ code: 'RICH_DRAFT_MEDIA_NOT_REUSABLE' });
+      media = {
+        id: candidate.id,
+        kind: candidate.kind as 'ANIMATION' | 'AUDIO' | 'PHOTO' | 'VIDEO' | 'VOICE',
+        media: asset.providerMediaId,
+      };
+    }
+    return {
+      ...(value.isRtl === true ? { isRtl: true } : {}),
+      markdown: value.markdown,
+      ...(media ? { media } : {}),
+      ...(value.skipEntityDetection === true ? { skipEntityDetection: true } : {}),
+    };
   }
 
   async mediaGroup(

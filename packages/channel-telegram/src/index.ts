@@ -71,6 +71,38 @@ export interface TelegramInlineKeyboardButton {
 
 export type TelegramInlineKeyboard = TelegramInlineKeyboardButton[][];
 
+export interface TelegramReplyKeyboardButton {
+  requestContact?: boolean;
+  requestLocation?: boolean;
+  text: string;
+}
+
+export type TelegramReplyMarkup =
+  | {
+      inputFieldPlaceholder?: string;
+      isPersistent?: boolean;
+      keyboard: TelegramReplyKeyboardButton[][];
+      oneTimeKeyboard?: boolean;
+      resizeKeyboard?: boolean;
+      selective?: boolean;
+      type: 'reply_keyboard';
+    }
+  | { selective?: boolean; type: 'reply_keyboard_remove' }
+  | { inputFieldPlaceholder?: string; selective?: boolean; type: 'force_reply' };
+
+export interface TelegramRichMessageMedia {
+  id: string;
+  kind: 'ANIMATION' | 'AUDIO' | 'PHOTO' | 'VIDEO' | 'VOICE';
+  media: string | TelegramMediaUpload;
+}
+
+export interface TelegramRichMessage {
+  isRtl?: boolean;
+  markdown: string;
+  media?: TelegramRichMessageMedia;
+  skipEntityDetection?: boolean;
+}
+
 export type TelegramChatAction =
   | 'choose_sticker'
   | 'find_location'
@@ -126,6 +158,161 @@ export interface TelegramReplyOptions {
 
 export type TelegramReaction =
   { emoji: string; type: 'emoji' } | { customEmojiId: string; type: 'custom_emoji' };
+
+export function validateTelegramReplyMarkup(input: unknown): TelegramReplyMarkup {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('telegram_reply_markup_invalid');
+  const value = input as Record<string, unknown>;
+  if (value.type === 'reply_keyboard_remove') {
+    if (Object.keys(value).some((key) => !['selective', 'type'].includes(key)))
+      throw new Error('telegram_reply_markup_invalid');
+    if (value.selective !== undefined && typeof value.selective !== 'boolean')
+      throw new Error('telegram_reply_markup_invalid');
+    return {
+      ...(value.selective === undefined ? {} : { selective: value.selective }),
+      type: 'reply_keyboard_remove',
+    };
+  }
+  if (value.type === 'force_reply') {
+    if (
+      Object.keys(value).some(
+        (key) => !['inputFieldPlaceholder', 'selective', 'type'].includes(key),
+      ) ||
+      (value.selective !== undefined && typeof value.selective !== 'boolean') ||
+      (value.inputFieldPlaceholder !== undefined &&
+        (typeof value.inputFieldPlaceholder !== 'string' ||
+          value.inputFieldPlaceholder.length < 1 ||
+          value.inputFieldPlaceholder.length > 64))
+    )
+      throw new Error('telegram_reply_markup_invalid');
+    return {
+      ...(typeof value.inputFieldPlaceholder === 'string'
+        ? { inputFieldPlaceholder: value.inputFieldPlaceholder }
+        : {}),
+      ...(value.selective === undefined ? {} : { selective: value.selective }),
+      type: 'force_reply',
+    };
+  }
+  if (value.type !== 'reply_keyboard' || !Array.isArray(value.keyboard))
+    throw new Error('telegram_reply_markup_invalid');
+  if (value.keyboard.length < 1 || value.keyboard.length > 8)
+    throw new Error('telegram_reply_keyboard_rows_invalid');
+  const flags = ['isPersistent', 'oneTimeKeyboard', 'resizeKeyboard', 'selective'] as const;
+  if (
+    Object.keys(value).some(
+      (key) =>
+        ![
+          'inputFieldPlaceholder',
+          'isPersistent',
+          'keyboard',
+          'oneTimeKeyboard',
+          'resizeKeyboard',
+          'selective',
+          'type',
+        ].includes(key),
+    ) ||
+    flags.some((flag) => value[flag] !== undefined && typeof value[flag] !== 'boolean') ||
+    (value.inputFieldPlaceholder !== undefined &&
+      (typeof value.inputFieldPlaceholder !== 'string' ||
+        value.inputFieldPlaceholder.length < 1 ||
+        value.inputFieldPlaceholder.length > 64))
+  )
+    throw new Error('telegram_reply_markup_invalid');
+  const keyboard = value.keyboard.map((row) => {
+    if (!Array.isArray(row) || row.length < 1 || row.length > 8)
+      throw new Error('telegram_reply_keyboard_buttons_invalid');
+    return row.map((candidate) => {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+        throw new Error('telegram_reply_keyboard_button_invalid');
+      const button = candidate as Record<string, unknown>;
+      if (
+        Object.keys(button).some(
+          (key) => !['requestContact', 'requestLocation', 'text'].includes(key),
+        ) ||
+        typeof button.text !== 'string' ||
+        button.text.length < 1 ||
+        button.text.length > 64 ||
+        (button.requestContact !== undefined && typeof button.requestContact !== 'boolean') ||
+        (button.requestLocation !== undefined && typeof button.requestLocation !== 'boolean') ||
+        Number(button.requestContact === true) + Number(button.requestLocation === true) > 1
+      )
+        throw new Error('telegram_reply_keyboard_button_invalid');
+      return {
+        ...(button.requestContact === true ? { requestContact: true } : {}),
+        ...(button.requestLocation === true ? { requestLocation: true } : {}),
+        text: button.text,
+      };
+    });
+  });
+  return {
+    ...(typeof value.inputFieldPlaceholder === 'string'
+      ? { inputFieldPlaceholder: value.inputFieldPlaceholder }
+      : {}),
+    ...(typeof value.isPersistent === 'boolean' ? { isPersistent: value.isPersistent } : {}),
+    keyboard,
+    ...(typeof value.oneTimeKeyboard === 'boolean'
+      ? { oneTimeKeyboard: value.oneTimeKeyboard }
+      : {}),
+    ...(typeof value.resizeKeyboard === 'boolean' ? { resizeKeyboard: value.resizeKeyboard } : {}),
+    ...(typeof value.selective === 'boolean' ? { selective: value.selective } : {}),
+    type: 'reply_keyboard',
+  };
+}
+
+export function validateTelegramRichMessage(input: unknown): TelegramRichMessage {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('telegram_rich_message_invalid');
+  const value = input as Record<string, unknown>;
+  if (
+    Object.keys(value).some(
+      (key) => !['isRtl', 'markdown', 'media', 'skipEntityDetection'].includes(key),
+    ) ||
+    typeof value.markdown !== 'string' ||
+    value.markdown.length < 1 ||
+    Buffer.byteLength(value.markdown, 'utf8') > 32_768 ||
+    (value.isRtl !== undefined && typeof value.isRtl !== 'boolean') ||
+    (value.skipEntityDetection !== undefined && typeof value.skipEntityDetection !== 'boolean')
+  )
+    throw new Error('telegram_rich_message_invalid');
+  // Rich Markdown may contain HTML. Never let Telegram fetch arbitrary media URLs;
+  // embedded media must be represented by the typed CRM-owned media member below.
+  if (
+    /!\[[^\]]*\]\(https?:\/\//i.test(value.markdown) ||
+    /<(?:audio|img|video)\b[^>]*\bsrc\s*=\s*["']https?:\/\//i.test(value.markdown)
+  )
+    throw new Error('telegram_rich_message_external_media_forbidden');
+  let media: TelegramRichMessageMedia | undefined;
+  if (value.media !== undefined) {
+    if (!value.media || typeof value.media !== 'object' || Array.isArray(value.media))
+      throw new Error('telegram_rich_message_media_invalid');
+    const candidate = value.media as Record<string, unknown>;
+    if (
+      Object.keys(candidate).some((key) => !['id', 'kind', 'media'].includes(key)) ||
+      typeof candidate.id !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,64}$/.test(candidate.id) ||
+      typeof candidate.kind !== 'string' ||
+      !['ANIMATION', 'AUDIO', 'PHOTO', 'VIDEO', 'VOICE'].includes(candidate.kind) ||
+      (typeof candidate.media !== 'string' &&
+        (!candidate.media || typeof candidate.media !== 'object' || Array.isArray(candidate.media)))
+    )
+      throw new Error('telegram_rich_message_media_invalid');
+    const scheme =
+      candidate.kind === 'PHOTO'
+        ? 'photo'
+        : candidate.kind === 'VIDEO' || candidate.kind === 'ANIMATION'
+          ? 'video'
+          : 'audio';
+    if (!value.markdown.includes(`tg://${scheme}?id=${candidate.id}`))
+      throw new Error('telegram_rich_message_media_reference_missing');
+    media = candidate as unknown as TelegramRichMessageMedia;
+  }
+  return {
+    ...(value.isRtl === true ? { isRtl: true } : {}),
+    markdown: value.markdown,
+    ...(media ? { media } : {}),
+    ...(value.skipEntityDetection === true ? { skipEntityDetection: true } : {}),
+  };
+}
 
 const telegramEntityTypes = new Set<TelegramMessageEntity['type']>([
   'blockquote',
@@ -897,6 +1084,8 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
       editMessage: true,
       formattingEntities: true,
       inlineKeyboard: true,
+      replyKeyboard: true,
+      forceReply: true,
       linkPreviewOptions: true,
       messageEffects: true,
       mediaSpoiler: true,
@@ -905,6 +1094,8 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
       reactions: true,
       replyToMessageId: true,
       streamingDraft: true,
+      richMessage: true,
+      richStreamingDraft: true,
       sticker: true,
       text: true,
       photo: true,
@@ -958,6 +1149,7 @@ export class TelegramAdapter {
       linkPreviewOptions?: TelegramLinkPreviewOptions;
       messageEffectId?: string;
       protectContent?: boolean;
+      replyMarkup?: TelegramReplyMarkup;
       reply?: TelegramReplyOptions;
       replyToMessageId?: string;
       text: string;
@@ -969,7 +1161,9 @@ export class TelegramAdapter {
       ...(input.entities ? { entities: this.telegramEntities(input.entities) } : {}),
       ...(input.inlineKeyboard
         ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
-        : {}),
+        : input.replyMarkup
+          ? { reply_markup: this.telegramReplyMarkup(input.replyMarkup) }
+          : {}),
       ...(input.linkPreviewOptions
         ? { link_preview_options: this.telegramLinkPreview(input.linkPreviewOptions) }
         : {}),
@@ -1020,6 +1214,7 @@ export class TelegramAdapter {
       media: string | TelegramMediaUpload;
       hasSpoiler?: boolean;
       protectContent?: boolean;
+      replyMarkup?: TelegramReplyMarkup;
       reply?: TelegramReplyOptions;
       replyToMessageId?: string;
     },
@@ -1050,7 +1245,9 @@ export class TelegramAdapter {
         : { caption_entities: this.telegramEntities(input.captionEntities) }),
       ...(input.inlineKeyboard
         ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
-        : {}),
+        : input.replyMarkup
+          ? { reply_markup: this.telegramReplyMarkup(input.replyMarkup) }
+          : {}),
       ...((input.reply ??
       (input.replyToMessageId ? { messageId: input.replyToMessageId } : undefined))
         ? {
@@ -1328,6 +1525,109 @@ export class TelegramAdapter {
       }),
     );
   }
+  async sendRichMessage(
+    token: string,
+    input: {
+      chatId: string;
+      disableNotification?: boolean;
+      inlineKeyboard?: TelegramInlineKeyboard;
+      protectContent?: boolean;
+      reply?: TelegramReplyOptions;
+      replyMarkup?: TelegramReplyMarkup;
+      richMessage: TelegramRichMessage;
+    },
+  ): Promise<{ messageId: string }> {
+    const rich = validateTelegramRichMessage(input.richMessage);
+    const files: Array<{
+      bytes: Uint8Array;
+      contentType: string;
+      field: string;
+      filename: string;
+    }> = [];
+    const media = rich.media
+      ? [
+          {
+            id: rich.media.id,
+            media: {
+              media:
+                typeof rich.media.media === 'string'
+                  ? rich.media.media
+                  : (() => {
+                      const field = 'rich_media_0';
+                      files.push({ ...(rich.media!.media as TelegramMediaUpload), field });
+                      return `attach://${field}`;
+                    })(),
+              type:
+                rich.media.kind.toLowerCase() === 'voice'
+                  ? 'voice_note'
+                  : rich.media.kind.toLowerCase(),
+            },
+          },
+        ]
+      : undefined;
+    const fields = {
+      chat_id: input.chatId,
+      disable_notification: input.disableNotification,
+      protect_content: input.protectContent,
+      ...(input.inlineKeyboard
+        ? { reply_markup: { inline_keyboard: this.telegramKeyboard(input.inlineKeyboard) } }
+        : input.replyMarkup
+          ? { reply_markup: this.telegramReplyMarkup(input.replyMarkup) }
+          : {}),
+      ...(input.reply ? { reply_parameters: this.telegramReply(input.reply) } : {}),
+      rich_message: {
+        ...(rich.isRtl ? { is_rtl: true } : {}),
+        markdown: rich.markdown,
+        ...(media ? { media } : {}),
+        ...(rich.skipEntityDetection ? { skip_entity_detection: true } : {}),
+      },
+    };
+    const response = files.length
+      ? await this.transport.uploadMany?.(token, 'sendRichMessage', fields, files)
+      : await this.transport.request(token, 'sendRichMessage', fields);
+    if (!response) throw new Error('Telegram rich message upload transport is unavailable');
+    await this.assertOk(response);
+    const result = response.result as { message_id?: number };
+    if (!result.message_id) throw new Error('Telegram sendRichMessage result is invalid');
+    return { messageId: String(result.message_id) };
+  }
+  async sendRichMessageDraft(
+    token: string,
+    input: { chatId: string; draftId: number; richMessage: TelegramRichMessage },
+  ): Promise<void> {
+    if (!Number.isSafeInteger(input.draftId) || input.draftId === 0)
+      throw new Error('telegram_draft_id_invalid');
+    const rich = validateTelegramRichMessage(input.richMessage);
+    if (rich.media && typeof rich.media.media !== 'string')
+      throw new Error('telegram_rich_draft_upload_not_supported');
+    await this.assertOk(
+      await this.transport.request(token, 'sendRichMessageDraft', {
+        chat_id: input.chatId,
+        draft_id: input.draftId,
+        rich_message: {
+          ...(rich.isRtl ? { is_rtl: true } : {}),
+          markdown: rich.markdown,
+          ...(rich.media
+            ? {
+                media: [
+                  {
+                    id: rich.media.id,
+                    media: {
+                      media: rich.media.media,
+                      type:
+                        rich.media.kind.toLowerCase() === 'voice'
+                          ? 'voice_note'
+                          : rich.media.kind.toLowerCase(),
+                    },
+                  },
+                ],
+              }
+            : {}),
+          ...(rich.skipEntityDetection ? { skip_entity_detection: true } : {}),
+        },
+      }),
+    );
+  }
   async configureBotInterface(
     token: string,
     input: {
@@ -1384,6 +1684,36 @@ export class TelegramAdapter {
         ...(button.url === undefined ? {} : { url: button.url }),
       })),
     );
+  }
+  private telegramReplyMarkup(markup: TelegramReplyMarkup) {
+    const value = validateTelegramReplyMarkup(markup);
+    if (value.type === 'reply_keyboard_remove')
+      return {
+        remove_keyboard: true,
+        ...(value.selective === undefined ? {} : { selective: value.selective }),
+      };
+    if (value.type === 'force_reply')
+      return {
+        force_reply: true,
+        ...(value.inputFieldPlaceholder
+          ? { input_field_placeholder: value.inputFieldPlaceholder }
+          : {}),
+        ...(value.selective === undefined ? {} : { selective: value.selective }),
+      };
+    return {
+      input_field_placeholder: value.inputFieldPlaceholder,
+      is_persistent: value.isPersistent,
+      keyboard: value.keyboard.map((row) =>
+        row.map((button) => ({
+          request_contact: button.requestContact,
+          request_location: button.requestLocation,
+          text: button.text,
+        })),
+      ),
+      one_time_keyboard: value.oneTimeKeyboard,
+      resize_keyboard: value.resizeKeyboard,
+      selective: value.selective,
+    };
   }
   private telegramEntities(entities: TelegramMessageEntity[]) {
     return entities.map((entity) => ({

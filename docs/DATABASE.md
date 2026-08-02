@@ -3,7 +3,7 @@
 Current status (reviewed 2026-08-02):
 `packages/database/prisma/schema.prisma` is the executable platform schema with
 50 models. Reviewed ordered migrations cover Auth/RBAC, contacts, Telegram
-inbox/outbox and chat v3.2, automation and continuations, CRM, broadcasts,
+inbox/outbox and chat v3.3, automation and continuations, CRM, broadcasts,
 media/templates and Automation Studio 2.2 External HTTP through
 `20260802000200_automation_studio_22_http`. Railway applies these migrations
 once through the designated release path.
@@ -1409,3 +1409,21 @@ Inbound `edited_message` and contact shares remain ordinary deduplicated
 `Message` and creates an idempotent CRM intent; it never creates a second chat
 message. A contact share is stored as a typed message and forwarded as an
 explicit value object. It never triggers phone-based contact merge.
+
+## Telegram Chat v3.3 provider extension
+
+Migration `20260802000300_telegram_chat_v33` adds `MessageType.RICH` and a
+`revision` column to `ScheduledMessage`. Rich Markdown and its normalized typed
+media reference use the existing `Message.content`, `Message.metadata` and
+optional tenant-safe `mediaAssetId` relation. Reply keyboards and Force Reply
+are bounded JSON metadata on the same message. No remote media URL or provider
+credential is stored.
+
+`ScheduledMessage.recurrence` changes from a reserved nullable value to the
+reviewed `{frequency, interval, count?, until?}` rule. Every occurrence remains
+a separate project-owned message and outbox operation with the same `seriesId`
+and monotonically increasing `occurrence`. The unique
+`(projectId, seriesId, occurrence)` constraint makes concurrent completion
+harmless. Only one future occurrence is created; cancellation therefore stops
+the series without a Redis-owned recurring job. `revision` is incremented by a
+conditional queued-only update and is the public optimistic-concurrency token.

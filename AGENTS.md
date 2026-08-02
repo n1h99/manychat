@@ -30,7 +30,8 @@ Pilot и утверждённые post-pilot slices реализованы и р
 - Automation v2, Delay, Wait for Reply и Subflows;
 - Automation Studio 2.1 и 2.2, включая incomplete drafts и безопасный
   `EXTERNAL_HTTP_REQUEST`;
-- Telegram Chat v3.2 и live-verified user reaction events;
+- Telegram Chat v3.3, включая recurring schedules, reply keyboards, native
+  rich messages и live-verified user reaction events;
 - Railway web/API/worker deployment с automatic deploy из `main`.
 
 Исторические этапы в `docs/IMPLEMENTATION_PLAN.md` не ограничивают уже
@@ -40,9 +41,6 @@ Pilot и утверждённые post-pilot slices реализованы и р
 До отдельного явного решения пользователя не реализовывать:
 
 - WhatsApp и Instagram;
-- Telegram reply keyboard / Force Reply;
-- recurring schedules;
-- rich-message blocks и media-rich streaming drafts;
 - external action callbacks без утверждённого безопасного callback contract.
 
 Provider limitations нельзя превращать в выдуманный product contract.

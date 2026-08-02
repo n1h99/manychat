@@ -124,6 +124,16 @@ export class CrmOutboundMessageDto {
   @IsArray()
   inlineKeyboard?: unknown[];
 
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  replyMarkup?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  richMessage?: Record<string, unknown>;
+
   @ApiPropertyOptional({ type: Boolean })
   @IsOptional()
   @IsBoolean()
@@ -183,6 +193,28 @@ export class CrmScheduledMessageDto extends CrmOutboundMessageDto {
   @IsString()
   @Length(1, 64)
   timezone!: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  recurrence?: Record<string, unknown>;
+}
+
+export class CrmScheduledMessageUpdateDto {
+  @ApiProperty({ minimum: 1, type: Number })
+  @IsInt()
+  @Min(1)
+  expectedRevision!: number;
+
+  @ApiPropertyOptional({ format: 'date-time', type: String })
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  recurrence?: Record<string, unknown> | null;
 }
 
 export class CrmScheduledMessageQueryDto {
@@ -457,6 +489,11 @@ export class CrmDraftDto extends CrmTelegramScopeDto {
   @IsOptional()
   @IsArray()
   entities?: unknown[];
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  richMessage?: Record<string, unknown>;
 }
 
 export class CrmRetryOperationDto {

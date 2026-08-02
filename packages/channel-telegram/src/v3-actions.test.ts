@@ -96,6 +96,78 @@ describe('Telegram v3 adapter actions', () => {
     expect(fixture.request).not.toHaveBeenCalled();
   });
 
+  it('maps bounded reply keyboards, Force Reply and removal to Bot API markup', async () => {
+    const fixture = adapter();
+    await fixture.adapter.sendMessage('secret', {
+      chatId: '123',
+      replyMarkup: {
+        keyboard: [[{ requestContact: true, text: 'Share contact' }]],
+        oneTimeKeyboard: true,
+        resizeKeyboard: true,
+        type: 'reply_keyboard',
+      },
+      text: 'Choose',
+    });
+    await fixture.adapter.sendMessage('secret', {
+      chatId: '123',
+      replyMarkup: { inputFieldPlaceholder: 'Answer', type: 'force_reply' },
+      text: 'Reply',
+    });
+    await fixture.adapter.sendMessage('secret', {
+      chatId: '123',
+      replyMarkup: { type: 'reply_keyboard_remove' },
+      text: 'Done',
+    });
+
+    expect(fixture.request.mock.calls.map((call) => call[2]?.reply_markup)).toEqual([
+      expect.objectContaining({
+        keyboard: [[expect.objectContaining({ request_contact: true, text: 'Share contact' })]],
+        one_time_keyboard: true,
+        resize_keyboard: true,
+      }),
+      { force_reply: true, input_field_placeholder: 'Answer' },
+      { remove_keyboard: true },
+    ]);
+  });
+
+  it('sends native rich Markdown and a reusable-media rich draft', async () => {
+    const fixture = adapter();
+    await expect(
+      fixture.adapter.sendRichMessage('secret', {
+        chatId: '123',
+        richMessage: { markdown: '# Report\n\n| A | B |' },
+      }),
+    ).resolves.toEqual({ messageId: '42' });
+    await fixture.adapter.sendRichMessageDraft('secret', {
+      chatId: '123',
+      draftId: 9,
+      richMessage: {
+        markdown: '![voice](tg://audio?id=primary)',
+        media: { id: 'primary', kind: 'VOICE', media: 'telegram-file-id' },
+      },
+    });
+
+    expect(fixture.request).toHaveBeenNthCalledWith(
+      1,
+      'secret',
+      'sendRichMessage',
+      expect.objectContaining({
+        rich_message: expect.objectContaining({ markdown: '# Report\n\n| A | B |' }),
+      }),
+    );
+    expect(fixture.request).toHaveBeenNthCalledWith(
+      2,
+      'secret',
+      'sendRichMessageDraft',
+      expect.objectContaining({
+        draft_id: 9,
+        rich_message: expect.objectContaining({
+          media: [expect.objectContaining({ id: 'primary' })],
+        }),
+      }),
+    );
+  });
+
   it('sends a media group as one provider operation and preserves item order', async () => {
     const fixture = adapter();
     fixture.request.mockResolvedValueOnce({
