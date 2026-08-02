@@ -1333,3 +1333,42 @@ normalized event and target contact through existing tenant-safe composite
 foreign keys. A reaction that races ahead of its source message stays
 retryable until the source mapping exists; after exhaustion the raw webhook is
 retained in dead-letter state for safe replay.
+
+## Telegram Chat v3.2 CRM provider extension
+
+Migration `20260802000100_telegram_chat_v32` adds only project-owned provider
+state. `Conversation` receives an explicit `AUTO | MANUAL | PAUSED` state,
+`automationResumeAt`, a safe reason code and an integer revision. The revision
+is the optimistic-concurrency token; `PAUSED` rows are resumed by a bounded
+PostgreSQL scan, never by a Redis-only timer.
+
+`ScheduledMessage` owns an immutable normalized outbound request, IANA
+timezone, due time and its current `Message`/`OutboxRecord`. Each relation
+includes `projectId`. Contract 3.2 releases one-shot scheduling only;
+`recurrence` remains null and is reserved for a separately reviewed contract
+and state machine. Cancellation uses a conditional database transition and
+cannot convert `PROCESSING`, `SENT` or `UNKNOWN` into a safe-to-retry state.
+
+`TelegramMediaGroup` and `TelegramMediaGroupItem` represent one logical album
+and its ordered 2-10 PHOTO/VIDEO, all-AUDIO, or all-DOCUMENT items. The group
+owns one outbox operation and records every returned provider message ID in
+item order. It is never decomposed into independent CRM outbound requests.
+An uncertain provider outcome makes the complete aggregate `UNKNOWN`.
+
+`TelegramBotInterface` stores a connection-scoped normalized commands/menu
+configuration and revision. Provider changes use the ordinary Telegram outbox
+and stable CRM idempotency key. No bot token, provider response or arbitrary
+callback payload is stored.
+
+`IdempotencyRecord.resultSafe` optionally stores a provider-independent result
+for synchronous state mutations that must replay the original response. The
+Telegram automation-state endpoint uses it with the request's normalized
+state fields; message bodies, provider identifiers and credentials are not
+stored there.
+
+Inbound `edited_message` and contact shares remain ordinary deduplicated
+`RawWebhookEvent`/`InboxRecord` rows. They add `MESSAGE_EDITED` and
+`CONTACT_SHARED` normalized types. An edit updates the already scoped source
+`Message` and creates an idempotent CRM intent; it never creates a second chat
+message. A contact share is stored as a typed message and forwarded as an
+explicit value object. It never triggers phone-based contact merge.

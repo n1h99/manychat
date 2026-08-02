@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Omnicus to CRM messaging contract
-  version: 3.1.0
-  description: Exact contract implemented by Omnicus for normalized Telegram inbound messages, user reactions, and confirmed outbound history.
+  version: 3.2.0
+  description: Exact contract implemented by Omnicus for normalized Telegram messages, edits, contact shares, automation state and confirmed outbound history.
 security:
   - serviceBearer: []
 paths:
@@ -70,6 +70,49 @@ paths:
           description: Invalid service credential.
         '409':
           description: Idempotency, project mapping, or target message conflict.
+  /integrations/v1/omnicus/messages/edited:
+    post:
+      operationId: receiveOmnicusMessageEdit
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageEditEvent' }
+      responses:
+        '200': { description: Updated or idempotently replayed CRM message. }
+        '409': { description: Project, target message or idempotency conflict. }
+  /integrations/v1/omnicus/contacts/shared:
+    post:
+      operationId: receiveOmnicusContactShare
+      description: Persists a shared contact value. It must not automatically merge leads by phone.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactShareEvent' }
+      responses:
+        '200': { description: Created or idempotently replayed contact-share event. }
+        '409': { description: Project, target message or idempotency conflict. }
+  /integrations/v1/omnicus/conversations/automation-state:
+    post:
+      operationId: receiveOmnicusAutomationState
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AutomationStateEvent' }
+      responses:
+        '200': { description: Created or idempotently replayed state event. }
+        '409': { description: Project, revision or idempotency conflict. }
 components:
   securitySchemes:
     serviceBearer:
@@ -329,6 +372,94 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Reaction' }
         actor: { $ref: '#/components/schemas/ReactionActor' }
+    MessageEditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          crmProjectId,
+          omnicusProjectId,
+          omnicusContactId,
+          identity,
+          normalizedEventId,
+          messageId,
+          editedAt,
+        ]
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+        normalizedEventId: { type: string, format: uuid }
+        messageId: { type: string, format: uuid, description: Existing Omnicus message UUID. }
+        editedAt: { type: string, format: date-time }
+        text: { type: string, maxLength: 4096 }
+        caption: { type: string, maxLength: 1024 }
+        entities:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/MessageEntity' }
+      anyOf:
+        - required: [text]
+        - required: [caption]
+    SharedContact:
+      type: object
+      additionalProperties: false
+      required: [firstName, phoneNumber]
+      properties:
+        firstName: { type: string, minLength: 1 }
+        lastName: { type: string }
+        phoneNumber: { type: string, minLength: 1 }
+        telegramUserId: { type: string }
+        vcard: { type: string }
+    ContactShareEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          crmProjectId,
+          omnicusProjectId,
+          omnicusContactId,
+          identity,
+          normalizedEventId,
+          messageId,
+          occurredAt,
+          sharedContact,
+        ]
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+        normalizedEventId: { type: string, format: uuid }
+        messageId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        sharedContact: { $ref: '#/components/schemas/SharedContact' }
+    AutomationStateEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          crmProjectId,
+          omnicusProjectId,
+          omnicusContactId,
+          identity,
+          conversationId,
+          mode,
+          revision,
+          changedAt,
+        ]
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+        conversationId: { type: string, format: uuid }
+        mode: { type: string, enum: [AUTO, MANUAL, PAUSED] }
+        resumeAt: { type: string, format: date-time }
+        reasonCode: { type: string, maxLength: 128 }
+        revision: { type: integer, minimum: 1 }
+        changedAt: { type: string, format: date-time }
     InboundMessage:
       type: object
       additionalProperties: false
@@ -457,6 +588,15 @@ components:
             - AUTOMATION
             - BROADCAST
             - SYSTEM
+        sourceContext:
+          type: object
+          additionalProperties: false
+          required: [type, id, displayName]
+          properties:
+            type: { type: string, enum: [scenario, broadcast, system] }
+            id: { type: string, minLength: 1 }
+            displayName: { type: string, minLength: 1 }
+            webUrl: { type: string, format: uri, description: Optional safe Omnicus web URL. }
         scenarioExecutionId:
           type: string
           format: uuid

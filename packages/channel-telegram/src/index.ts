@@ -30,11 +30,35 @@ export interface TelegramTransport {
     parameters?: { retry_after?: number };
     description?: string;
   }>;
+  uploadMany?(
+    token: string,
+    method: string,
+    fields: Record<string, unknown>,
+    files: Array<{
+      bytes: Uint8Array;
+      contentType: string;
+      field: string;
+      filename: string;
+    }>,
+  ): Promise<{
+    ok: boolean;
+    result?: unknown;
+    errorCode?: number;
+    parameters?: { retry_after?: number };
+    description?: string;
+  }>;
 }
 export interface TelegramMediaUpload {
   bytes: Uint8Array;
   contentType: string;
   filename: string;
+}
+export interface TelegramMediaGroupItem {
+  caption?: string;
+  captionEntities?: TelegramMessageEntity[];
+  hasSpoiler?: boolean;
+  kind: 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO';
+  media: string | TelegramMediaUpload;
 }
 export type TelegramMediaKind =
   'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'STICKER' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
@@ -234,6 +258,7 @@ export function validateTelegramInlineKeyboard(input: unknown): TelegramInlineKe
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  edited_message?: TelegramMessage;
   message_reaction?: TelegramMessageReactionUpdated;
   callback_query?: { id: string; data?: string; from: TelegramUser; message?: TelegramMessage };
   my_chat_member?: {
@@ -278,6 +303,9 @@ export interface TelegramMessage {
   date?: number;
   text?: string;
   caption?: string;
+  entities?: TelegramMessageEntityWire[];
+  caption_entities?: TelegramMessageEntityWire[];
+  edit_date?: number;
   has_media_spoiler?: boolean;
   media_group_id?: string;
   photo?: {
@@ -324,6 +352,22 @@ export interface TelegramMessage {
   voice?: TelegramFileMedia & {
     duration: number;
   };
+  contact?: {
+    phone_number: string;
+    first_name: string;
+    last_name?: string;
+    user_id?: number;
+    vcard?: string;
+  };
+}
+
+interface TelegramMessageEntityWire {
+  type: string;
+  offset: number;
+  length: number;
+  url?: string;
+  language?: string;
+  custom_emoji_id?: string;
 }
 
 interface TelegramFileMedia {
@@ -436,6 +480,34 @@ export class TelegramHttpTransport implements TelegramTransport {
     );
   }
 
+  async uploadMany(
+    token: string,
+    method: string,
+    fields: Record<string, unknown>,
+    files: Array<{
+      bytes: Uint8Array;
+      contentType: string;
+      field: string;
+      filename: string;
+    }>,
+  ) {
+    const form = new FormData();
+    for (const [name, value] of Object.entries(fields)) {
+      if (value === undefined) continue;
+      form.append(name, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+    for (const file of files) {
+      const bytes = new Uint8Array(file.bytes);
+      form.append(file.field, new Blob([bytes.buffer], { type: file.contentType }), file.filename);
+    }
+    return this.response(
+      await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        body: form,
+        method: 'POST',
+      }),
+    );
+  }
+
   private async response(response: Response): Promise<{
     ok: boolean;
     result?: unknown;
@@ -470,10 +542,12 @@ export type TelegramInboundEventType =
   | 'CALLBACK_QUERY'
   | 'CHAT_MEMBER'
   | 'COMMAND'
+  | 'CONTACT_SHARED'
   | 'DOCUMENT'
   | 'MESSAGE'
   | 'PHOTO'
   | 'REACTION'
+  | 'MESSAGE_EDITED'
   | 'STICKER'
   | 'UNSUPPORTED'
   | 'VIDEO'
@@ -534,6 +608,21 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
           type: 'COMMAND',
         }
       : { ...base, content: { text: message.text }, type: 'MESSAGE' };
+  }
+  if (message.contact) {
+    return {
+      ...base,
+      content: {
+        firstName: message.contact.first_name,
+        ...(message.contact.last_name ? { lastName: message.contact.last_name } : {}),
+        phoneNumber: message.contact.phone_number,
+        ...(message.contact.user_id === undefined
+          ? {}
+          : { telegramUserId: String(message.contact.user_id) }),
+        ...(message.contact.vcard ? { vcard: message.contact.vcard } : {}),
+      },
+      type: 'CONTACT_SHARED',
+    };
   }
   if (message.photo && message.photo.length > 0) {
     const photo = selectedPhoto(message.photo);
@@ -639,6 +728,35 @@ function messageEvent(message: TelegramMessage): TelegramInboundEvent {
   return { ...base, content: {}, type: 'UNSUPPORTED' };
 }
 
+function normalizedEntities(input: TelegramMessageEntityWire[] | undefined) {
+  return input?.map((entity) => ({
+    ...(entity.custom_emoji_id ? { customEmojiId: entity.custom_emoji_id } : {}),
+    ...(entity.language ? { language: entity.language } : {}),
+    length: entity.length,
+    offset: entity.offset,
+    type: entity.type,
+    ...(entity.url ? { url: entity.url } : {}),
+  }));
+}
+
+function editedMessageEvent(message: TelegramMessage): TelegramInboundEvent {
+  const content = {
+    targetExternalMessageId: String(message.message_id),
+    ...(message.text === undefined ? {} : { text: message.text }),
+    ...(message.text === undefined ? { caption: message.caption ?? '' } : {}),
+    entities: normalizedEntities(message.entities ?? message.caption_entities) ?? [],
+    occurredAt: new Date((message.edit_date ?? message.date ?? 0) * 1_000).toISOString(),
+  };
+  return {
+    chatId: String(message.chat.id),
+    content,
+    externalMessageId: String(message.message_id),
+    ...(message.from ? { externalUserId: String(message.from.id), user: message.from } : {}),
+    metadata: { source: 'telegram' },
+    type: 'MESSAGE_EDITED',
+  };
+}
+
 function inboundReactions(
   reactions: TelegramMessageReactionUpdated['new_reaction'],
 ): TelegramInboundReaction[] {
@@ -657,6 +775,7 @@ export function normalizeTelegramUpdate(update: TelegramUpdate): TelegramInbound
     throw new Error('Telegram update is malformed');
   }
   if (update.message) return messageEvent(update.message);
+  if (update.edited_message) return editedMessageEvent(update.edited_message);
   if (update.message_reaction) {
     const reaction = update.message_reaction;
     if (
@@ -756,7 +875,9 @@ export const telegramDescriptor: ChannelAdapterDescriptor = {
       animationMetadata: true,
       audioMetadata: true,
       callbackQuery: true,
+      contact: true,
       documentMetadata: true,
+      editedMessage: true,
       myChatMember: true,
       photoMetadata: true,
       reaction: true,
@@ -812,7 +933,13 @@ export class TelegramAdapter {
   ): Promise<void> {
     await this.assertOk(
       await this.transport.request(token, 'setWebhook', {
-        allowed_updates: ['message', 'callback_query', 'my_chat_member', 'message_reaction'],
+        allowed_updates: [
+          'message',
+          'edited_message',
+          'callback_query',
+          'my_chat_member',
+          'message_reaction',
+        ],
         secret_token: input.secretToken,
         url: input.url,
       }),
@@ -945,6 +1072,137 @@ export class TelegramAdapter {
     if (!result.message_id) throw new Error(`Telegram ${selected.method} result is invalid`);
     return { messageId: String(result.message_id) };
   }
+  async sendMediaGroup(
+    token: string,
+    input: {
+      chatId: string;
+      disableNotification?: boolean;
+      items: TelegramMediaGroupItem[];
+      protectContent?: boolean;
+    },
+  ): Promise<{ messageIds: string[] }> {
+    if (input.items.length < 2 || input.items.length > 10)
+      throw new Error('telegram_media_group_size_invalid');
+    const kinds = new Set(input.items.map((item) => item.kind));
+    if (
+      (kinds.has('AUDIO') && kinds.size !== 1) ||
+      (kinds.has('DOCUMENT') && kinds.size !== 1) ||
+      [...kinds].some((kind) => !['AUDIO', 'DOCUMENT', 'PHOTO', 'VIDEO'].includes(kind))
+    )
+      throw new Error('telegram_media_group_kind_invalid');
+    const files: Array<{
+      bytes: Uint8Array;
+      contentType: string;
+      field: string;
+      filename: string;
+    }> = [];
+    const media = input.items.map((item, index) => {
+      const type = item.kind.toLowerCase();
+      const reference =
+        typeof item.media === 'string'
+          ? item.media
+          : (() => {
+              const field = `media_${index}`;
+              files.push({ ...item.media, field });
+              return `attach://${field}`;
+            })();
+      return {
+        ...(item.caption === undefined ? {} : { caption: item.caption }),
+        ...(item.captionEntities
+          ? { caption_entities: this.telegramEntities(item.captionEntities) }
+          : {}),
+        ...(item.hasSpoiler ? { has_spoiler: true } : {}),
+        media: reference,
+        type,
+      };
+    });
+    const fields = {
+      chat_id: input.chatId,
+      disable_notification: input.disableNotification,
+      media,
+      protect_content: input.protectContent,
+    };
+    const response = files.length
+      ? await this.transport.uploadMany?.(token, 'sendMediaGroup', fields, files)
+      : await this.transport.request(token, 'sendMediaGroup', fields);
+    if (!response) throw new Error('Telegram media group upload transport is unavailable');
+    await this.assertOk(response);
+    if (!Array.isArray(response.result))
+      throw new Error('Telegram sendMediaGroup result is invalid');
+    const messageIds = response.result.map((item) =>
+      item &&
+      typeof item === 'object' &&
+      Number.isSafeInteger((item as { message_id?: unknown }).message_id)
+        ? String((item as { message_id: number }).message_id)
+        : '',
+    );
+    if (messageIds.length !== input.items.length || messageIds.some((id) => !id))
+      throw new Error('Telegram sendMediaGroup result is invalid');
+    return { messageIds };
+  }
+  async sendStructuredMessage(
+    token: string,
+    input: {
+      chatId: string;
+      disableNotification?: boolean;
+      protectContent?: boolean;
+      structured:
+        | {
+            firstName: string;
+            lastName?: string;
+            phoneNumber: string;
+            type: 'contact';
+            vcard?: string;
+          }
+        | {
+            horizontalAccuracy?: number;
+            latitude: number;
+            longitude: number;
+            type: 'location';
+          }
+        | {
+            allowsMultipleAnswers?: boolean;
+            isAnonymous?: boolean;
+            options: string[];
+            question: string;
+            type: 'poll';
+          };
+    },
+  ): Promise<{ messageId: string }> {
+    const common = {
+      chat_id: input.chatId,
+      disable_notification: input.disableNotification,
+      protect_content: input.protectContent,
+    };
+    const structured = input.structured;
+    const response =
+      structured.type === 'contact'
+        ? await this.transport.request(token, 'sendContact', {
+            ...common,
+            first_name: structured.firstName,
+            last_name: structured.lastName,
+            phone_number: structured.phoneNumber,
+            vcard: structured.vcard,
+          })
+        : structured.type === 'location'
+          ? await this.transport.request(token, 'sendLocation', {
+              ...common,
+              horizontal_accuracy: structured.horizontalAccuracy,
+              latitude: structured.latitude,
+              longitude: structured.longitude,
+            })
+          : await this.transport.request(token, 'sendPoll', {
+              ...common,
+              allows_multiple_answers: structured.allowsMultipleAnswers,
+              is_anonymous: structured.isAnonymous,
+              options: structured.options.map((text) => ({ text })),
+              question: structured.question,
+            });
+    await this.assertOk(response);
+    const result = response.result as { message_id?: number };
+    if (!result.message_id) throw new Error('Telegram structured message result is invalid');
+    return { messageId: String(result.message_id) };
+  }
   async answerCallbackQuery(
     token: string,
     input: { callbackQueryId: string; showAlert?: boolean; text?: string },
@@ -1070,6 +1328,41 @@ export class TelegramAdapter {
       }),
     );
   }
+  async configureBotInterface(
+    token: string,
+    input: {
+      commands: Array<{ command: string; description: string }>;
+      languageCode?: string;
+      menuButton: { text?: string; type: 'commands' | 'default' | 'web_app'; url?: string };
+      scope: { chatId?: string; type: 'all_private_chats' | 'chat' | 'default' };
+    },
+  ): Promise<void> {
+    const scope =
+      input.scope.type === 'chat'
+        ? { chat_id: Number(input.scope.chatId), type: 'chat' }
+        : { type: input.scope.type };
+    await this.assertOk(
+      await this.transport.request(token, 'setMyCommands', {
+        commands: input.commands,
+        language_code: input.languageCode ?? '',
+        scope,
+      }),
+    );
+    const menuButton =
+      input.menuButton.type === 'web_app'
+        ? {
+            text: input.menuButton.text,
+            type: 'web_app',
+            web_app: { url: input.menuButton.url },
+          }
+        : { type: input.menuButton.type };
+    await this.assertOk(
+      await this.transport.request(token, 'setChatMenuButton', {
+        ...(input.scope.type === 'chat' ? { chat_id: Number(input.scope.chatId) } : {}),
+        menu_button: menuButton,
+      }),
+    );
+  }
   private async uploadMedia(
     token: string,
     method: string,
@@ -1133,6 +1426,14 @@ export class TelegramAdapter {
         ...(update.message.from ? { externalUserId: String(update.message.from.id) } : {}),
         kind: 'message',
         payload: update.message as unknown as Record<string, unknown>,
+      };
+    if (update.edited_message)
+      return {
+        ...(update.edited_message.from
+          ? { externalUserId: String(update.edited_message.from.id) }
+          : {}),
+        kind: 'message',
+        payload: update.edited_message as unknown as Record<string, unknown>,
       };
     if (update.callback_query)
       return {

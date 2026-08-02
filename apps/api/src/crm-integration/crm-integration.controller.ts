@@ -39,16 +39,21 @@ import { CrmTelegramV3Service } from './crm-telegram-v3.service';
 import {
   CrmAutomationStateDto,
   CrmAutomationStateQueryDto,
+  CrmBotInterfaceDto,
+  CrmBotInterfaceQueryDto,
   CrmCapabilitiesQueryDto,
   CrmChatActionDto,
   CrmDraftDto,
   CrmMediaUploadDto,
+  CrmMediaGroupDto,
   CrmMessageMutationDto,
   CrmOperationQueryDto,
   CrmOutboundMessageDto,
   CrmPinMessageDto,
   CrmReactionDto,
   CrmRetryOperationDto,
+  CrmScheduledMessageDto,
+  CrmScheduledMessageQueryDto,
   CrmTelegramScopeDto,
 } from './dto';
 
@@ -57,15 +62,20 @@ import {
 @ApiExtraModels(
   CrmAutomationStateDto,
   CrmAutomationStateQueryDto,
+  CrmBotInterfaceDto,
+  CrmBotInterfaceQueryDto,
   CrmCapabilitiesQueryDto,
   CrmChatActionDto,
   CrmDraftDto,
   CrmMediaUploadDto,
+  CrmMediaGroupDto,
   CrmMessageMutationDto,
   CrmOutboundMessageDto,
   CrmPinMessageDto,
   CrmReactionDto,
   CrmRetryOperationDto,
+  CrmScheduledMessageDto,
+  CrmScheduledMessageQueryDto,
   CrmTelegramScopeDto,
 )
 @UseGuards(CrmIntegrationAuthGuard)
@@ -95,15 +105,52 @@ export class CrmIntegrationController {
     return this.telegramV3.automationState(query, request.crmIntegration?.projectId);
   }
 
+  @Get('bot-interface')
+  botInterface(
+    @Query() query: CrmBotInterfaceQueryDto,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    return this.telegramV3.botInterface(query, request.crmIntegration?.projectId);
+  }
+
+  @Put('bot-interface')
+  @HttpCode(200)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiHeader({ name: 'X-Correlation-Id', required: true })
+  setBotInterface(
+    @Body() dto: CrmBotInterfaceDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    this.assertHeaders(idempotencyKey, correlationId);
+    return this.telegramV3.setBotInterface(
+      dto,
+      idempotencyKey!,
+      correlationId!,
+      request.crmIntegration?.projectId,
+    );
+  }
+
   @Put('conversations/automation-state')
   @HttpCode(200)
   @ApiBody({ type: CrmAutomationStateDto })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiHeader({ name: 'X-Correlation-Id', required: true })
   @ApiOkResponse({ description: 'Telegram conversation automation mode updated' })
   setAutomationState(
     @Body() dto: CrmAutomationStateDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
     @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
-    return this.telegramV3.setAutomationState(dto, request.crmIntegration?.projectId);
+    this.assertHeaders(idempotencyKey, correlationId);
+    return this.telegramV3.setAutomationState(
+      dto,
+      idempotencyKey!,
+      correlationId!,
+      request.crmIntegration?.projectId,
+    );
   }
 
   @Get('connection')
@@ -195,6 +242,84 @@ export class CrmIntegrationController {
       dto,
       idempotencyKey!,
       correlationId!,
+      request.crmIntegration?.projectId,
+    );
+  }
+
+  @Post('messages/scheduled')
+  @HttpCode(200)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiHeader({ name: 'X-Correlation-Id', required: true })
+  scheduleMessage(
+    @Body() dto: CrmScheduledMessageDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    this.assertHeaders(idempotencyKey, correlationId);
+    return this.outbound.queue(
+      dto,
+      idempotencyKey!,
+      correlationId!,
+      request.crmIntegration?.projectId,
+    );
+  }
+
+  @Post('messages/media-group')
+  @HttpCode(200)
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiHeader({ name: 'X-Correlation-Id', required: true })
+  mediaGroup(
+    @Body() dto: CrmMediaGroupDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationId: string | undefined,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    this.assertHeaders(idempotencyKey, correlationId);
+    return this.telegramV3.mediaGroup(
+      dto,
+      idempotencyKey!,
+      correlationId!,
+      request.crmIntegration?.projectId,
+    );
+  }
+
+  @Get('messages/scheduled')
+  scheduledMessages(
+    @Query() query: CrmScheduledMessageQueryDto,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    return this.outbound.scheduledList(
+      query.crmProjectId,
+      query.omnicusProjectId,
+      request.crmIntegration?.projectId,
+    );
+  }
+
+  @Get('messages/scheduled/:scheduleId')
+  scheduledMessage(
+    @Param('scheduleId') scheduleId: string,
+    @Query() query: CrmScheduledMessageQueryDto,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    return this.outbound.scheduled(
+      scheduleId,
+      query.crmProjectId,
+      query.omnicusProjectId,
+      request.crmIntegration?.projectId,
+    );
+  }
+
+  @Delete('messages/scheduled/:scheduleId')
+  cancelScheduledMessage(
+    @Param('scheduleId') scheduleId: string,
+    @Query() query: CrmScheduledMessageQueryDto,
+    @Req() request: AuthenticatedCrmIntegrationRequest,
+  ) {
+    return this.outbound.cancelScheduled(
+      scheduleId,
+      query.crmProjectId,
+      query.omnicusProjectId,
       request.crmIntegration?.projectId,
     );
   }

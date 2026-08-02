@@ -62,12 +62,35 @@ export async function ensureCrmOutboundHistoryIntent(
   if (!outbox) return false;
   if (!outbox.crmOperation) {
     const metadata = record(message.metadata);
+    let sourceContext:
+      { displayName: string; id: string; type: 'broadcast' | 'scenario' | 'system' } | undefined;
+    if (typeof metadata?.broadcastId === 'string') {
+      const broadcast = await transaction.broadcast.findUnique({
+        select: { id: true, name: true },
+        where: { projectId_id: { id: metadata.broadcastId, projectId } },
+      });
+      if (broadcast)
+        sourceContext = { displayName: broadcast.name, id: broadcast.id, type: 'broadcast' };
+    } else if (typeof metadata?.scenarioExecutionId === 'string') {
+      const execution = await transaction.scenarioExecution.findUnique({
+        select: { scenario: { select: { id: true, name: true } } },
+        where: { projectId_id: { id: metadata.scenarioExecutionId, projectId } },
+      });
+      if (execution)
+        sourceContext = {
+          displayName: execution.scenario.name,
+          id: execution.scenario.id,
+          type: 'scenario',
+        };
+    }
+    sourceContext ??= { displayName: 'Omnicus', id: 'system', type: 'system' };
     await transaction.crmOperation.createMany({
       data: [
         {
           contactId: message.contactId,
           inputSafe: {
             source,
+            sourceContext,
             ...(typeof metadata?.broadcastId === 'string'
               ? { broadcastId: metadata.broadcastId }
               : {}),

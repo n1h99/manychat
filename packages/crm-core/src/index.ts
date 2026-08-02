@@ -127,6 +127,12 @@ export interface ForwardOutboundMessageInput {
   scenarioExecutionId?: string;
   senderName?: string;
   source: 'AUTOMATION' | 'BROADCAST' | 'SYSTEM';
+  sourceContext?: {
+    type: 'scenario' | 'broadcast' | 'system';
+    id: string;
+    displayName: string;
+    webUrl?: string;
+  };
   text?: string;
 }
 
@@ -139,6 +145,43 @@ export interface ForwardReactionEventInput {
   normalizedEventId: string;
   occurredAt: string;
   oldReactions: CrmReactionInput[];
+}
+
+export interface ForwardMessageEditInput {
+  caption?: string;
+  contactId: string;
+  editedAt: string;
+  entities?: CrmMessageEntityInput[];
+  identity: CrmIdentityInput;
+  messageId: string;
+  normalizedEventId: string;
+  text?: string;
+}
+
+export interface ForwardContactShareInput {
+  contactId: string;
+  identity: CrmIdentityInput;
+  messageId: string;
+  normalizedEventId: string;
+  occurredAt: string;
+  sharedContact: {
+    firstName: string;
+    lastName?: string;
+    phoneNumber: string;
+    telegramUserId?: string;
+    vcard?: string;
+  };
+}
+
+export interface ForwardAutomationStateInput {
+  changedAt: string;
+  contactId: string;
+  conversationId: string;
+  identity: CrmIdentityInput;
+  mode: 'AUTO' | 'MANUAL' | 'PAUSED';
+  reasonCode?: string;
+  resumeAt?: string;
+  revision: number;
 }
 
 export interface CrmResult {
@@ -169,6 +212,15 @@ export interface CrmClient {
   forwardReactionEvent(
     context: CrmCallContext,
     input: ForwardReactionEventInput,
+  ): Promise<CrmResult>;
+  forwardMessageEdit?(context: CrmCallContext, input: ForwardMessageEditInput): Promise<CrmResult>;
+  forwardContactShare?(
+    context: CrmCallContext,
+    input: ForwardContactShareInput,
+  ): Promise<CrmResult>;
+  forwardAutomationState?(
+    context: CrmCallContext,
+    input: ForwardAutomationStateInput,
   ): Promise<CrmResult>;
   reconcile(context: CrmCallContext): Promise<CrmReconciliationResult>;
 }
@@ -325,6 +377,7 @@ export class HttpCrmClient implements CrmClient {
       scenarioExecutionId: input.scenarioExecutionId,
       senderName: input.senderName,
       source: input.source,
+      sourceContext: input.sourceContext,
       text: input.text,
     };
     const result = await this.postAndReconcile(
@@ -366,6 +419,88 @@ export class HttpCrmClient implements CrmClient {
       mode: result.mode,
       operationId: result.operationId,
       providerReference: result.crmReactionEventId,
+    };
+  }
+
+  async forwardMessageEdit(
+    context: CrmCallContext,
+    input: ForwardMessageEditInput,
+  ): Promise<CrmResult> {
+    const result = await this.postAndReconcile(
+      '/integrations/v1/omnicus/messages/edited',
+      context,
+      {
+        caption: input.caption,
+        crmProjectId: context.crmProjectId,
+        editedAt: input.editedAt,
+        entities: input.entities,
+        identity: input.identity,
+        messageId: input.messageId,
+        normalizedEventId: input.normalizedEventId,
+        omnicusContactId: input.contactId,
+        omnicusProjectId: context.projectId,
+        text: input.text,
+      },
+      messageResultSchema,
+    );
+    return {
+      mode: result.mode,
+      operationId: result.operationId,
+      providerReference: result.crmMessageId,
+    };
+  }
+
+  async forwardContactShare(
+    context: CrmCallContext,
+    input: ForwardContactShareInput,
+  ): Promise<CrmResult> {
+    const result = await this.postAndReconcile(
+      '/integrations/v1/omnicus/contacts/shared',
+      context,
+      {
+        crmProjectId: context.crmProjectId,
+        identity: input.identity,
+        messageId: input.messageId,
+        normalizedEventId: input.normalizedEventId,
+        occurredAt: input.occurredAt,
+        omnicusContactId: input.contactId,
+        omnicusProjectId: context.projectId,
+        sharedContact: input.sharedContact,
+      },
+      messageResultSchema,
+    );
+    return {
+      mode: result.mode,
+      operationId: result.operationId,
+      providerReference: result.crmMessageId,
+    };
+  }
+
+  async forwardAutomationState(
+    context: CrmCallContext,
+    input: ForwardAutomationStateInput,
+  ): Promise<CrmResult> {
+    const result = await this.postAndReconcile(
+      '/integrations/v1/omnicus/conversations/automation-state',
+      context,
+      {
+        changedAt: input.changedAt,
+        conversationId: input.conversationId,
+        crmProjectId: context.crmProjectId,
+        identity: input.identity,
+        mode: input.mode,
+        omnicusContactId: input.contactId,
+        omnicusProjectId: context.projectId,
+        reasonCode: input.reasonCode,
+        resumeAt: input.resumeAt,
+        revision: input.revision,
+      },
+      messageResultSchema,
+    );
+    return {
+      mode: result.mode,
+      operationId: result.operationId,
+      providerReference: result.crmMessageId,
     };
   }
 
@@ -523,6 +658,27 @@ export class MockCrmClient implements CrmClient {
     _input: ForwardReactionEventInput,
   ): Promise<CrmResult> {
     return this.perform(context, 'reaction');
+  }
+
+  async forwardMessageEdit(
+    context: CrmCallContext,
+    _input: ForwardMessageEditInput,
+  ): Promise<CrmResult> {
+    return this.perform(context, 'message');
+  }
+
+  async forwardContactShare(
+    context: CrmCallContext,
+    _input: ForwardContactShareInput,
+  ): Promise<CrmResult> {
+    return this.perform(context, 'message');
+  }
+
+  async forwardAutomationState(
+    context: CrmCallContext,
+    _input: ForwardAutomationStateInput,
+  ): Promise<CrmResult> {
+    return this.perform(context, 'message');
   }
 
   async reconcile(context: CrmCallContext): Promise<CrmReconciliationResult> {

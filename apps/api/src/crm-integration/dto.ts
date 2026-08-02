@@ -2,7 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  ArrayMaxSize,
+  ArrayMinSize,
   IsBoolean,
+  IsDateString,
   IsInt,
   IsIn,
   IsObject,
@@ -164,6 +167,60 @@ export class CrmOutboundMessageDto {
   @IsOptional()
   @IsUUID()
   replyToMessageId?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  structured?: Record<string, unknown>;
+}
+
+export class CrmScheduledMessageDto extends CrmOutboundMessageDto {
+  @ApiProperty({ format: 'date-time', type: String })
+  @IsDateString()
+  scheduledAt!: string;
+
+  @ApiProperty({ example: 'Europe/Berlin', type: String })
+  @IsString()
+  @Length(1, 64)
+  timezone!: string;
+}
+
+export class CrmScheduledMessageQueryDto {
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  crmProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  omnicusProjectId!: string;
+}
+
+export class CrmMediaGroupItemDto {
+  @ApiProperty({ enum: ['PHOTO', 'VIDEO', 'AUDIO', 'DOCUMENT'] })
+  @IsIn(['PHOTO', 'VIDEO', 'AUDIO', 'DOCUMENT'])
+  kind!: 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO';
+
+  @ApiProperty({ format: 'uuid', type: String })
+  @IsUUID()
+  mediaAssetId!: string;
+
+  @ApiPropertyOptional({ maxLength: 1024, type: String })
+  @IsOptional()
+  @IsString()
+  @Length(0, 1024)
+  caption?: string;
+
+  @ApiPropertyOptional({ isArray: true, type: Object })
+  @IsOptional()
+  @IsArray()
+  entities?: unknown[];
+
+  @ApiPropertyOptional({ type: Boolean })
+  @IsOptional()
+  @IsBoolean()
+  hasSpoiler?: boolean;
 }
 
 export class CrmTelegramScopeDto {
@@ -186,6 +243,84 @@ export class CrmTelegramScopeDto {
   @Type(() => CrmOutboundIdentityDto)
   @ValidateNested()
   identity!: CrmOutboundIdentityDto;
+}
+
+export class CrmMediaGroupDto extends CrmTelegramScopeDto {
+  @ApiProperty({ isArray: true, type: CrmMediaGroupItemDto })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(10)
+  @Type(() => CrmMediaGroupItemDto)
+  @ValidateNested({ each: true })
+  items!: CrmMediaGroupItemDto[];
+
+  @ApiPropertyOptional({ type: Boolean })
+  @IsOptional()
+  @IsBoolean()
+  disableNotification?: boolean;
+
+  @ApiPropertyOptional({ type: Boolean })
+  @IsOptional()
+  @IsBoolean()
+  protectContent?: boolean;
+}
+
+export class CrmBotInterfaceDto {
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  crmProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  omnicusProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  connectionId!: string;
+
+  @ApiProperty({ minimum: 0, type: Number })
+  @IsInt()
+  @Min(0)
+  expectedRevision!: number;
+
+  @ApiProperty({ isArray: true, type: Object })
+  @IsArray()
+  @ArrayMaxSize(100)
+  commands!: unknown[];
+
+  @ApiProperty({ type: Object })
+  @IsObject()
+  scope!: Record<string, unknown>;
+
+  @ApiProperty({ type: Object })
+  @IsObject()
+  menuButton!: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: String })
+  @IsOptional()
+  @IsString()
+  @Length(0, 2)
+  languageCode?: string;
+}
+
+export class CrmBotInterfaceQueryDto {
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  crmProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  omnicusProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  connectionId!: string;
 }
 
 export class CrmCapabilitiesQueryDto {
@@ -347,9 +482,19 @@ export class CrmAutomationStateQueryDto {
 }
 
 export class CrmAutomationStateDto extends CrmTelegramScopeDto {
-  @ApiProperty({ enum: ['AUTO', 'MANUAL'] })
-  @IsIn(['AUTO', 'MANUAL'])
-  mode!: 'AUTO' | 'MANUAL';
+  @ApiProperty({ enum: ['AUTO', 'MANUAL', 'PAUSED'] })
+  @IsIn(['AUTO', 'MANUAL', 'PAUSED'])
+  mode!: 'AUTO' | 'MANUAL' | 'PAUSED';
+
+  @ApiProperty({ minimum: 0, type: Number })
+  @IsInt()
+  @Min(0)
+  expectedRevision!: number;
+
+  @ApiPropertyOptional({ format: 'date-time', type: String })
+  @IsOptional()
+  @IsDateString()
+  resumeAt?: string;
 
   @ApiPropertyOptional({ type: String })
   @IsOptional()

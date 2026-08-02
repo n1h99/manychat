@@ -62,6 +62,7 @@ export class TelegramOutboundRecoveryService
     if (this.scanning) return;
     this.scanning = true;
     try {
+      await this.resumePausedConversations(now);
       const expiry = new Date(
         now.getTime() - this.config.get('TELEGRAM_OUTBOUND_LEASE_MS', { infer: true }),
       );
@@ -116,6 +117,77 @@ export class TelegramOutboundRecoveryService
     } finally {
       this.scanning = false;
     }
+  }
+  private async resumePausedConversations(now: Date): Promise<void> {
+    const conversationClient = this.database.client.conversation;
+    if (!conversationClient?.findMany) return;
+    const rows = await conversationClient.findMany({
+      select: {
+        automationRevision: true,
+        connectionId: true,
+        contactId: true,
+        id: true,
+        projectId: true,
+      },
+      take: 100,
+      where: { automationResumeAt: { lte: now }, automationState: 'PAUSED' },
+    });
+    for (const row of rows)
+      await this.database.client.$transaction(async (transaction) => {
+        const updated = await transaction.conversation.updateMany({
+          data: {
+            automationModeOverride: 'ENABLED',
+            automationReasonCode: 'PAUSE_EXPIRED',
+            automationResumeAt: null,
+            automationRevision: { increment: 1 },
+            automationState: 'AUTO',
+          },
+          where: {
+            automationRevision: row.automationRevision,
+            automationState: 'PAUSED',
+            id: row.id,
+            projectId: row.projectId,
+          },
+        });
+        if (updated.count !== 1) return;
+        const crm = await transaction.crmProjectConfig.findUnique({
+          select: { enabled: true, status: true },
+          where: { projectId: row.projectId },
+        });
+        if (!crm?.enabled || crm.status !== 'ACTIVE') return;
+        const revision = row.automationRevision + 1;
+        const idempotencyKey = `crm-automation-state-${row.id}-${revision}`;
+        await transaction.outboxRecord.createMany({
+          data: [{ idempotencyKey, kind: 'CRM', payload: {}, projectId: row.projectId }],
+          skipDuplicates: true,
+        });
+        const outbox = await transaction.outboxRecord.findUnique({
+          include: { crmOperation: { select: { id: true } } },
+          where: { projectId_idempotencyKey: { idempotencyKey, projectId: row.projectId } },
+        });
+        if (!outbox || outbox.crmOperation) return;
+        const operation = await transaction.crmOperation.create({
+          data: {
+            contactId: row.contactId,
+            inputSafe: {
+              changedAt: now.toISOString(),
+              connectionId: row.connectionId,
+              conversationId: row.id,
+              mode: 'AUTO',
+              reasonCode: 'PAUSE_EXPIRED',
+              resumeAt: null,
+              revision,
+            },
+            outboxRecordId: outbox.id,
+            projectId: row.projectId,
+            type: 'FORWARD_AUTOMATION_STATE',
+          },
+        });
+        await transaction.outboxRecord.update({
+          data: { payload: { crmOperationId: operation.id } },
+          where: { projectId_id: { id: outbox.id, projectId: row.projectId } },
+        });
+      });
   }
   private queueFor(): QueueClient {
     if (!this.queue)

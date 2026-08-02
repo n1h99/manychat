@@ -940,3 +940,77 @@ must not be implemented as several ordinary outbound calls and the
 lease, retry, `UNKNOWN`, recovery, and CRM history guarantees. Spoilers do not
 change media identity. Albums remain honestly capability-gated rather than
 claiming provider atomicity that PostgreSQL does not represent.
+
+## ADR-042: CRM provider extensions use durable aggregates and normalized events
+
+**Status:** Accepted, 2026-08-02.
+
+**Context:** Cyber Pulse requested source metadata, client-originated edits,
+temporary automation pause, application scheduling, Telegram albums, contact
+shares and bot-interface configuration. Telegram Bot API 10.2 was rechecked on
+2026-08-02. It exposes `edited_message`, `sendMediaGroup` (2-10 items),
+`sendContact`, `setMyCommands` and `setChatMenuButton`, but no native scheduled
+message lifecycle and no reliable update for arbitrary external deletion.
+
+**Decision:** Provider contract 3.2.0 adds these facilities behind
+connection-scoped capability discovery. Application scheduling uses PostgreSQL
+due records and the existing Telegram outbox. Albums use one aggregate and one
+provider call. Conversation state uses revision-based optimistic concurrency;
+automatic resume is a PostgreSQL recovery scan. Edits and contact shares use
+normalized inbox events and transactional CRM outbox intents. Scenario and
+broadcast history carries a safe optional `sourceContext` object with stable
+identifier, display name and an allow-listed Omnicus web URL.
+
+External Telegram deletion stays `supported=false`. External actions stay
+`supported=false` until Cyber Pulse publishes the callback ownership,
+authentication and retry contract. Telegram-native rich messages are not used
+as a portability layer; structured contact/location/poll requests have an
+explicit normalized fallback and capability entry.
+
+**Consequences:** `QUEUED` still does not mean `SENT`; `UNKNOWN` cannot be
+blindly retried. All new records and lookups include project, connection,
+identity and contact scope. Provider payloads, signed URLs and credentials are
+not persisted or returned.
+
+## ADR-043: Automation Studio 2.1 keeps authoring metadata in scenario versions
+
+**Status:** Accepted, 2026-08-02.
+
+**Decision:** Automation Studio 2.1 improves the existing Telegram-only runtime
+without adding another side-effect boundary or changing published scenario
+versions. Condition values, human-readable duration choices and Wait for Reply
+criteria are compiled into the existing versioned graph. Durable waits continue
+to store a copy of their normalized criteria in `WaitState.criteria`; no process
+memory or BullMQ job becomes authoritative.
+
+Wait criteria are a bounded discriminated contract: any supported customer
+reply, text comparison, callback-data comparison, or an allowlisted media type.
+Regular expressions are intentionally excluded from this slice to avoid an
+unbounded evaluation surface. Empty criteria from older published versions are
+interpreted as any supported customer reply.
+
+Condition groups are deliberately flat and bounded to 20 rules. A connection may
+carry either one legacy condition or one AND/OR group, never both. Exactly one
+unconditioned connection may act as the fallback when configured branches exist.
+Legacy scenario versions that keep their condition on the node remain executable.
+
+Draft autosave uses the scenario `updatedAt` value as an optimistic concurrency
+token. A stale writer receives `SCENARIO_DRAFT_CONFLICT` and autosave stops instead
+of overwriting the other draft. Undo/redo and clipboard history remain local UI
+state and are not added to the published graph or database schema.
+
+The execution inspector may expose only safe diagnostic metadata such as event
+type, selected output, next node, suspension state and timestamps. Customer
+message bodies, template text, contact values, secrets and raw provider payloads
+must not be copied into `NodeExecution.inputSafe` or `outputSafe`.
+
+Test run and replay are pure graph simulations. Replay may reuse a stored
+execution's normalized event/contact context, but it never calls Telegram or CRM,
+changes contacts/tags, or creates durable Delay/Wait state. A replay audit records
+only the execution ID, completion flag and step count.
+
+**Consequences:** Existing published graphs remain executable. Editor resource
+selectors resolve tags and active custom-field definitions through existing
+project-scoped APIs, while the saved graph keeps stable IDs/keys. Regex matching,
+side-effecting retry/replay, arbitrary HTTP actions and additional channels remain
+separate reviewed slices.

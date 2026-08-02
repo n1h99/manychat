@@ -26,6 +26,11 @@ function transaction(metadata: Record<string, unknown>) {
       findUnique: vi.fn().mockResolvedValue(outbox),
       update: vi.fn().mockResolvedValue({}),
     },
+    scenarioExecution: {
+      findUnique: vi.fn().mockResolvedValue({
+        scenario: { id: 'scenario-a', name: 'Qualification' },
+      }),
+    },
   };
 }
 
@@ -55,6 +60,13 @@ describe('CRM outbound history intent', () => {
       data: [
         expect.objectContaining({
           contactId: 'contact-a',
+          inputSafe: expect.objectContaining({
+            sourceContext: {
+              displayName: 'Qualification',
+              id: 'scenario-a',
+              type: 'scenario',
+            },
+          }),
           messageId: 'message-a',
           outboxRecordId: 'crm-outbox-a',
           projectId: 'project-a',

@@ -95,4 +95,75 @@ describe('Telegram v3 adapter actions', () => {
     await fixture.adapter.sendMessageDraft('secret', { chatId: '123', draftId: 8, text: '' });
     expect(fixture.request).not.toHaveBeenCalled();
   });
+
+  it('sends a media group as one provider operation and preserves item order', async () => {
+    const fixture = adapter();
+    fixture.request.mockResolvedValueOnce({
+      ok: true,
+      result: [{ message_id: 41 }, { message_id: 42 }],
+    });
+
+    await expect(
+      fixture.adapter.sendMediaGroup('secret', {
+        chatId: '123',
+        items: [
+          { caption: 'First', kind: 'PHOTO', media: 'file-photo-a' },
+          { hasSpoiler: true, kind: 'VIDEO', media: 'file-video-a' },
+        ],
+      }),
+    ).resolves.toEqual({ messageIds: ['41', '42'] });
+
+    expect(fixture.request).toHaveBeenCalledWith(
+      'secret',
+      'sendMediaGroup',
+      expect.objectContaining({
+        media: [
+          expect.objectContaining({ caption: 'First', media: 'file-photo-a', type: 'photo' }),
+          expect.objectContaining({ has_spoiler: true, media: 'file-video-a', type: 'video' }),
+        ],
+      }),
+    );
+  });
+
+  it('configures scoped commands and menu without accepting a provider chat id from CRM', async () => {
+    const fixture = adapter();
+    await fixture.adapter.configureBotInterface('secret', {
+      commands: [{ command: 'help', description: 'Show help' }],
+      menuButton: { type: 'commands' },
+      scope: { chatId: '123', type: 'chat' },
+    });
+
+    expect(fixture.request.mock.calls.map((call) => call[1])).toEqual([
+      'setMyCommands',
+      'setChatMenuButton',
+    ]);
+    expect(fixture.request).toHaveBeenNthCalledWith(
+      1,
+      'secret',
+      'setMyCommands',
+      expect.objectContaining({ scope: { chat_id: 123, type: 'chat' } }),
+    );
+  });
+
+  it('maps normalized contact, location and poll requests to dedicated Bot API methods', async () => {
+    const fixture = adapter();
+    await fixture.adapter.sendStructuredMessage('secret', {
+      chatId: '123',
+      structured: { firstName: 'Ada', phoneNumber: '+12025550123', type: 'contact' },
+    });
+    await fixture.adapter.sendStructuredMessage('secret', {
+      chatId: '123',
+      structured: { latitude: 40.4, longitude: 49.8, type: 'location' },
+    });
+    await fixture.adapter.sendStructuredMessage('secret', {
+      chatId: '123',
+      structured: { options: ['A', 'B'], question: 'Choose', type: 'poll' },
+    });
+
+    expect(fixture.request.mock.calls.map((call) => call[1])).toEqual([
+      'sendContact',
+      'sendLocation',
+      'sendPoll',
+    ]);
+  });
 });

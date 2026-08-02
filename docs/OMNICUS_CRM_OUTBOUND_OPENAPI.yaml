@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Omnicus API for Cyber Pulse CRM
-  version: 3.1.0
+  version: 3.2.0
   description: Project-scoped CRM to Omnicus Telegram messaging, mutations, ephemeral actions and capability contract.
 security:
   - serviceBearer: []
@@ -332,6 +332,9 @@ paths:
         '200': { $ref: '#/components/responses/AutomationState' }
     put:
       operationId: setCrmTelegramAutomationState
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
       requestBody:
         required: true
         content:
@@ -340,9 +343,11 @@ paths:
               allOf:
                 - $ref: '#/components/schemas/TelegramScope'
                 - type: object
-                  required: [mode]
+                  required: [mode, expectedRevision]
                   properties:
-                    mode: { type: string, enum: [AUTO, MANUAL] }
+                    mode: { type: string, enum: [AUTO, MANUAL, PAUSED] }
+                    expectedRevision: { type: integer, minimum: 0 }
+                    resumeAt: { type: string, format: date-time }
                     reasonCode: { type: string, minLength: 1, maxLength: 128 }
       responses:
         '200': { $ref: '#/components/responses/AutomationState' }
@@ -384,6 +389,105 @@ paths:
           $ref: '#/components/responses/SafeError'
         '503':
           $ref: '#/components/responses/SafeError'
+  /integrations/v1/crm/messages/scheduled:
+    post:
+      operationId: createScheduledCrmMessage
+      description: Application-owned one-shot scheduling. Telegram has no native schedule lifecycle.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduledOutboundMessage' }
+      responses:
+        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+    get:
+      operationId: listScheduledCrmMessages
+      parameters:
+        - $ref: '#/components/parameters/CrmProjectId'
+        - $ref: '#/components/parameters/OmnicusProjectId'
+      responses:
+        '200':
+          description: Up to 100 project-scoped schedules.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: { $ref: '#/components/schemas/ScheduledMessage' }
+  /integrations/v1/crm/messages/scheduled/{scheduleId}:
+    parameters:
+      - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
+      - $ref: '#/components/parameters/CrmProjectId'
+      - $ref: '#/components/parameters/OmnicusProjectId'
+    get:
+      operationId: getScheduledCrmMessage
+      responses:
+        '200':
+          description: Current schedule state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduledMessage' }
+    delete:
+      operationId: cancelScheduledCrmMessage
+      responses:
+        '200':
+          description: Cancelled or idempotently already cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduledMessageCancellation' }
+        '409': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/messages/media-group:
+    post:
+      operationId: queueCrmTelegramMediaGroup
+      description: Queues one durable aggregate and one Telegram sendMediaGroup call.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MediaGroup' }
+      responses:
+        '200':
+          description: Aggregate queued; not necessarily sent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaGroupQueuedOperation' }
+        '409': { $ref: '#/components/responses/SafeError' }
+  /integrations/v1/crm/bot-interface:
+    get:
+      operationId: getCrmTelegramBotInterface
+      parameters:
+        - $ref: '#/components/parameters/CrmProjectId'
+        - $ref: '#/components/parameters/OmnicusProjectId'
+        - { name: connectionId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Normalized command/menu configuration and revision.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BotInterfaceState' }
+    put:
+      operationId: configureCrmTelegramBotInterface
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BotInterface' }
+      responses:
+        '200':
+          description: Durable provider operation queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BotInterfaceQueuedOperation' }
+        '409': { $ref: '#/components/responses/SafeError' }
 components:
   securitySchemes:
     serviceBearer:
@@ -503,11 +607,169 @@ components:
           type: string
           format: uuid
           description: Omnicus UUID of an existing message in the same project, connection and conversation.
+        structured:
+          $ref: '#/components/schemas/StructuredMessage'
       oneOf:
         - required:
             - text
         - required:
             - media
+        - required:
+            - structured
+    StructuredMessage:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, firstName, phoneNumber]
+          properties:
+            type: { type: string, enum: [contact] }
+            firstName: { type: string, minLength: 1, maxLength: 64 }
+            lastName: { type: string, maxLength: 64 }
+            phoneNumber: { type: string, minLength: 1, maxLength: 64 }
+            vcard: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [type, latitude, longitude]
+          properties:
+            type: { type: string, enum: [location] }
+            latitude: { type: number, minimum: -90, maximum: 90 }
+            longitude: { type: number, minimum: -180, maximum: 180 }
+            horizontalAccuracy: { type: number, minimum: 0, maximum: 1500 }
+        - type: object
+          additionalProperties: false
+          required: [type, question, options]
+          properties:
+            type: { type: string, enum: [poll] }
+            question: { type: string, minLength: 1, maxLength: 300 }
+            options:
+              type: array
+              minItems: 2
+              maxItems: 12
+              items: { type: string, minLength: 1, maxLength: 100 }
+            isAnonymous: { type: boolean }
+            allowsMultipleAnswers: { type: boolean }
+    ScheduledOutboundMessage:
+      allOf:
+        - $ref: '#/components/schemas/OutboundMessage'
+        - type: object
+          required: [scheduledAt, timezone]
+          properties:
+            scheduledAt: { type: string, format: date-time }
+            timezone: { type: string, description: IANA timezone name. }
+    ScheduledMessage:
+      type: object
+      additionalProperties: false
+      required: [id, messageId, outboxRecordId, seriesId, occurrence, status, timezone, scheduledAt]
+      properties:
+        id: { type: string, format: uuid }
+        messageId: { type: string, format: uuid }
+        outboxRecordId: { type: string, format: uuid }
+        seriesId: { type: string, format: uuid }
+        occurrence: { type: integer, minimum: 1, const: 1 }
+        status: { type: string, enum: [QUEUED, PROCESSING, SENT, FAILED, UNKNOWN, CANCELLED] }
+        timezone: { type: string, description: IANA timezone name. }
+        scheduledAt: { type: string, format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+    ScheduledMessageCancellation:
+      type: object
+      additionalProperties: false
+      required: [id, replayed, status]
+      properties:
+        id: { type: string, format: uuid }
+        replayed: { type: boolean }
+        status: { type: string, const: CANCELLED }
+    MediaGroupItem:
+      type: object
+      additionalProperties: false
+      required: [kind, mediaAssetId]
+      properties:
+        kind: { type: string, enum: [PHOTO, VIDEO, AUDIO, DOCUMENT] }
+        mediaAssetId: { type: string, format: uuid }
+        caption: { type: string, maxLength: 1024 }
+        entities:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/MessageEntity' }
+        hasSpoiler: { type: boolean }
+    MediaGroup:
+      allOf:
+        - $ref: '#/components/schemas/TelegramScope'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              minItems: 2
+              maxItems: 10
+              items: { $ref: '#/components/schemas/MediaGroupItem' }
+            disableNotification: { type: boolean }
+            protectContent: { type: boolean }
+    BotInterface:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          crmProjectId,
+          omnicusProjectId,
+          connectionId,
+          expectedRevision,
+          commands,
+          scope,
+          menuButton,
+        ]
+      properties:
+        crmProjectId: { type: string }
+        omnicusProjectId: { type: string }
+        connectionId: { type: string }
+        expectedRevision: { type: integer, minimum: 0 }
+        commands:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [command, description]
+            properties:
+              command: { type: string, pattern: '^[a-z0-9_]{1,32}$' }
+              description: { type: string, minLength: 1, maxLength: 256 }
+        scope:
+          {
+            type: object,
+            description: default,
+            all_private_chats,
+            or project-scoped channelIdentityId.,
+          }
+        languageCode: { type: string, maxLength: 2 }
+        menuButton: { type: object, description: default, commands, or HTTPS web_app. }
+    BotInterfaceState:
+      type: object
+      additionalProperties: false
+      required: [commands, commandScope, languageCode, menuButton, revision, updatedAt]
+      properties:
+        commands: { type: array, items: { type: object } }
+        commandScope: { type: object }
+        languageCode: { type: string }
+        menuButton: { type: object }
+        revision: { type: integer, minimum: 0 }
+        updatedAt: { type: [string, 'null'], format: date-time }
+    BotInterfaceQueuedOperation:
+      type: object
+      additionalProperties: false
+      required: [operationId, replayed, status]
+      properties:
+        operationId: { type: string, format: uuid }
+        revision: { type: integer, minimum: 1 }
+        replayed: { type: boolean }
+        status: { type: string, const: QUEUED }
+    MediaGroupQueuedOperation:
+      type: object
+      additionalProperties: false
+      required: [mediaGroupId, operationId, replayed, status]
+      properties:
+        mediaGroupId: { type: string, format: uuid }
+        operationId: { type: string, format: uuid }
+        replayed: { type: boolean }
+        status: { type: string, const: QUEUED }
     MediaKind:
       type: string
       enum:
@@ -624,7 +886,7 @@ components:
       type: object
       required: [contractVersion, telegramBotApiVersion, capabilities]
       properties:
-        contractVersion: { type: string, enum: [3.1.0] }
+        contractVersion: { type: string, enum: [3.2.0] }
         telegramBotApiVersion: { type: string, enum: ['10.2'] }
         capabilities:
           type: object
@@ -679,6 +941,9 @@ components:
             - QUEUED
         replayed:
           type: boolean
+        scheduleId:
+          type: string
+          format: uuid
     OperationStatus:
       type: object
       additionalProperties: false
@@ -767,11 +1032,12 @@ components:
         application/json:
           schema:
             type: object
-            required: [mode, pausedSupported, revision]
+            required: [mode, revision, resumeAt, reasonCode]
             properties:
-              mode: { type: string, enum: [AUTO, MANUAL] }
-              pausedSupported: { type: boolean, const: false }
-              revision: { type: string }
+              mode: { type: string, enum: [AUTO, MANUAL, PAUSED] }
+              resumeAt: { type: [string, 'null'], format: date-time }
+              reasonCode: { type: [string, 'null'] }
+              revision: { type: integer, minimum: 0 }
               changedAt: { type: [string, 'null'], format: date-time }
     SafeError:
       description: Safe structured error without provider payload or credentials.

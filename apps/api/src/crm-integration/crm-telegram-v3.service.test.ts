@@ -31,8 +31,30 @@ function fixture() {
     payload: { messageId: 'message-a' },
     status: 'PENDING',
   };
+  const transaction = {
+    conversation: {
+      create: vi.fn().mockResolvedValue({
+        automationReasonCode: 'CRM_PAUSE',
+        automationResumeAt: new Date('2026-08-03T00:00:00.000Z'),
+        automationRevision: 1,
+        automationState: 'PAUSED',
+        connectionId: 'connection-a',
+        contactId: 'contact-a',
+        id: 'conversation-a',
+        projectId: 'project-a',
+        updatedAt: new Date('2026-08-02T05:00:00.000Z'),
+      }),
+      findUnique: vi.fn().mockResolvedValue(null),
+      updateMany: vi.fn(),
+    },
+    crmProjectConfig: {
+      findUnique: vi.fn().mockResolvedValue({ enabled: false, status: 'ACTIVE' }),
+    },
+    idempotencyRecord: { create: vi.fn() },
+  };
   const database = {
     client: {
+      $transaction: (callback: (input: typeof transaction) => unknown) => callback(transaction),
       channelConnection: {
         findUnique: vi.fn().mockResolvedValue({
           id: 'connection-a',
@@ -64,6 +86,7 @@ function fixture() {
           projectId: 'project-a',
         }),
       },
+      idempotencyRecord: { findUnique: vi.fn().mockResolvedValue(null) },
       outboxRecord: {
         create: vi.fn().mockResolvedValue(outbox),
         findUnique: vi.fn().mockResolvedValue(null),
@@ -82,7 +105,7 @@ function fixture() {
     queue as never,
     new ConfigService({ CHANNEL_SECRETS_KEY: key }) as never,
   );
-  return { database, queue, service };
+  return { database, queue, service, transaction };
 }
 
 describe('CrmTelegramV3Service', () => {
@@ -120,7 +143,14 @@ describe('CrmTelegramV3Service', () => {
         },
         quote: { supported: true },
         reactions: { supported: true },
-        scheduling: { supported: false },
+        automationPausedMode: { supported: true },
+        botInterface: { supported: true },
+        contactShare: { supported: true },
+        mediaGroups: { supported: true },
+        scheduling: {
+          limits: expect.objectContaining({ applicationOwned: true, recurring: false }),
+          supported: true,
+        },
         stickers: {
           limits: expect.objectContaining({
             captions: false,
@@ -134,7 +164,7 @@ describe('CrmTelegramV3Service', () => {
           supported: false,
         },
       },
-      contractVersion: '3.1.0',
+      contractVersion: '3.2.0',
       telegramBotApiVersion: '10.2',
     });
   });
@@ -179,6 +209,36 @@ describe('CrmTelegramV3Service', () => {
       }),
     );
     expect(test.queue.enqueue).toHaveBeenCalledWith('operation-a');
+  });
+
+  it('stores a replayable PAUSED transition with optimistic concurrency metadata', async () => {
+    const test = fixture();
+
+    await expect(
+      test.service.setAutomationState(
+        {
+          ...scope,
+          expectedRevision: 0,
+          mode: 'PAUSED',
+          reasonCode: 'CRM_PAUSE',
+          resumeAt: '2026-08-03T00:00:00.000Z',
+        },
+        'automation-state-a',
+        'correlation-a',
+      ),
+    ).resolves.toMatchObject({ mode: 'PAUSED', revision: 1 });
+
+    expect(test.transaction.idempotencyRecord.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        key: 'automation-state-a',
+        projectId: 'project-a',
+        resultSafe: expect.objectContaining({
+          request: expect.objectContaining({ expectedRevision: 0, mode: 'PAUSED' }),
+          response: expect.objectContaining({ mode: 'PAUSED', revision: 1 }),
+        }),
+        scope: 'crm-automation-state',
+      }),
+    });
   });
 
   it('never retries an UNKNOWN operation blindly', async () => {

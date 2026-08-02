@@ -112,6 +112,9 @@ enum CrmOperationType {
   FORWARD_INBOUND_MESSAGE
   FORWARD_OUTBOUND_MESSAGE
   FORWARD_REACTION_EVENT
+  FORWARD_MESSAGE_EDIT
+  FORWARD_CONTACT_SHARE
+  FORWARD_AUTOMATION_STATE
 }
 
 enum CrmProvider {
@@ -139,6 +142,9 @@ enum NormalizedEventType {
   STICKER
   CALLBACK_QUERY
   REACTION
+  MESSAGE_EDITED
+  CONTACT_SHARED
+  AUTOMATION_STATE
   CHAT_MEMBER
   UNSUPPORTED
 }
@@ -146,6 +152,12 @@ enum NormalizedEventType {
 enum ConversationStatus {
   ACTIVE
   CLOSED
+}
+
+enum ConversationAutomationState {
+  AUTO
+  MANUAL
+  PAUSED
 }
 
 enum ChannelIdentityStatus {
@@ -169,9 +181,29 @@ enum MessageType {
   VIDEO_NOTE
   ANIMATION
   STICKER
+  CONTACT
+  LOCATION
+  POLL
   CALLBACK_QUERY
   SYSTEM
   UNSUPPORTED
+}
+
+enum ScheduledMessageStatus {
+  QUEUED
+  PROCESSING
+  SENT
+  FAILED
+  UNKNOWN
+  CANCELLED
+}
+
+enum TelegramMediaGroupStatus {
+  QUEUED
+  PROCESSING
+  SENT
+  FAILED
+  UNKNOWN
 }
 
 enum MessageStatus {
@@ -576,6 +608,9 @@ model Project {
   crmOperations            CrmOperation[]
   broadcasts               Broadcast[]
   broadcastRecipients      BroadcastRecipient[]
+  scheduledMessages        ScheduledMessage[]
+  telegramMediaGroups      TelegramMediaGroup[]
+  telegramBotInterfaces    TelegramBotInterface[]
 
   @@index([status, createdAt])
   @@map("projects")
@@ -611,6 +646,8 @@ model Contact {
   crmOperations       CrmOperation[]
   customFieldValues   ContactCustomFieldValue[]
   broadcastRecipients BroadcastRecipient[]
+  scheduledMessages   ScheduledMessage[]
+  telegramMediaGroups TelegramMediaGroup[]
   mergedInto          Contact?                  @relation("ContactMerge", fields: [projectId, mergedIntoContactId], references: [projectId, id], onDelete: Restrict)
   mergedContacts      Contact[]                 @relation("ContactMerge")
 
@@ -640,6 +677,8 @@ model ChannelIdentity {
   contact             Contact               @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Cascade)
   connection          ChannelConnection     @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
   broadcastRecipients BroadcastRecipient[]
+  scheduledMessages   ScheduledMessage[]
+  telegramMediaGroups TelegramMediaGroup[]
 
   @@unique([projectId, id])
   @@unique([projectId, connectionId, externalUserId])
@@ -672,6 +711,9 @@ model ChannelConnection {
   broadcasts             Broadcast[]
   broadcastRecipients    BroadcastRecipient[]
   mediaAssets            MediaAsset[]
+  scheduledMessages      ScheduledMessage[]
+  telegramMediaGroups    TelegramMediaGroup[]
+  telegramBotInterface   TelegramBotInterface?
 
   @@unique([projectId, id])
   @@index([projectId, status])
@@ -931,19 +973,23 @@ model DelayedAction {
 }
 
 model Conversation {
-  id                     String              @id @default(uuid())
+  id                     String                      @id @default(uuid())
   projectId              String
   connectionId           String
   contactId              String
   externalChatId         String
-  status                 ConversationStatus  @default(ACTIVE)
+  status                 ConversationStatus          @default(ACTIVE)
   automationModeOverride AutomationMode?
-  lastMessageAt          DateTime?           @db.Timestamptz(3)
-  nextAutomationSequence BigInt              @default(0)
-  createdAt              DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
-  contact                Contact             @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
-  connection             ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  automationState        ConversationAutomationState @default(AUTO)
+  automationResumeAt     DateTime?                   @db.Timestamptz(3)
+  automationReasonCode   String?
+  automationRevision     Int                         @default(0)
+  lastMessageAt          DateTime?                   @db.Timestamptz(3)
+  nextAutomationSequence BigInt                      @default(0)
+  createdAt              DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                    @updatedAt @db.Timestamptz(3)
+  contact                Contact                     @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  connection             ChannelConnection           @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
   messages               Message[]
   scenarioExecutions     ScenarioExecution[]
   waitStates             WaitState[]
@@ -980,6 +1026,7 @@ model Message {
   mediaAsset         MediaAsset?         @relation(fields: [projectId, mediaAssetId], references: [projectId, id], onDelete: Restrict)
   broadcastRecipient BroadcastRecipient? @relation("BroadcastRecipientMessage")
   crmOperations      CrmOperation[]
+  scheduledMessage   ScheduledMessage?
 
   @@unique([projectId, id])
   @@unique([projectId, normalizedEventId])
@@ -991,25 +1038,28 @@ model Message {
 }
 
 model OutboxRecord {
-  id                 String              @id @default(uuid())
-  projectId          String
-  connectionId       String?
-  kind               OutboxKind          @default(TELEGRAM)
-  idempotencyKey     String
-  status             OutboxRecordStatus  @default(PENDING)
-  payload            Json
-  attempts           Int                 @default(0)
-  maxAttempts        Int                 @default(8)
-  nextAttemptAt      DateTime?           @db.Timestamptz(3)
-  lockedAt           DateTime?           @db.Timestamptz(3)
-  lockedBy           String?
-  lastError          String?
-  completedAt        DateTime?           @db.Timestamptz(3)
-  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
-  connection         ChannelConnection?  @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  crmOperation       CrmOperation?
-  broadcastRecipient BroadcastRecipient? @relation("BroadcastRecipientOutbox")
+  id                   String                @id @default(uuid())
+  projectId            String
+  connectionId         String?
+  kind                 OutboxKind            @default(TELEGRAM)
+  idempotencyKey       String
+  status               OutboxRecordStatus    @default(PENDING)
+  payload              Json
+  attempts             Int                   @default(0)
+  maxAttempts          Int                   @default(8)
+  nextAttemptAt        DateTime?             @db.Timestamptz(3)
+  lockedAt             DateTime?             @db.Timestamptz(3)
+  lockedBy             String?
+  lastError            String?
+  completedAt          DateTime?             @db.Timestamptz(3)
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
+  connection           ChannelConnection?    @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  crmOperation         CrmOperation?
+  broadcastRecipient   BroadcastRecipient?   @relation("BroadcastRecipientOutbox")
+  scheduledMessage     ScheduledMessage?
+  telegramMediaGroup   TelegramMediaGroup?
+  telegramBotInterface TelegramBotInterface?
 
   @@unique([projectId, id])
   @@unique([projectId, idempotencyKey])
@@ -1054,32 +1104,33 @@ model Broadcast {
 }
 
 model MediaAsset {
-  id                    String                   @id @default(uuid())
-  projectId             String
-  connectionId          String?
-  source                MediaAssetSource
-  kind                  MessageTemplateKind
-  status                MediaAssetStatus
-  providerMediaId       String?
-  providerMediaUniqueId String?
-  providerMetadata      Json?
-  bucketKey             String?                  @unique
-  originalFilename      String?
-  detectedMimeType      String?
-  declaredMimeType      String?
-  extension             String?
-  sizeBytes             BigInt?
-  checksumSha256        String?
-  retentionUntil        DateTime?                @db.Timestamptz(3)
-  availableAt           DateTime?                @db.Timestamptz(3)
-  rejectedAt            DateTime?                @db.Timestamptz(3)
-  deletedAt             DateTime?                @db.Timestamptz(3)
-  createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
-  updatedAt             DateTime                 @updatedAt @db.Timestamptz(3)
-  project               Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  connection            ChannelConnection?       @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  messages              Message[]
-  templateVersions      MessageTemplateVersion[]
+  id                      String                   @id @default(uuid())
+  projectId               String
+  connectionId            String?
+  source                  MediaAssetSource
+  kind                    MessageTemplateKind
+  status                  MediaAssetStatus
+  providerMediaId         String?
+  providerMediaUniqueId   String?
+  providerMetadata        Json?
+  bucketKey               String?                  @unique
+  originalFilename        String?
+  detectedMimeType        String?
+  declaredMimeType        String?
+  extension               String?
+  sizeBytes               BigInt?
+  checksumSha256          String?
+  retentionUntil          DateTime?                @db.Timestamptz(3)
+  availableAt             DateTime?                @db.Timestamptz(3)
+  rejectedAt              DateTime?                @db.Timestamptz(3)
+  deletedAt               DateTime?                @db.Timestamptz(3)
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                 @updatedAt @db.Timestamptz(3)
+  project                 Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection              ChannelConnection?       @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  messages                Message[]
+  templateVersions        MessageTemplateVersion[]
+  telegramMediaGroupItems TelegramMediaGroupItem[]
 
   @@unique([projectId, id])
   @@unique([projectId, connectionId, providerMediaId])
@@ -1177,6 +1228,110 @@ model BroadcastRecipient {
   @@map("broadcast_recipients")
 }
 
+model ScheduledMessage {
+  id                String                 @id @default(uuid())
+  projectId         String
+  connectionId      String
+  contactId         String
+  channelIdentityId String
+  messageId         String                 @unique
+  outboxRecordId    String                 @unique
+  seriesId          String
+  occurrence        Int                    @default(1)
+  status            ScheduledMessageStatus @default(QUEUED)
+  request           Json
+  timezone          String
+  scheduledAt       DateTime               @db.Timestamptz(3)
+  recurrence        Json?
+  cancelledAt       DateTime?              @db.Timestamptz(3)
+  completedAt       DateTime?              @db.Timestamptz(3)
+  createdAt         DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime               @updatedAt @db.Timestamptz(3)
+  project           Project                @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection        ChannelConnection      @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  contact           Contact                @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  channelIdentity   ChannelIdentity        @relation(fields: [projectId, channelIdentityId], references: [projectId, id], onDelete: Restrict)
+  message           Message                @relation(fields: [projectId, messageId], references: [projectId, id], onDelete: Restrict)
+  outboxRecord      OutboxRecord           @relation(fields: [projectId, outboxRecordId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, messageId])
+  @@unique([projectId, outboxRecordId])
+  @@unique([projectId, seriesId, occurrence])
+  @@index([projectId, status, scheduledAt])
+  @@index([projectId, connectionId, status])
+  @@map("scheduled_messages")
+}
+
+model TelegramMediaGroup {
+  id                  String                   @id @default(uuid())
+  projectId           String
+  connectionId        String
+  contactId           String
+  channelIdentityId   String
+  outboxRecordId      String                   @unique
+  status              TelegramMediaGroupStatus @default(QUEUED)
+  disableNotification Boolean                  @default(false)
+  protectContent      Boolean                  @default(false)
+  providerMessageIds  Json?
+  createdAt           DateTime                 @default(now()) @db.Timestamptz(3)
+  completedAt         DateTime?                @db.Timestamptz(3)
+  updatedAt           DateTime                 @updatedAt @db.Timestamptz(3)
+  project             Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection          ChannelConnection        @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  contact             Contact                  @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  channelIdentity     ChannelIdentity          @relation(fields: [projectId, channelIdentityId], references: [projectId, id], onDelete: Restrict)
+  outboxRecord        OutboxRecord             @relation(fields: [projectId, outboxRecordId], references: [projectId, id], onDelete: Restrict)
+  items               TelegramMediaGroupItem[]
+
+  @@unique([projectId, id])
+  @@unique([projectId, outboxRecordId])
+  @@index([projectId, connectionId, status])
+  @@map("telegram_media_groups")
+}
+
+model TelegramMediaGroupItem {
+  id                String              @id @default(uuid())
+  projectId         String
+  mediaGroupId      String
+  mediaAssetId      String
+  position          Int
+  kind              MessageTemplateKind
+  caption           String?
+  entities          Json?
+  hasSpoiler        Boolean             @default(false)
+  providerMessageId String?
+  mediaGroup        TelegramMediaGroup  @relation(fields: [projectId, mediaGroupId], references: [projectId, id], onDelete: Restrict)
+  mediaAsset        MediaAsset          @relation(fields: [projectId, mediaAssetId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, mediaGroupId, position])
+  @@index([projectId, mediaAssetId])
+  @@map("telegram_media_group_items")
+}
+
+model TelegramBotInterface {
+  id             String            @id @default(uuid())
+  projectId      String
+  connectionId   String
+  outboxRecordId String?           @unique
+  commands       Json              @default("[]")
+  commandScope   Json              @default("{\"type\":\"default\"}")
+  languageCode   String            @default("")
+  menuButton     Json              @default("{\"type\":\"default\"}")
+  revision       Int               @default(0)
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime          @updatedAt @db.Timestamptz(3)
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection     ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  outboxRecord   OutboxRecord?     @relation(fields: [projectId, outboxRecordId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId])
+  @@unique([projectId, outboxRecordId])
+  @@map("telegram_bot_interfaces")
+}
+
 model CrmProjectConfig {
   id                   String              @id @default(uuid())
   projectId            String              @unique
@@ -1234,12 +1389,13 @@ model CrmOperation {
 }
 
 model IdempotencyRecord {
-  id        String    @id @default(uuid())
-  projectId String
-  scope     String
-  key       String
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  expiresAt DateTime? @db.Timestamptz(3)
+  id         String    @id @default(uuid())
+  projectId  String
+  scope      String
+  key        String
+  resultSafe Json?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime? @db.Timestamptz(3)
 
   @@unique([projectId, scope, key])
   @@index([projectId, expiresAt])

@@ -30,6 +30,7 @@ function database(options: { existing?: boolean; mediaKind?: string; projectId?:
       findFirst: vi.fn().mockResolvedValue({ externalMessageId: 'telegram-message-42' }),
     },
     outboxRecord: { create: vi.fn().mockResolvedValue({ id: 'outbox-a' }) },
+    scheduledMessage: { create: vi.fn().mockResolvedValue({ id: 'schedule-a' }) },
   };
   return {
     client: {
@@ -76,6 +77,9 @@ function database(options: { existing?: boolean; mediaKind?: string; projectId?:
           status: 'ACTIVE',
         }),
       },
+      scheduledMessage: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
     },
     transaction,
   };
@@ -118,6 +122,45 @@ describe('CrmOutboundService', () => {
     });
     expect(queue.enqueue).not.toHaveBeenCalled();
     expect(db.transaction.message.create).not.toHaveBeenCalled();
+  });
+
+  it('persists a one-shot schedule without enqueueing it before its due time', async () => {
+    const db = database();
+    const queue = { enqueue: vi.fn() };
+    const service = new CrmOutboundService(db as never, queue as never);
+    const scheduledAt = new Date(Date.now() + 60_000).toISOString();
+
+    await expect(
+      service.queue(
+        { ...dto, scheduledAt, timezone: 'Asia/Baku' },
+        'crm-schedule-a',
+        'correlation-a',
+      ),
+    ).resolves.toEqual({
+      messageId: 'message-a',
+      operationId: 'outbox-a',
+      replayed: false,
+      scheduleId: 'schedule-a',
+      status: 'QUEUED',
+    });
+
+    expect(db.transaction.outboxRecord.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          idempotencyKey: 'crm-scheduled-crm-schedule-a',
+          nextAttemptAt: new Date(scheduledAt),
+        }),
+      }),
+    );
+    expect(db.transaction.scheduledMessage.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          scheduledAt: new Date(scheduledAt),
+          timezone: 'Asia/Baku',
+        }),
+      }),
+    );
+    expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
   it('rejects cross-project routing before creating side effects', async () => {

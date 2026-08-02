@@ -215,7 +215,10 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       return;
     }
 
-    const connectionId = operation.normalizedEvent?.connectionId ?? operation.message?.connectionId;
+    const connectionId =
+      operation.normalizedEvent?.connectionId ??
+      operation.message?.connectionId ??
+      this.stringProperty(operation.inputSafe, 'connectionId');
     const identityRow =
       operation.contact.channelIdentities.find(
         (identity) => identity.connectionId === connectionId,
@@ -239,6 +242,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     const context = {
       correlationId:
         operation.normalizedEvent?.inboxRecord.rawWebhookEvent.correlationId ??
+        this.stringProperty(operation.inputSafe, 'correlationId') ??
         `crm-operation-${operation.id}`,
       crmProjectId: operation.project.crmConfig.crmProjectId,
       idempotencyKey: outboxRecordId,
@@ -307,6 +311,67 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           occurredAt: reaction.occurredAt,
           oldReactions: reaction.oldReactions,
         });
+      } else if (operation.type === 'FORWARD_MESSAGE_EDIT') {
+        if (!this.client.forwardMessageEdit) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_message_edit_unsupported');
+          return;
+        }
+        const edit = this.messageEditEvent(operation.normalizedEvent?.payload);
+        if (!edit) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_message_edit_invalid');
+          return;
+        }
+        result = await this.client.forwardMessageEdit(context, {
+          contactId: operation.contact.id,
+          editedAt: edit.editedAt,
+          ...(edit.entities ? { entities: edit.entities } : {}),
+          identity,
+          messageId: edit.messageId,
+          normalizedEventId: operation.normalizedEventId ?? operation.id,
+          ...(edit.caption === undefined ? {} : { caption: edit.caption }),
+          ...(edit.text === undefined ? {} : { text: edit.text }),
+        });
+      } else if (operation.type === 'FORWARD_CONTACT_SHARE') {
+        if (!this.client.forwardContactShare) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_contact_share_unsupported');
+          return;
+        }
+        const contactShare = this.contactShareEvent(operation.normalizedEvent?.payload);
+        const messageId = operation.normalizedEvent?.message?.id;
+        if (!contactShare || !messageId) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_contact_share_invalid');
+          return;
+        }
+        result = await this.client.forwardContactShare(context, {
+          contactId: operation.contact.id,
+          identity,
+          messageId,
+          normalizedEventId: operation.normalizedEventId ?? operation.id,
+          occurredAt:
+            operation.normalizedEvent?.message?.createdAt.toISOString() ??
+            operation.createdAt.toISOString(),
+          sharedContact: contactShare,
+        });
+      } else if (operation.type === 'FORWARD_AUTOMATION_STATE') {
+        if (!this.client.forwardAutomationState) {
+          await this.finish(
+            outboxRecordId,
+            leaseToken,
+            'FAILED',
+            'crm_automation_state_unsupported',
+          );
+          return;
+        }
+        const state = this.automationStateEvent(operation.inputSafe);
+        if (!state) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_automation_state_invalid');
+          return;
+        }
+        result = await this.client.forwardAutomationState(context, {
+          ...state,
+          contactId: operation.contact.id,
+          identity,
+        });
       } else {
         const message = operation.message;
         const source = crmOutboundHistorySource(message?.metadata);
@@ -324,6 +389,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           connectionId,
           metadata,
         );
+        const sourceContext = this.sourceContext(operation.inputSafe);
         result = await this.client.forwardOutboundMessage(context, {
           contactId: operation.contact.id,
           deliveryStatus: 'SENT',
@@ -351,6 +417,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
             ? { senderName: `@${message.connection.botUsername}` }
             : {}),
           source,
+          ...(sourceContext ? { sourceContext } : {}),
           ...(typeof metadata?.scenarioExecutionId === 'string'
             ? { scenarioExecutionId: metadata.scenarioExecutionId }
             : {}),
@@ -410,6 +477,24 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     }
   }
 
+  private sourceContext(value: Prisma.JsonValue | null | undefined) {
+    const input = this.jsonRecord(value);
+    const candidate = this.jsonRecord(input?.sourceContext as Prisma.JsonValue | undefined);
+    if (
+      !candidate ||
+      !['scenario', 'broadcast', 'system'].includes(String(candidate.type)) ||
+      typeof candidate.id !== 'string' ||
+      typeof candidate.displayName !== 'string'
+    )
+      return undefined;
+    return {
+      displayName: candidate.displayName,
+      id: candidate.id,
+      type: candidate.type as 'broadcast' | 'scenario' | 'system',
+      ...(typeof candidate.webUrl === 'string' ? { webUrl: candidate.webUrl } : {}),
+    };
+  }
+
   private async finishSuccess(
     operation: {
       contactId: string | null;
@@ -419,7 +504,10 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
         | 'CREATE_OR_UPDATE_LEAD'
         | 'FORWARD_INBOUND_MESSAGE'
         | 'FORWARD_OUTBOUND_MESSAGE'
-        | 'FORWARD_REACTION_EVENT';
+        | 'FORWARD_REACTION_EVENT'
+        | 'FORWARD_MESSAGE_EDIT'
+        | 'FORWARD_CONTACT_SHARE'
+        | 'FORWARD_AUTOMATION_STATE';
     },
     outboxRecordId: string,
     leaseToken: string,
@@ -626,6 +714,89 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       newReactions,
       occurredAt: content.occurredAt,
       oldReactions,
+    };
+  }
+
+  private messageEditEvent(payload: Prisma.JsonValue | undefined):
+    | {
+        caption?: string;
+        editedAt: string;
+        entities?: CrmMessageEntityInput[];
+        messageId: string;
+        text?: string;
+      }
+    | undefined {
+    const content = this.jsonRecord(this.jsonRecord(payload)?.content as Prisma.JsonValue);
+    if (
+      !content ||
+      typeof content.messageId !== 'string' ||
+      typeof content.occurredAt !== 'string' ||
+      (typeof content.text !== 'string' && typeof content.caption !== 'string')
+    )
+      return undefined;
+    const entities = this.messageEntities(content.entities);
+    return {
+      editedAt: content.occurredAt,
+      ...(entities ? { entities } : {}),
+      messageId: content.messageId,
+      ...(typeof content.caption === 'string' ? { caption: content.caption } : {}),
+      ...(typeof content.text === 'string' ? { text: content.text } : {}),
+    };
+  }
+
+  private contactShareEvent(payload: Prisma.JsonValue | undefined):
+    | {
+        firstName: string;
+        lastName?: string;
+        phoneNumber: string;
+        telegramUserId?: string;
+        vcard?: string;
+      }
+    | undefined {
+    const content = this.jsonRecord(this.jsonRecord(payload)?.content as Prisma.JsonValue);
+    if (
+      !content ||
+      typeof content.firstName !== 'string' ||
+      typeof content.phoneNumber !== 'string'
+    )
+      return undefined;
+    return {
+      firstName: content.firstName,
+      phoneNumber: content.phoneNumber,
+      ...(typeof content.lastName === 'string' ? { lastName: content.lastName } : {}),
+      ...(typeof content.telegramUserId === 'string'
+        ? { telegramUserId: content.telegramUserId }
+        : {}),
+      ...(typeof content.vcard === 'string' ? { vcard: content.vcard } : {}),
+    };
+  }
+
+  private automationStateEvent(value: Prisma.JsonValue | null | undefined):
+    | {
+        changedAt: string;
+        conversationId: string;
+        mode: 'AUTO' | 'MANUAL' | 'PAUSED';
+        reasonCode?: string;
+        resumeAt?: string;
+        revision: number;
+      }
+    | undefined {
+    const state = this.jsonRecord(value);
+    if (
+      !state ||
+      typeof state.changedAt !== 'string' ||
+      typeof state.conversationId !== 'string' ||
+      !['AUTO', 'MANUAL', 'PAUSED'].includes(String(state.mode)) ||
+      !Number.isSafeInteger(state.revision)
+    )
+      return undefined;
+    return {
+      changedAt: state.changedAt,
+      conversationId: state.conversationId,
+      mode: state.mode as 'AUTO' | 'MANUAL' | 'PAUSED',
+      revision: state.revision as number,
+      ...(typeof state.reasonCode === 'string' ? { reasonCode: state.reasonCode } : {}),
+      ...(typeof state.resumeAt === 'string' ? { resumeAt: state.resumeAt } : {}),
     };
   }
 

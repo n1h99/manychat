@@ -80,6 +80,7 @@ function messageTypeFor(
   | 'AUDIO'
   | 'CALLBACK_QUERY'
   | 'COMMAND'
+  | 'CONTACT'
   | 'DOCUMENT'
   | 'PHOTO'
   | 'STICKER'
@@ -91,6 +92,7 @@ function messageTypeFor(
     case 'MESSAGE':
       return 'TEXT';
     case 'COMMAND':
+    case 'CONTACT_SHARED':
     case 'DOCUMENT':
     case 'PHOTO':
     case 'STICKER':
@@ -100,7 +102,7 @@ function messageTypeFor(
     case 'VOICE':
     case 'VIDEO_NOTE':
     case 'ANIMATION':
-      return event.type;
+      return event.type === 'CONTACT_SHARED' ? 'CONTACT' : event.type;
     default:
       throw new Error('Telegram event does not have an inbound message representation');
   }
@@ -237,6 +239,10 @@ export class TelegramInboundProcessorService
         event.type === 'REACTION'
           ? await this.resolveReactionTarget(transaction, claimed, event)
           : undefined;
+      const editTarget =
+        event.type === 'MESSAGE_EDITED'
+          ? await this.resolveEditTarget(transaction, claimed, event)
+          : undefined;
       const normalized = await transaction.normalizedEvent.upsert({
         create: {
           connectionId: claimed.connectionId,
@@ -245,7 +251,9 @@ export class TelegramInboundProcessorService
             ...(event.chatId ? { chatId: event.chatId } : {}),
             content: reactionTarget
               ? { ...event.content, messageId: reactionTarget.messageId }
-              : event.content,
+              : editTarget
+                ? { ...event.content, messageId: editTarget.messageId }
+                : event.content,
             ...(event.externalUserId ? { externalUserId: event.externalUserId } : {}),
             metadata: event.metadata,
           } as Prisma.InputJsonValue,
@@ -289,8 +297,39 @@ export class TelegramInboundProcessorService
           reactionTarget.messageId,
         );
 
+      if (editTarget) {
+        await transaction.message.updateMany({
+          data: {
+            content: {
+              ...editTarget.content,
+              ...(typeof event.content.text === 'string' ? { text: event.content.text } : {}),
+              ...(typeof event.content.caption === 'string'
+                ? { caption: event.content.caption }
+                : {}),
+            } as Prisma.InputJsonValue,
+            metadata: {
+              ...editTarget.metadata,
+              ...(Array.isArray(event.content.entities)
+                ? { entities: event.content.entities }
+                : {}),
+              editedAt: event.content.occurredAt,
+            } as Prisma.InputJsonValue,
+          },
+          where: { id: editTarget.messageId, projectId: claimed.projectId },
+        });
+        await this.queueNormalizedEventForCrm(
+          transaction,
+          claimed,
+          normalized.id,
+          editTarget.contactId,
+          'FORWARD_MESSAGE_EDIT',
+          `crm-message-edit-${normalized.id}`,
+          { targetMessageId: editTarget.messageId },
+        );
+      }
+
       const contact =
-        event.type !== 'REACTION' && event.externalUserId
+        !['REACTION', 'MESSAGE_EDITED'].includes(event.type) && event.externalUserId
           ? await this.resolveContact(transaction, claimed, event, eventAt)
           : undefined;
 
@@ -310,6 +349,7 @@ export class TelegramInboundProcessorService
           'ANIMATION',
           'STICKER',
           'CALLBACK_QUERY',
+          'CONTACT_SHARED',
         ].includes(event.type)
       ) {
         const conversation = await transaction.conversation.upsert({
@@ -353,6 +393,16 @@ export class TelegramInboundProcessorService
             },
           },
         });
+        if (event.type === 'CONTACT_SHARED')
+          await this.queueNormalizedEventForCrm(
+            transaction,
+            claimed,
+            normalized.id,
+            contact.id,
+            'FORWARD_CONTACT_SHARE',
+            `crm-contact-share-${normalized.id}`,
+            { messageId: message.id },
+          );
         if (
           [
             'PHOTO',
@@ -450,6 +500,94 @@ export class TelegramInboundProcessorService
         },
       });
       if (completed.count !== 1) throw new TelegramInboundLeaseConflictError();
+    });
+  }
+
+  private async resolveEditTarget(
+    transaction: Prisma.TransactionClient,
+    claimed: ClaimedInboxRecord,
+    event: TelegramInboundEvent,
+  ): Promise<{
+    contactId: string;
+    content: Record<string, unknown>;
+    messageId: string;
+    metadata: Record<string, unknown>;
+  }> {
+    const targetExternalMessageId = event.content.targetExternalMessageId;
+    if (typeof targetExternalMessageId !== 'string' || !event.externalUserId || !event.chatId)
+      throw new TelegramInboundReactionIdentityMismatchError();
+    const target = await transaction.message.findFirst({
+      select: { contactId: true, content: true, id: true, metadata: true },
+      where: {
+        connectionId: claimed.connectionId,
+        conversation: { externalChatId: event.chatId },
+        externalMessageId: targetExternalMessageId,
+        projectId: claimed.projectId,
+      },
+    });
+    if (!target) throw new TelegramInboundReactionTargetPendingError();
+    const identity = await transaction.channelIdentity.findUnique({
+      select: { contactId: true },
+      where: {
+        projectId_connectionId_externalUserId: {
+          connectionId: claimed.connectionId,
+          externalUserId: event.externalUserId,
+          projectId: claimed.projectId,
+        },
+      },
+    });
+    if (!identity || identity.contactId !== target.contactId)
+      throw new TelegramInboundReactionIdentityMismatchError();
+    const record = (value: Prisma.JsonValue | null) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    return {
+      contactId: target.contactId,
+      content: record(target.content),
+      messageId: target.id,
+      metadata: record(target.metadata),
+    };
+  }
+
+  private async queueNormalizedEventForCrm(
+    transaction: Prisma.TransactionClient,
+    claimed: ClaimedInboxRecord,
+    normalizedEventId: string,
+    contactId: string,
+    type: 'FORWARD_CONTACT_SHARE' | 'FORWARD_MESSAGE_EDIT',
+    idempotencyKey: string,
+    inputSafe: Prisma.InputJsonObject,
+  ): Promise<void> {
+    const crmConfig = await transaction.crmProjectConfig.findUnique({
+      select: { enabled: true, status: true },
+      where: { projectId: claimed.projectId },
+    });
+    if (!crmConfig?.enabled || crmConfig.status !== 'ACTIVE') return;
+    await transaction.outboxRecord.createMany({
+      data: [{ idempotencyKey, kind: 'CRM', payload: {}, projectId: claimed.projectId }],
+      skipDuplicates: true,
+    });
+    const outbox = await transaction.outboxRecord.findUnique({
+      include: { crmOperation: { select: { id: true } } },
+      where: {
+        projectId_idempotencyKey: { idempotencyKey, projectId: claimed.projectId },
+      },
+    });
+    if (!outbox || outbox.crmOperation) return;
+    const operation = await transaction.crmOperation.create({
+      data: {
+        contactId,
+        inputSafe,
+        normalizedEventId,
+        outboxRecordId: outbox.id,
+        projectId: claimed.projectId,
+        type,
+      },
+    });
+    await transaction.outboxRecord.update({
+      data: { payload: { crmOperationId: operation.id } },
+      where: { projectId_id: { id: outbox.id, projectId: claimed.projectId } },
     });
   }
 

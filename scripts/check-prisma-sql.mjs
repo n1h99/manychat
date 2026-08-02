@@ -91,6 +91,10 @@ const expectedTables = new Set([
   'media_assets',
   'message_templates',
   'message_template_versions',
+  'scheduled_messages',
+  'telegram_bot_interfaces',
+  'telegram_media_group_items',
+  'telegram_media_groups',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),
@@ -542,6 +546,36 @@ if (!existsSync(crmOutboundHistoryMigrationPath)) {
   }
   if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(crmOutboundHistorySql))
     failures.push('CRM outbound history migration contains a destructive operation');
+}
+
+const telegramChatV32MigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260802000100_telegram_chat_v32/migration.sql',
+);
+if (!existsSync(telegramChatV32MigrationPath)) {
+  failures.push('Telegram Chat v3.2 migration proposal is missing');
+} else {
+  const telegramChatV32Sql = readFileSync(telegramChatV32MigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  for (const fragment of [
+    'CREATE TABLE "scheduled_messages"',
+    'CREATE TABLE "telegram_media_groups"',
+    'CREATE TABLE "telegram_media_group_items"',
+    'CREATE TABLE "telegram_bot_interfaces"',
+    'ALTER TABLE "idempotency_records" ADD COLUMN "resultSafe" JSONB',
+    'FOREIGN KEY ("projectId", "connectionId") REFERENCES "channel_connections"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "contactId") REFERENCES "contacts"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "channelIdentityId") REFERENCES "channel_identities"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "outboxRecordId") REFERENCES "outbox_records"("projectId", "id")',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!telegramChatV32Sql.includes(fragment))
+      failures.push(`Telegram Chat v3.2 migration is missing invariant: ${fragment}`);
+  }
+  if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(telegramChatV32Sql))
+    failures.push('Telegram Chat v3.2 migration contains a destructive operation');
 }
 
 if (failures.length > 0) {

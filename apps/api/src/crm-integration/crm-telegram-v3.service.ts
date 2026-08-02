@@ -17,11 +17,14 @@ import { TelegramOutboundQueueService } from '../channels/telegram-outbound-queu
 import { DatabaseService } from '../database/database.service';
 import type {
   CrmCapabilitiesQueryDto,
+  CrmBotInterfaceDto,
+  CrmBotInterfaceQueryDto,
   CrmAutomationStateDto,
   CrmAutomationStateQueryDto,
   CrmChatActionDto,
   CrmDraftDto,
   CrmMessageMutationDto,
+  CrmMediaGroupDto,
   CrmPinMessageDto,
   CrmReactionDto,
   CrmRetryOperationDto,
@@ -88,10 +91,11 @@ export class CrmTelegramV3Service {
     return {
       capabilities: {
         automationManualMode: supported(),
-        automationPausedMode: {
-          supported: false,
-          reasonCode: 'PAUSED_MODE_NOT_RELEASED',
-        },
+        automationPausedMode: supported({
+          optimisticConcurrency: 'revision',
+          requiresResumeAt: true,
+        }),
+        clientMessageEdits: supported({ event: 'MESSAGE_EDITED', externalDeletionEvents: false }),
         chatActions: supported({ ttlSeconds: 5 }),
         deleteMessage: supported({ maximumAgeHours: 48 }),
         editMessage: supported({
@@ -125,7 +129,11 @@ export class CrmTelegramV3Service {
         formattingEntities: supported({ offsets: 'UTF-16' }),
         inlineKeyboard: supported({ maximumButtonsPerRow: 8, maximumRows: 8 }),
         linkPreviewOptions: supported({ allowedProtocols: 'http,https' }),
-        mediaGroups: { supported: false, reasonCode: 'MEDIA_GROUP_NOT_RELEASED' },
+        mediaGroups: supported({
+          itemCount: { maximum: 10, minimum: 2 },
+          kinds: ['PHOTO', 'VIDEO', 'AUDIO', 'DOCUMENT'],
+          mixedKinds: ['PHOTO', 'VIDEO'],
+        }),
         mediaSpoilers: supported({ mediaKinds: ['ANIMATION', 'PHOTO', 'VIDEO'] }),
         messageEffects: supported({
           availableEffects: [],
@@ -135,7 +143,12 @@ export class CrmTelegramV3Service {
           privateChatsOnly: true,
           repeatableOnNewMessages: true,
         }),
-        botInterface: { supported: false, reasonCode: 'BOT_INTERFACE_NOT_RELEASED' },
+        botInterface: supported({
+          commands: true,
+          menuButton: true,
+          scopes: ['default', 'all_private_chats', 'chat'],
+        }),
+        contactShare: supported({ automaticPhoneMerge: false, inbound: true, outbound: true }),
         externalActions: { supported: false, reasonCode: 'EXTERNAL_ACTIONS_NOT_RELEASED' },
         pinMessage: supported(),
         protectContent: supported(),
@@ -146,7 +159,12 @@ export class CrmTelegramV3Service {
           reasonCode: 'CRM_REACTION_ENDPOINT_NOT_LIVE_VERIFIED',
           limits: { contractPublished: true, privateChatsOnly: true },
         },
-        scheduling: { supported: false, reasonCode: 'APPLICATION_SCHEDULER_NOT_RELEASED' },
+        scheduling: supported({
+          applicationOwned: true,
+          recurring: false,
+          recurringReasonCode: 'RECURRENCE_NOT_RELEASED',
+          timezone: 'IANA',
+        }),
         stickers: supported({
           animatedMaximumBytes: 64 * 1024,
           captions: false,
@@ -154,17 +172,192 @@ export class CrmTelegramV3Service {
           staticMaximumBytes: 512 * 1024,
           videoMaximumBytes: 256 * 1024,
         }),
-        structuredMessages: {
-          supported: false,
-          reasonCode: 'STRUCTURED_MESSAGES_NOT_RELEASED',
-        },
+        structuredMessages: supported({ types: ['contact', 'location', 'poll'] }),
         replyKeyboard: { supported: false, reasonCode: 'REPLY_KEYBOARD_NOT_RELEASED' },
         richMessages: { supported: false, reasonCode: 'RICH_MESSAGES_NOT_RELEASED' },
         streamingDraft: supported({ privateChatsOnly: true, ttlSeconds: 30 }),
       },
-      contractVersion: '3.1.0',
+      contractVersion: '3.2.0',
       telegramBotApiVersion: '10.2',
     };
+  }
+
+  async botInterface(query: CrmBotInterfaceQueryDto, authenticatedProjectId?: string) {
+    await this.assertProject(query.crmProjectId, query.omnicusProjectId, authenticatedProjectId);
+    const connection = await this.database.client.channelConnection.findUnique({
+      where: { projectId_id: { id: query.connectionId, projectId: query.omnicusProjectId } },
+    });
+    if (!connection || connection.type !== 'TELEGRAM')
+      throw new NotFoundException({ code: 'CONNECTION_NOT_FOUND' });
+    return (
+      (await this.database.client.telegramBotInterface.findUnique({
+        select: {
+          commandScope: true,
+          commands: true,
+          languageCode: true,
+          menuButton: true,
+          revision: true,
+          updatedAt: true,
+        },
+        where: {
+          projectId_connectionId: {
+            connectionId: query.connectionId,
+            projectId: query.omnicusProjectId,
+          },
+        },
+      })) ?? {
+        commandScope: { type: 'default' },
+        commands: [],
+        languageCode: '',
+        menuButton: { type: 'default' },
+        revision: 0,
+        updatedAt: null,
+      }
+    );
+  }
+
+  async setBotInterface(
+    dto: CrmBotInterfaceDto,
+    idempotencyKey: string,
+    correlationId: string,
+    authenticatedProjectId?: string,
+  ) {
+    await this.assertProject(dto.crmProjectId, dto.omnicusProjectId, authenticatedProjectId);
+    const connection = await this.database.client.channelConnection.findUnique({
+      where: { projectId_id: { id: dto.connectionId, projectId: dto.omnicusProjectId } },
+    });
+    if (!connection || connection.type !== 'TELEGRAM' || connection.status !== 'ACTIVE')
+      throw new NotFoundException({ code: 'CONNECTION_NOT_FOUND' });
+    const commands = dto.commands.map((value) => {
+      const command =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : undefined;
+      if (
+        !command ||
+        typeof command.command !== 'string' ||
+        !/^[a-z0-9_]{1,32}$/.test(command.command) ||
+        typeof command.description !== 'string' ||
+        command.description.length < 1 ||
+        command.description.length > 256
+      )
+        throw new ConflictException({ code: 'BOT_COMMAND_INVALID' });
+      return { command: command.command, description: command.description };
+    });
+    const scope = await this.validateBotScope(dto);
+    const menuButton = this.validateMenuButton(dto.menuButton);
+    const storedKey = `crm-bot-interface-${idempotencyKey}`;
+    const existingOutbox = await this.database.client.outboxRecord.findUnique({
+      where: {
+        projectId_idempotencyKey: { idempotencyKey: storedKey, projectId: dto.omnicusProjectId },
+      },
+    });
+    if (existingOutbox)
+      return { operationId: existingOutbox.id, replayed: true, status: 'QUEUED' as const };
+    const result = await this.database.client.$transaction(async (transaction) => {
+      const current = await transaction.telegramBotInterface.findUnique({
+        where: {
+          projectId_connectionId: {
+            connectionId: dto.connectionId,
+            projectId: dto.omnicusProjectId,
+          },
+        },
+      });
+      if ((current?.revision ?? 0) !== dto.expectedRevision)
+        throw new ConflictException({ code: 'BOT_INTERFACE_REVISION_CONFLICT' });
+      const outbox = await transaction.outboxRecord.create({
+        data: {
+          connectionId: dto.connectionId,
+          idempotencyKey: storedKey,
+          kind: 'TELEGRAM',
+          nextAttemptAt: new Date(),
+          payload: {},
+          projectId: dto.omnicusProjectId,
+        },
+      });
+      const config = current
+        ? await transaction.telegramBotInterface.update({
+            data: {
+              commandScope: scope,
+              commands,
+              languageCode: dto.languageCode ?? '',
+              menuButton,
+              outboxRecordId: outbox.id,
+              revision: { increment: 1 },
+            },
+            where: { projectId_id: { id: current.id, projectId: dto.omnicusProjectId } },
+          })
+        : await transaction.telegramBotInterface.create({
+            data: {
+              commandScope: scope,
+              commands,
+              connectionId: dto.connectionId,
+              languageCode: dto.languageCode ?? '',
+              menuButton,
+              outboxRecordId: outbox.id,
+              projectId: dto.omnicusProjectId,
+              revision: 1,
+            },
+          });
+      await transaction.outboxRecord.update({
+        data: {
+          payload: {
+            action: 'CONFIGURE_BOT_INTERFACE',
+            botInterfaceId: config.id,
+            correlationId,
+          },
+        },
+        where: { projectId_id: { id: outbox.id, projectId: dto.omnicusProjectId } },
+      });
+      return { operationId: outbox.id, revision: config.revision };
+    });
+    try {
+      await this.outboundQueue.enqueue(result.operationId);
+    } catch {
+      this.logger.warn({
+        message: 'crm_bot_interface_enqueue_failed',
+        operationId: result.operationId,
+      });
+    }
+    return { ...result, replayed: false, status: 'QUEUED' as const };
+  }
+
+  private async validateBotScope(dto: CrmBotInterfaceDto): Promise<Prisma.InputJsonObject> {
+    const type = dto.scope.type;
+    if (type === 'default' || type === 'all_private_chats') return { type };
+    if (type !== 'chat' || typeof dto.scope.channelIdentityId !== 'string')
+      throw new ConflictException({ code: 'BOT_COMMAND_SCOPE_INVALID' });
+    const identity = await this.database.client.channelIdentity.findUnique({
+      where: {
+        projectId_id: {
+          id: dto.scope.channelIdentityId,
+          projectId: dto.omnicusProjectId,
+        },
+      },
+    });
+    if (!identity || identity.connectionId !== dto.connectionId)
+      throw new NotFoundException({ code: 'CHANNEL_IDENTITY_NOT_FOUND' });
+    return { channelIdentityId: identity.id, type: 'chat' };
+  }
+
+  private validateMenuButton(value: Record<string, unknown>): Prisma.InputJsonObject {
+    if (value.type === 'default' || value.type === 'commands') return { type: value.type };
+    if (
+      value.type !== 'web_app' ||
+      typeof value.text !== 'string' ||
+      value.text.length < 1 ||
+      value.text.length > 64 ||
+      typeof value.url !== 'string'
+    )
+      throw new ConflictException({ code: 'BOT_MENU_BUTTON_INVALID' });
+    let url: URL;
+    try {
+      url = new URL(value.url);
+    } catch {
+      throw new ConflictException({ code: 'BOT_MENU_BUTTON_INVALID' });
+    }
+    if (url.protocol !== 'https:') throw new ConflictException({ code: 'BOT_MENU_BUTTON_INVALID' });
+    return { text: value.text, type: 'web_app', url: url.toString() };
   }
 
   async automationState(query: CrmAutomationStateQueryDto, authenticatedProjectId?: string) {
@@ -192,39 +385,215 @@ export class CrmTelegramV3Service {
     });
     return {
       changedAt: conversation?.updatedAt?.toISOString() ?? null,
-      mode: conversation?.automationModeOverride === 'DISABLED' ? 'MANUAL' : 'AUTO',
-      pausedSupported: false,
-      revision: conversation?.updatedAt?.toISOString() ?? 'uninitialized',
+      mode:
+        conversation?.automationState ??
+        (conversation?.automationModeOverride === 'DISABLED' ? 'MANUAL' : 'AUTO'),
+      reasonCode: conversation?.automationReasonCode ?? null,
+      resumeAt: conversation?.automationResumeAt?.toISOString() ?? null,
+      revision: conversation?.automationRevision ?? 0,
     };
   }
 
-  async setAutomationState(dto: CrmAutomationStateDto, authenticatedProjectId?: string) {
+  async setAutomationState(
+    dto: CrmAutomationStateDto,
+    idempotencyKey: string,
+    correlationId: string,
+    authenticatedProjectId?: string,
+  ) {
     const route = await this.resolveIdentity(dto, authenticatedProjectId);
-    const conversation = await this.database.client.conversation.upsert({
-      create: {
-        automationModeOverride: dto.mode === 'AUTO' ? 'ENABLED' : 'DISABLED',
-        connectionId: route.connectionId,
-        contactId: dto.omnicusContactId,
-        externalChatId: route.externalChatId,
-        projectId: route.projectId,
-      },
-      update: {
-        automationModeOverride: dto.mode === 'AUTO' ? 'ENABLED' : 'DISABLED',
-      },
+    const request = {
+      expectedRevision: dto.expectedRevision,
+      mode: dto.mode,
+      reasonCode: dto.reasonCode ?? null,
+      resumeAt: dto.resumeAt ?? null,
+    };
+    const existing = await this.database.client.idempotencyRecord.findUnique({
       where: {
-        projectId_connectionId_externalChatId: {
-          connectionId: route.connectionId,
-          externalChatId: route.externalChatId,
+        projectId_scope_key: {
+          key: idempotencyKey,
           projectId: route.projectId,
+          scope: 'crm-automation-state',
         },
       },
     });
-    return {
-      changedAt: conversation.updatedAt.toISOString(),
-      mode: dto.mode,
-      pausedSupported: false,
-      revision: conversation.updatedAt.toISOString(),
-    };
+    if (existing) {
+      const replay = this.automationStateReplay(existing.resultSafe);
+      if (!replay || JSON.stringify(replay.request) !== JSON.stringify(request))
+        throw new ConflictException({ code: 'AUTOMATION_IDEMPOTENCY_CONFLICT' });
+      return replay.response;
+    }
+    const resumeAt = dto.resumeAt ? new Date(dto.resumeAt) : undefined;
+    if (dto.mode === 'PAUSED' && (!resumeAt || resumeAt.getTime() <= Date.now()))
+      throw new ConflictException({ code: 'AUTOMATION_RESUME_AT_REQUIRED' });
+    if (dto.mode !== 'PAUSED' && resumeAt)
+      throw new ConflictException({ code: 'AUTOMATION_RESUME_AT_NOT_ALLOWED' });
+    return this.database.client.$transaction(async (transaction) => {
+      const key = {
+        connectionId: route.connectionId,
+        externalChatId: route.externalChatId,
+        projectId: route.projectId,
+      };
+      let current = await transaction.conversation.findUnique({
+        where: { projectId_connectionId_externalChatId: key },
+      });
+      if (!current) {
+        if (dto.expectedRevision !== 0)
+          throw new ConflictException({ code: 'AUTOMATION_REVISION_CONFLICT' });
+        current = await transaction.conversation.create({
+          data: {
+            automationModeOverride: dto.mode === 'AUTO' ? 'ENABLED' : 'DISABLED',
+            ...(dto.reasonCode ? { automationReasonCode: dto.reasonCode } : {}),
+            ...(resumeAt ? { automationResumeAt: resumeAt } : {}),
+            automationRevision: 1,
+            automationState: dto.mode,
+            connectionId: route.connectionId,
+            contactId: dto.omnicusContactId,
+            externalChatId: route.externalChatId,
+            projectId: route.projectId,
+          },
+        });
+      } else {
+        const updated = await transaction.conversation.updateMany({
+          data: {
+            automationModeOverride: dto.mode === 'AUTO' ? 'ENABLED' : 'DISABLED',
+            automationReasonCode: dto.reasonCode ?? null,
+            automationResumeAt: resumeAt ?? null,
+            automationRevision: { increment: 1 },
+            automationState: dto.mode,
+          },
+          where: {
+            automationRevision: dto.expectedRevision,
+            id: current.id,
+            projectId: route.projectId,
+          },
+        });
+        if (updated.count !== 1)
+          throw new ConflictException({ code: 'AUTOMATION_REVISION_CONFLICT' });
+        current = (await transaction.conversation.findUnique({
+          where: { projectId_id: { id: current.id, projectId: route.projectId } },
+        }))!;
+      }
+      await this.queueAutomationStateForCrm(
+        transaction,
+        current,
+        dto.omnicusContactId,
+        correlationId,
+      );
+      const response = {
+        changedAt: current.updatedAt.toISOString(),
+        mode: dto.mode,
+        reasonCode: current.automationReasonCode,
+        resumeAt: current.automationResumeAt?.toISOString() ?? null,
+        revision: current.automationRevision,
+      };
+      await transaction.idempotencyRecord.create({
+        data: {
+          key: idempotencyKey,
+          projectId: route.projectId,
+          resultSafe: { request, response },
+          scope: 'crm-automation-state',
+        },
+      });
+      return response;
+    });
+  }
+
+  private automationStateReplay(value: Prisma.JsonValue | null | undefined):
+    | {
+        request: {
+          expectedRevision: number;
+          mode: 'AUTO' | 'MANUAL' | 'PAUSED';
+          reasonCode: string | null;
+          resumeAt: string | null;
+        };
+        response: {
+          changedAt: string;
+          mode: 'AUTO' | 'MANUAL' | 'PAUSED';
+          reasonCode: string | null;
+          resumeAt: string | null;
+          revision: number;
+        };
+      }
+    | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const request = value.request;
+    const response = value.response;
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      Array.isArray(request) ||
+      !response ||
+      typeof response !== 'object' ||
+      Array.isArray(response) ||
+      !Number.isSafeInteger(request.expectedRevision) ||
+      !['AUTO', 'MANUAL', 'PAUSED'].includes(String(request.mode)) ||
+      (request.reasonCode !== null && typeof request.reasonCode !== 'string') ||
+      (request.resumeAt !== null && typeof request.resumeAt !== 'string') ||
+      typeof response.changedAt !== 'string' ||
+      !['AUTO', 'MANUAL', 'PAUSED'].includes(String(response.mode)) ||
+      (response.reasonCode !== null && typeof response.reasonCode !== 'string') ||
+      (response.resumeAt !== null && typeof response.resumeAt !== 'string') ||
+      !Number.isSafeInteger(response.revision)
+    )
+      return undefined;
+    return { request, response } as ReturnType<CrmTelegramV3Service['automationStateReplay']>;
+  }
+
+  private async queueAutomationStateForCrm(
+    transaction: Prisma.TransactionClient,
+    conversation: {
+      automationReasonCode: string | null;
+      automationResumeAt: Date | null;
+      automationRevision: number;
+      automationState: string;
+      contactId: string;
+      connectionId: string;
+      id: string;
+      projectId: string;
+      updatedAt: Date;
+    },
+    contactId: string,
+    correlationId: string,
+  ) {
+    const crm = await transaction.crmProjectConfig.findUnique({
+      select: { enabled: true, status: true },
+      where: { projectId: conversation.projectId },
+    });
+    if (!crm?.enabled || crm.status !== 'ACTIVE') return;
+    const idempotencyKey = `crm-automation-state-${conversation.id}-${conversation.automationRevision}`;
+    await transaction.outboxRecord.createMany({
+      data: [{ idempotencyKey, kind: 'CRM', payload: {}, projectId: conversation.projectId }],
+      skipDuplicates: true,
+    });
+    const outbox = await transaction.outboxRecord.findUnique({
+      include: { crmOperation: { select: { id: true } } },
+      where: {
+        projectId_idempotencyKey: { idempotencyKey, projectId: conversation.projectId },
+      },
+    });
+    if (!outbox || outbox.crmOperation) return;
+    const operation = await transaction.crmOperation.create({
+      data: {
+        contactId,
+        inputSafe: {
+          changedAt: conversation.updatedAt.toISOString(),
+          connectionId: conversation.connectionId,
+          conversationId: conversation.id,
+          correlationId,
+          mode: conversation.automationState,
+          reasonCode: conversation.automationReasonCode,
+          resumeAt: conversation.automationResumeAt?.toISOString() ?? null,
+          revision: conversation.automationRevision,
+        },
+        outboxRecordId: outbox.id,
+        projectId: conversation.projectId,
+        type: 'FORWARD_AUTOMATION_STATE',
+      },
+    });
+    await transaction.outboxRecord.update({
+      data: { payload: { crmOperationId: operation.id } },
+      where: { projectId_id: { id: outbox.id, projectId: conversation.projectId } },
+    });
   }
 
   async chatAction(dto: CrmChatActionDto, authenticatedProjectId?: string) {
@@ -265,6 +634,117 @@ export class CrmTelegramV3Service {
       text: dto.text,
     });
     return { accepted: true, expiresAt: new Date(Date.now() + 30_000).toISOString() };
+  }
+
+  async mediaGroup(
+    dto: CrmMediaGroupDto,
+    idempotencyKey: string,
+    correlationId: string,
+    authenticatedProjectId?: string,
+  ) {
+    const route = await this.resolveIdentity(dto, authenticatedProjectId);
+    const kinds = new Set(dto.items.map((item) => item.kind));
+    if ((kinds.has('AUDIO') && kinds.size !== 1) || (kinds.has('DOCUMENT') && kinds.size !== 1))
+      throw new ConflictException({ code: 'MEDIA_GROUP_KIND_COMBINATION_INVALID' });
+    const storedKey = `crm-media-group-${idempotencyKey}`;
+    const existing = await this.database.client.outboxRecord.findUnique({
+      include: { telegramMediaGroup: true },
+      where: {
+        projectId_idempotencyKey: { idempotencyKey: storedKey, projectId: route.projectId },
+      },
+    });
+    if (existing?.telegramMediaGroup)
+      return {
+        mediaGroupId: existing.telegramMediaGroup.id,
+        operationId: existing.id,
+        replayed: true,
+        status: 'QUEUED' as const,
+      };
+    const items = dto.items.map((item, position) => {
+      let entities: TelegramMessageEntity[] | undefined;
+      if (item.hasSpoiler && !['PHOTO', 'VIDEO'].includes(item.kind))
+        throw new ConflictException({ code: 'MEDIA_GROUP_SPOILER_INVALID' });
+      try {
+        entities = item.entities
+          ? validateTelegramMessageEntities(item.entities, item.caption ?? '')
+          : undefined;
+      } catch {
+        throw new ConflictException({ code: 'MEDIA_GROUP_ENTITIES_INVALID' });
+      }
+      return { ...item, entities, position };
+    });
+    const result = await this.database.client.$transaction(async (transaction) => {
+      for (const item of items) {
+        const asset = await transaction.mediaAsset.findFirst({
+          select: { id: true },
+          where: {
+            id: item.mediaAssetId,
+            kind: item.kind,
+            projectId: route.projectId,
+            status: { in: ['AVAILABLE', 'PROVIDER_REFERENCE'] },
+          },
+        });
+        if (!asset) throw new NotFoundException({ code: 'MEDIA_GROUP_ASSET_NOT_FOUND' });
+      }
+      const outbox = await transaction.outboxRecord.create({
+        data: {
+          connectionId: route.connectionId,
+          idempotencyKey: storedKey,
+          kind: 'TELEGRAM',
+          nextAttemptAt: new Date(),
+          payload: {},
+          projectId: route.projectId,
+        },
+      });
+      const group = await transaction.telegramMediaGroup.create({
+        data: {
+          channelIdentityId: dto.identity.channelIdentityId,
+          connectionId: route.connectionId,
+          contactId: dto.omnicusContactId,
+          disableNotification: dto.disableNotification ?? false,
+          items: {
+            create: items.map((item) => ({
+              ...(item.caption === undefined ? {} : { caption: item.caption }),
+              ...(item.entities
+                ? { entities: item.entities as unknown as Prisma.InputJsonValue }
+                : {}),
+              hasSpoiler: item.hasSpoiler ?? false,
+              kind: item.kind,
+              mediaAsset: {
+                connect: {
+                  projectId_id: { id: item.mediaAssetId, projectId: route.projectId },
+                },
+              },
+              position: item.position,
+            })),
+          },
+          outboxRecordId: outbox.id,
+          projectId: route.projectId,
+          protectContent: dto.protectContent ?? false,
+        },
+      });
+      await transaction.outboxRecord.update({
+        data: {
+          payload: {
+            action: 'SEND_MEDIA_GROUP',
+            channelIdentityId: dto.identity.channelIdentityId,
+            correlationId,
+            mediaGroupId: group.id,
+          },
+        },
+        where: { projectId_id: { id: outbox.id, projectId: route.projectId } },
+      });
+      return { mediaGroupId: group.id, operationId: outbox.id };
+    });
+    try {
+      await this.outboundQueue.enqueue(result.operationId);
+    } catch {
+      this.logger.warn({
+        message: 'crm_media_group_enqueue_failed',
+        operationId: result.operationId,
+      });
+    }
+    return { ...result, replayed: false, status: 'QUEUED' as const };
   }
 
   async edit(

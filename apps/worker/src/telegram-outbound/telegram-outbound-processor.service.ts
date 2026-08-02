@@ -19,6 +19,7 @@ import {
   type TelegramLinkPreviewOptions,
   type TelegramMediaKind,
   type TelegramMessageEntity,
+  type TelegramMediaGroupItem as TelegramAdapterMediaGroupItem,
   type TelegramOutboundJob,
   type TelegramReaction,
 } from '@omnicus/channel-telegram';
@@ -65,6 +66,15 @@ type Claimed = {
         action?: 'SEND_MESSAGE';
         messageId: string;
         channelIdentityId: string;
+      }
+    | {
+        action: 'SEND_MEDIA_GROUP';
+        channelIdentityId: string;
+        mediaGroupId: string;
+      }
+    | {
+        action: 'CONFIGURE_BOT_INTERFACE';
+        botInterfaceId: string;
       }
     | MessageActionPayload;
 };
@@ -166,8 +176,16 @@ export class TelegramOutboundProcessorService
         await this.finish(claimed, 'SUCCEEDED');
         return;
       }
+      if (claimed.payload.action === 'SEND_MEDIA_GROUP') {
+        await this.executeMediaGroup(token, claimed, claimed.payload);
+        return;
+      }
+      if (claimed.payload.action === 'CONFIGURE_BOT_INTERFACE') {
+        await this.executeBotInterface(token, claimed, claimed.payload.botInterfaceId);
+        return;
+      }
 
-      const [message, identity, recipient] = await Promise.all([
+      const [message, identity, recipient, scheduled] = await Promise.all([
         this.database.client.message.findUnique({
           include: { mediaAsset: true },
           where: { projectId_id: { projectId: claimed.projectId, id: claimed.payload.messageId } },
@@ -178,6 +196,9 @@ export class TelegramOutboundProcessorService
         this.database.client.broadcastRecipient.findFirst({
           where: { outboxRecordId: claimed.id, projectId: claimed.projectId },
           include: { broadcast: { select: { status: true } } },
+        }),
+        this.database.client.scheduledMessage.findUnique({
+          where: { outboxRecordId: claimed.id },
         }),
       ]);
       if (
@@ -209,6 +230,11 @@ export class TelegramOutboundProcessorService
           where: { id: recipient.id, projectId: claimed.projectId, status: 'QUEUED' },
           data: { status: 'PROCESSING' },
         });
+      if (scheduled)
+        await this.database.client.scheduledMessage.updateMany({
+          data: { status: 'PROCESSING' },
+          where: { id: scheduled.id, projectId: claimed.projectId, status: 'QUEUED' },
+        });
       const metadata = message.metadata as {
         disableNotification?: boolean;
         entities?: TelegramMessageEntity[];
@@ -224,6 +250,27 @@ export class TelegramOutboundProcessorService
       const content = message.content as {
         caption?: string;
         inlineKeyboard?: TelegramInlineKeyboard;
+        structured?:
+          | {
+              firstName: string;
+              lastName?: string;
+              phoneNumber: string;
+              type: 'contact';
+              vcard?: string;
+            }
+          | {
+              horizontalAccuracy?: number;
+              latitude: number;
+              longitude: number;
+              type: 'location';
+            }
+          | {
+              allowsMultipleAnswers?: boolean;
+              isAnonymous?: boolean;
+              options: string[];
+              question: string;
+              type: 'poll';
+            };
         text?: string;
       };
       const sendOptions = {
@@ -246,7 +293,18 @@ export class TelegramOutboundProcessorService
           : {}),
       };
       let sent: { messageId: string };
-      if (
+      if (['CONTACT', 'LOCATION', 'POLL'].includes(message.type) && content.structured) {
+        sent = await this.adapter.sendStructuredMessage(token, {
+          chatId: identity.externalUserId,
+          ...(metadata?.disableNotification === undefined
+            ? {}
+            : { disableNotification: metadata.disableNotification }),
+          ...(metadata?.protectContent === undefined
+            ? {}
+            : { protectContent: metadata.protectContent }),
+          structured: content.structured,
+        });
+      } else if (
         [
           'PHOTO',
           'DOCUMENT',
@@ -309,6 +367,15 @@ export class TelegramOutboundProcessorService
           where: { projectId_id: { projectId: claimed.projectId, id: message.id } },
           data: { status: 'SENT', sentAt: new Date(), externalMessageId: sent.messageId },
         });
+        if (scheduled)
+          await tx.scheduledMessage.updateMany({
+            data: { completedAt: new Date(), status: 'SENT' },
+            where: {
+              id: scheduled.id,
+              projectId: claimed.projectId,
+              status: { in: ['QUEUED', 'PROCESSING'] },
+            },
+          });
         await ensureCrmOutboundHistoryIntent(tx, claimed.projectId, message.id);
         if (recipient) {
           await tx.broadcastRecipient.updateMany({
@@ -322,6 +389,135 @@ export class TelegramOutboundProcessorService
       await this.fail(claimed, error);
       if (this.retryable(error)) throw error;
     }
+  }
+  private async executeMediaGroup(
+    token: string,
+    claimed: Claimed,
+    payload: { channelIdentityId: string; mediaGroupId: string },
+  ): Promise<void> {
+    const [group, identity] = await Promise.all([
+      this.database.client.telegramMediaGroup.findUnique({
+        include: { items: { include: { mediaAsset: true }, orderBy: { position: 'asc' } } },
+        where: { projectId_id: { id: payload.mediaGroupId, projectId: claimed.projectId } },
+      }),
+      this.database.client.channelIdentity.findUnique({
+        where: { projectId_id: { id: payload.channelIdentityId, projectId: claimed.projectId } },
+      }),
+    ]);
+    if (
+      !group ||
+      !identity ||
+      group.outboxRecordId !== claimed.id ||
+      group.connectionId !== claimed.connectionId ||
+      group.channelIdentityId !== identity.id ||
+      group.contactId !== identity.contactId ||
+      identity.connectionId !== claimed.connectionId
+    )
+      throw new TelegramOutboundPermanentError('telegram_media_group_scope_invalid');
+    if (group.status === 'SENT') return await this.finish(claimed, 'SUCCEEDED');
+    await this.database.client.telegramMediaGroup.updateMany({
+      data: { status: 'PROCESSING' },
+      where: { id: group.id, projectId: claimed.projectId, status: 'QUEUED' },
+    });
+    const items: TelegramAdapterMediaGroupItem[] = [];
+    for (const item of group.items) {
+      const entities = Array.isArray(item.entities)
+        ? (item.entities as unknown as TelegramMessageEntity[])
+        : undefined;
+      items.push({
+        ...(item.caption === null ? {} : { caption: item.caption }),
+        ...(entities ? { captionEntities: entities } : {}),
+        ...(item.hasSpoiler ? { hasSpoiler: true } : {}),
+        kind: item.kind as 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'VIDEO',
+        media: await this.mediaReference(
+          item.mediaAsset,
+          claimed.connectionId,
+          item.kind as MediaKind,
+        ),
+      });
+    }
+    const sent = await this.adapter.sendMediaGroup(token, {
+      chatId: identity.externalUserId,
+      disableNotification: group.disableNotification,
+      items,
+      protectContent: group.protectContent,
+    });
+    await this.database.client.$transaction(async (transaction) => {
+      const done = await transaction.outboxRecord.updateMany({
+        data: {
+          completedAt: new Date(),
+          lastError: null,
+          lockedAt: null,
+          lockedBy: null,
+          status: 'SUCCEEDED',
+        },
+        where: {
+          id: claimed.id,
+          lockedBy: claimed.lease,
+          projectId: claimed.projectId,
+          status: 'PROCESSING',
+        },
+      });
+      if (done.count !== 1) return;
+      await transaction.telegramMediaGroup.update({
+        data: {
+          completedAt: new Date(),
+          providerMessageIds: sent.messageIds,
+          status: 'SENT',
+        },
+        where: { projectId_id: { id: group.id, projectId: claimed.projectId } },
+      });
+      for (const [position, providerMessageId] of sent.messageIds.entries())
+        await transaction.telegramMediaGroupItem.updateMany({
+          data: { providerMessageId },
+          where: { mediaGroupId: group.id, position, projectId: claimed.projectId },
+        });
+    });
+  }
+  private async executeBotInterface(
+    token: string,
+    claimed: Claimed,
+    botInterfaceId: string,
+  ): Promise<void> {
+    const config = await this.database.client.telegramBotInterface.findUnique({
+      where: { projectId_id: { id: botInterfaceId, projectId: claimed.projectId } },
+    });
+    if (
+      !config ||
+      config.connectionId !== claimed.connectionId ||
+      config.outboxRecordId !== claimed.id
+    )
+      throw new TelegramOutboundPermanentError('telegram_bot_interface_scope_invalid');
+    const commands = Array.isArray(config.commands)
+      ? (config.commands as Array<{ command: string; description: string }>)
+      : [];
+    const scope = config.commandScope as Record<string, unknown>;
+    const menuButton = config.menuButton as Record<string, unknown>;
+    let chatId: string | undefined;
+    if (scope.type === 'chat' && typeof scope.channelIdentityId === 'string') {
+      const identity = await this.database.client.channelIdentity.findUnique({
+        where: {
+          projectId_id: { id: scope.channelIdentityId, projectId: claimed.projectId },
+        },
+      });
+      if (!identity || identity.connectionId !== claimed.connectionId)
+        throw new TelegramOutboundPermanentError('telegram_bot_interface_scope_invalid');
+      chatId = identity.externalUserId;
+    }
+    await this.adapter.configureBotInterface(token, {
+      commands,
+      languageCode: config.languageCode,
+      menuButton: menuButton as {
+        text?: string;
+        type: 'commands' | 'default' | 'web_app';
+        url?: string;
+      },
+      scope: {
+        ...(chatId ? { chatId } : {}),
+        type: scope.type as 'all_private_chats' | 'chat' | 'default',
+      },
+    });
+    await this.finish(claimed, 'SUCCEEDED');
   }
   private async executeMessageAction(
     token: string,
@@ -676,7 +872,11 @@ export class TelegramOutboundProcessorService
           where: { id: claimed.connectionId, projectId: claimed.projectId },
           data: { status: 'ERROR', lastErrorAt: new Date() },
         });
-      if (api?.errorCode === 403 && claimed.payload.action !== 'ANSWER_CALLBACK')
+      if (
+        api?.errorCode === 403 &&
+        claimed.payload.action !== 'ANSWER_CALLBACK' &&
+        'channelIdentityId' in claimed.payload
+      )
         await tx.channelIdentity.updateMany({
           where: { id: claimed.payload.channelIdentityId, projectId: claimed.projectId },
           data: { status: 'BLOCKED' },
@@ -699,6 +899,33 @@ export class TelegramOutboundProcessorService
         if (!retry)
           await this.completeBroadcastIfTerminal(tx, claimed.projectId, recipient.broadcastId);
       }
+      const scheduled = await tx.scheduledMessage.findUnique({
+        where: { outboxRecordId: claimed.id },
+      });
+      if (scheduled)
+        await tx.scheduledMessage.updateMany({
+          data: {
+            status: unknown ? 'UNKNOWN' : retry ? 'QUEUED' : 'FAILED',
+            ...(retry ? {} : { completedAt: new Date() }),
+          },
+          where: {
+            id: scheduled.id,
+            projectId: claimed.projectId,
+            status: { in: ['QUEUED', 'PROCESSING'] },
+          },
+        });
+      if (claimed.payload.action === 'SEND_MEDIA_GROUP')
+        await tx.telegramMediaGroup.updateMany({
+          data: {
+            status: unknown ? 'UNKNOWN' : retry ? 'QUEUED' : 'FAILED',
+            ...(retry ? {} : { completedAt: new Date() }),
+          },
+          where: {
+            id: claimed.payload.mediaGroupId,
+            projectId: claimed.projectId,
+            status: { in: ['QUEUED', 'PROCESSING'] },
+          },
+        });
     });
   }
   private async completeBroadcastIfTerminal(

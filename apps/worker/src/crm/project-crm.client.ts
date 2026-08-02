@@ -13,6 +13,9 @@ import {
   type ForwardInboundMessageInput,
   type ForwardOutboundMessageInput,
   type ForwardReactionEventInput,
+  type ForwardMessageEditInput,
+  type ForwardContactShareInput,
+  type ForwardAutomationStateInput,
 } from '@omnicus/crm-core';
 import { DatabaseService } from '../database/database.service';
 
@@ -55,6 +58,36 @@ export class ProjectCrmClient implements CrmClient {
     input: ForwardReactionEventInput,
   ): Promise<CrmResult> {
     return (await this.resolve(context)).forwardReactionEvent(context, input);
+  }
+
+  async forwardMessageEdit(
+    context: CrmCallContext,
+    input: ForwardMessageEditInput,
+  ): Promise<CrmResult> {
+    const client = await this.resolve(context);
+    if (!client.forwardMessageEdit)
+      throw new CrmClientError('PERMANENT_FAILURE', 'crm_message_edit_unsupported');
+    return client.forwardMessageEdit(context, input);
+  }
+
+  async forwardContactShare(
+    context: CrmCallContext,
+    input: ForwardContactShareInput,
+  ): Promise<CrmResult> {
+    const client = await this.resolve(context);
+    if (!client.forwardContactShare)
+      throw new CrmClientError('PERMANENT_FAILURE', 'crm_contact_share_unsupported');
+    return client.forwardContactShare(context, input);
+  }
+
+  async forwardAutomationState(
+    context: CrmCallContext,
+    input: ForwardAutomationStateInput,
+  ): Promise<CrmResult> {
+    const client = await this.resolve(context);
+    if (!client.forwardAutomationState)
+      throw new CrmClientError('PERMANENT_FAILURE', 'crm_automation_state_unsupported');
+    return client.forwardAutomationState(context, input);
   }
 
   async reconcile(context: CrmCallContext): Promise<CrmReconciliationResult> {

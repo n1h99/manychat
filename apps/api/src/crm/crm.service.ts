@@ -28,7 +28,10 @@ type SafeCrmOperation = {
     | 'CREATE_OR_UPDATE_LEAD'
     | 'FORWARD_INBOUND_MESSAGE'
     | 'FORWARD_OUTBOUND_MESSAGE'
-    | 'FORWARD_REACTION_EVENT';
+    | 'FORWARD_REACTION_EVENT'
+    | 'FORWARD_MESSAGE_EDIT'
+    | 'FORWARD_CONTACT_SHARE'
+    | 'FORWARD_AUTOMATION_STATE';
   updatedAt: Date;
 };
 
@@ -444,7 +447,10 @@ export class CrmService {
       | 'CREATE_OR_UPDATE_LEAD'
       | 'FORWARD_INBOUND_MESSAGE'
       | 'FORWARD_OUTBOUND_MESSAGE'
-      | 'FORWARD_REACTION_EVENT';
+      | 'FORWARD_REACTION_EVENT'
+      | 'FORWARD_MESSAGE_EDIT'
+      | 'FORWARD_CONTACT_SHARE'
+      | 'FORWARD_AUTOMATION_STATE';
     updatedAt: Date;
     outbox: {
       attempts: number;

@@ -4,6 +4,58 @@ import { describe, expect, it } from 'vitest';
 import { normalizeTelegramUpdate, type TelegramUpdate } from './index';
 
 describe('normalizeTelegramUpdate', () => {
+  it('normalizes edited_message as a source-linked event instead of a second message', () => {
+    const event = normalizeTelegramUpdate({
+      update_id: 901,
+      edited_message: {
+        chat: { id: 123, type: 'private' },
+        date: 1_754_000_000,
+        edit_date: 1_754_000_100,
+        entities: [{ length: 6, offset: 0, type: 'bold' }],
+        from: { first_name: 'Ada', id: 123 },
+        message_id: 42,
+        text: 'Edited',
+      },
+    });
+
+    expect(event).toMatchObject({
+      content: {
+        entities: [{ length: 6, offset: 0, type: 'bold' }],
+        targetExternalMessageId: '42',
+        text: 'Edited',
+      },
+      externalUserId: '123',
+      type: 'MESSAGE_EDITED',
+    });
+    expect(event.metadata).toEqual({ source: 'telegram' });
+  });
+
+  it('normalizes a shared contact without inferring a contact merge', () => {
+    expect(
+      normalizeTelegramUpdate({
+        update_id: 902,
+        message: {
+          chat: { id: 123, type: 'private' },
+          contact: {
+            first_name: 'Grace',
+            last_name: 'Hopper',
+            phone_number: '+12025550123',
+            user_id: 456,
+          },
+          from: { first_name: 'Ada', id: 123 },
+          message_id: 43,
+        },
+      }),
+    ).toMatchObject({
+      content: {
+        firstName: 'Grace',
+        lastName: 'Hopper',
+        phoneNumber: '+12025550123',
+        telegramUserId: '456',
+      },
+      type: 'CONTACT_SHARED',
+    });
+  });
   it('preserves command text and separates command arguments', () => {
     const event = normalizeTelegramUpdate({
       ...telegramInboundFixtures.text.payload,
