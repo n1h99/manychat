@@ -58,6 +58,11 @@ OutboxRecord and are never represented as delivered content.
   effect, reply and quote state are immutable and preserved.
 - Telegram's scheduled-message API is not a Bot API facility. Omnicus 3.2.0
   provides an application-owned one-shot PostgreSQL/outbox scheduler instead.
+- Scheduled create/get/list/cancel responses include `connectionId`,
+  `channelIdentityId`, `omnicusContactId` and nullable `crmLeadId`. Public
+  get/list/cancel calls require connection and contact scope, while optional
+  identity/lead filters prevent a leaked schedule UUID from crossing lead
+  boundaries. Stored request JSON and message content are not returned.
 
 Contract 3.1.0 adds `STICKER` as a first-class media kind. Static WEBP,
 animated TGS and video WEBM uploads are checked against format-specific size

@@ -11,10 +11,18 @@ import { Prisma } from '@omnicus/database';
 
 import { DatabaseService } from '../database/database.service';
 import { TelegramOutboundQueueService } from '../channels/telegram-outbound-queue.service';
-import type { CrmOutboundMessageDto, CrmScheduledMessageDto } from './dto';
+import type {
+  CrmOutboundMessageDto,
+  CrmScheduledMessageDto,
+  CrmScheduledMessageQueryDto,
+} from './dto';
 
 export interface CrmOutboundQueuedResult {
+  channelIdentityId?: string;
+  connectionId?: string;
+  crmLeadId?: string | null;
   messageId: string;
+  omnicusContactId?: string;
   operationId: string;
   replayed: boolean;
   status: 'QUEUED';
@@ -373,6 +381,14 @@ export class CrmOutboundService {
           },
         });
         return {
+          ...(scheduledMessage
+            ? {
+                channelIdentityId: identity.id,
+                connectionId: identity.connectionId,
+                crmLeadId: contact.crmLeadId,
+                omnicusContactId: identity.contactId,
+              }
+            : {}),
           messageId: message.id,
           operationId: outbox.id,
           ...(scheduledMessage ? { scheduleId: scheduledMessage.id } : {}),
@@ -400,15 +416,22 @@ export class CrmOutboundService {
 
   async scheduled(
     scheduleId: string,
-    crmProjectId: string,
-    omnicusProjectId: string,
+    query: CrmScheduledMessageQueryDto,
     authenticatedProjectId?: string,
   ) {
-    await this.assertProjectRoute(crmProjectId, omnicusProjectId, authenticatedProjectId);
-    const schedule = await this.database.client.scheduledMessage.findUnique({
+    await this.assertProjectRoute(
+      query.crmProjectId,
+      query.omnicusProjectId,
+      authenticatedProjectId,
+    );
+    const schedule = await this.database.client.scheduledMessage.findFirst({
       select: {
         cancelledAt: true,
+        channelIdentityId: true,
         completedAt: true,
+        connectionId: true,
+        contact: { select: { crmLeadId: true } },
+        contactId: true,
         id: true,
         messageId: true,
         occurrence: true,
@@ -418,23 +441,27 @@ export class CrmOutboundService {
         status: true,
         timezone: true,
       },
-      where: { projectId_id: { id: scheduleId, projectId: omnicusProjectId } },
+      where: { id: scheduleId, ...this.scheduleScope(query) },
     });
     if (!schedule) throw new NotFoundException({ code: 'CRM_SCHEDULE_NOT_FOUND' });
-    return schedule;
+    return this.scheduleResponse(schedule);
   }
 
-  async scheduledList(
-    crmProjectId: string,
-    omnicusProjectId: string,
-    authenticatedProjectId?: string,
-  ) {
-    await this.assertProjectRoute(crmProjectId, omnicusProjectId, authenticatedProjectId);
-    return this.database.client.scheduledMessage.findMany({
+  async scheduledList(query: CrmScheduledMessageQueryDto, authenticatedProjectId?: string) {
+    await this.assertProjectRoute(
+      query.crmProjectId,
+      query.omnicusProjectId,
+      authenticatedProjectId,
+    );
+    const schedules = await this.database.client.scheduledMessage.findMany({
       orderBy: [{ scheduledAt: 'desc' }, { id: 'desc' }],
       select: {
         cancelledAt: true,
+        channelIdentityId: true,
         completedAt: true,
+        connectionId: true,
+        contact: { select: { crmLeadId: true } },
+        contactId: true,
         id: true,
         messageId: true,
         occurrence: true,
@@ -445,29 +472,39 @@ export class CrmOutboundService {
         timezone: true,
       },
       take: 100,
-      where: { projectId: omnicusProjectId },
+      where: this.scheduleScope(query),
     });
+    return schedules.map((schedule) => this.scheduleResponse(schedule));
   }
 
   async cancelScheduled(
     scheduleId: string,
-    crmProjectId: string,
-    omnicusProjectId: string,
+    query: CrmScheduledMessageQueryDto,
     authenticatedProjectId?: string,
   ) {
-    await this.assertProjectRoute(crmProjectId, omnicusProjectId, authenticatedProjectId);
+    await this.assertProjectRoute(
+      query.crmProjectId,
+      query.omnicusProjectId,
+      authenticatedProjectId,
+    );
     return this.database.client.$transaction(async (transaction) => {
-      const schedule = await transaction.scheduledMessage.findUnique({
-        where: { projectId_id: { id: scheduleId, projectId: omnicusProjectId } },
+      const schedule = await transaction.scheduledMessage.findFirst({
+        include: { contact: { select: { crmLeadId: true } } },
+        where: { id: scheduleId, ...this.scheduleScope(query) },
       });
       if (!schedule) throw new NotFoundException({ code: 'CRM_SCHEDULE_NOT_FOUND' });
       if (schedule.status === 'CANCELLED')
-        return { id: schedule.id, replayed: true, status: 'CANCELLED' as const };
+        return {
+          ...this.scheduleRouting(schedule),
+          id: schedule.id,
+          replayed: true,
+          status: 'CANCELLED' as const,
+        };
       if (schedule.status !== 'QUEUED')
         throw new ConflictException({ code: 'CRM_SCHEDULE_NOT_CANCELLABLE' });
       const cancelled = await transaction.scheduledMessage.updateMany({
         data: { cancelledAt: new Date(), status: 'CANCELLED' },
-        where: { id: schedule.id, projectId: omnicusProjectId, status: 'QUEUED' },
+        where: { id: schedule.id, projectId: query.omnicusProjectId, status: 'QUEUED' },
       });
       if (cancelled.count !== 1)
         throw new ConflictException({ code: 'CRM_SCHEDULE_NOT_CANCELLABLE' });
@@ -478,13 +515,22 @@ export class CrmOutboundService {
           nextAttemptAt: null,
           status: 'FAILED',
         },
-        where: { id: schedule.outboxRecordId, projectId: omnicusProjectId, status: 'PENDING' },
+        where: {
+          id: schedule.outboxRecordId,
+          projectId: query.omnicusProjectId,
+          status: 'PENDING',
+        },
       });
       await transaction.message.updateMany({
         data: { failedAt: new Date(), status: 'FAILED' },
-        where: { id: schedule.messageId, projectId: omnicusProjectId, status: 'QUEUED' },
+        where: { id: schedule.messageId, projectId: query.omnicusProjectId, status: 'QUEUED' },
       });
-      return { id: schedule.id, replayed: false, status: 'CANCELLED' as const };
+      return {
+        ...this.scheduleRouting(schedule),
+        id: schedule.id,
+        replayed: false,
+        status: 'CANCELLED' as const,
+      };
     });
   }
 
@@ -587,15 +633,57 @@ export class CrmOutboundService {
         message: 'CRM idempotency record is invalid',
       });
     const schedule = await this.database.client.scheduledMessage.findUnique({
-      select: { id: true },
-      where: { outboxRecordId: record.id },
+      select: {
+        channelIdentityId: true,
+        connectionId: true,
+        contact: { select: { crmLeadId: true } },
+        contactId: true,
+        id: true,
+      },
+      where: {
+        projectId_outboxRecordId: { outboxRecordId: record.id, projectId },
+      },
     });
     return {
+      ...(schedule ? this.scheduleRouting(schedule) : {}),
       messageId,
       operationId: record.id,
       ...(schedule ? { scheduleId: schedule.id } : {}),
       status: 'QUEUED',
     };
+  }
+
+  private scheduleScope(query: CrmScheduledMessageQueryDto): Prisma.ScheduledMessageWhereInput {
+    return {
+      connectionId: query.connectionId,
+      contactId: query.omnicusContactId,
+      projectId: query.omnicusProjectId,
+      ...(query.channelIdentityId ? { channelIdentityId: query.channelIdentityId } : {}),
+      ...(query.crmLeadId ? { contact: { crmLeadId: query.crmLeadId } } : {}),
+    };
+  }
+
+  private scheduleRouting(schedule: {
+    channelIdentityId: string;
+    connectionId: string;
+    contact: { crmLeadId: string | null };
+    contactId: string;
+  }) {
+    return {
+      channelIdentityId: schedule.channelIdentityId,
+      connectionId: schedule.connectionId,
+      crmLeadId: schedule.contact.crmLeadId,
+      omnicusContactId: schedule.contactId,
+    };
+  }
+
+  private scheduleResponse<T extends Parameters<CrmOutboundService['scheduleRouting']>[0]>(
+    schedule: T,
+  ) {
+    const safe = { ...schedule };
+    Reflect.deleteProperty(safe, 'contact');
+    Reflect.deleteProperty(safe, 'contactId');
+    return { ...safe, ...this.scheduleRouting(schedule) };
   }
 
   private isUniqueConstraint(error: unknown): boolean {

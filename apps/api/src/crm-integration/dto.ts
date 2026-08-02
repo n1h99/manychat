@@ -195,6 +195,28 @@ export class CrmScheduledMessageQueryDto {
   @IsString()
   @Length(1, 128)
   omnicusProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  connectionId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  omnicusContactId!: string;
+
+  @ApiPropertyOptional({ type: String })
+  @IsOptional()
+  @IsString()
+  @Length(1, 128)
+  channelIdentityId?: string;
+
+  @ApiPropertyOptional({ type: String })
+  @IsOptional()
+  @IsString()
+  @Length(1, 128)
+  crmLeadId?: string;
 }
 
 export class CrmMediaGroupItemDto {

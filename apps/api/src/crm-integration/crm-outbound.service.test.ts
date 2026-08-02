@@ -28,9 +28,14 @@ function database(options: { existing?: boolean; mediaKind?: string; projectId?:
     message: {
       create: vi.fn().mockResolvedValue({ id: 'message-a' }),
       findFirst: vi.fn().mockResolvedValue({ externalMessageId: 'telegram-message-42' }),
+      updateMany: vi.fn(),
     },
-    outboxRecord: { create: vi.fn().mockResolvedValue({ id: 'outbox-a' }) },
-    scheduledMessage: { create: vi.fn().mockResolvedValue({ id: 'schedule-a' }) },
+    outboxRecord: { create: vi.fn().mockResolvedValue({ id: 'outbox-a' }), updateMany: vi.fn() },
+    scheduledMessage: {
+      create: vi.fn().mockResolvedValue({ id: 'schedule-a' }),
+      findFirst: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
   };
   return {
     client: {
@@ -78,6 +83,8 @@ function database(options: { existing?: boolean; mediaKind?: string; projectId?:
         }),
       },
       scheduledMessage: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue(null),
       },
     },
@@ -137,7 +144,11 @@ describe('CrmOutboundService', () => {
         'correlation-a',
       ),
     ).resolves.toEqual({
+      channelIdentityId: 'identity-a',
+      connectionId: 'connection-a',
+      crmLeadId: 'crm-lead-a',
       messageId: 'message-a',
+      omnicusContactId: 'contact-a',
       operationId: 'outbox-a',
       replayed: false,
       scheduleId: 'schedule-a',
@@ -161,6 +172,123 @@ describe('CrmOutboundService', () => {
       }),
     );
     expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('lists only schedules inside the required lead and connection scope', async () => {
+    const db = database();
+    db.client.scheduledMessage.findMany.mockResolvedValue([
+      {
+        cancelledAt: null,
+        channelIdentityId: 'identity-a',
+        completedAt: null,
+        connectionId: 'connection-a',
+        contact: { crmLeadId: 'crm-lead-a' },
+        contactId: 'contact-a',
+        id: 'schedule-a',
+        messageId: 'message-a',
+        occurrence: 1,
+        outboxRecordId: 'outbox-a',
+        scheduledAt: new Date('2026-08-03T10:00:00.000Z'),
+        seriesId: 'outbox-a',
+        status: 'QUEUED',
+        timezone: 'Asia/Baku',
+      },
+    ]);
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await expect(
+      service.scheduledList({
+        channelIdentityId: 'identity-a',
+        connectionId: 'connection-a',
+        crmLeadId: 'crm-lead-a',
+        crmProjectId: 'cyber-pulse-staging',
+        omnicusContactId: 'contact-a',
+        omnicusProjectId: 'project-a',
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        channelIdentityId: 'identity-a',
+        connectionId: 'connection-a',
+        crmLeadId: 'crm-lead-a',
+        id: 'schedule-a',
+        omnicusContactId: 'contact-a',
+      }),
+    ]);
+    expect(db.client.scheduledMessage.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          channelIdentityId: 'identity-a',
+          connectionId: 'connection-a',
+          contact: { crmLeadId: 'crm-lead-a' },
+          contactId: 'contact-a',
+          projectId: 'project-a',
+        },
+      }),
+    );
+  });
+
+  it('hides a schedule when its lead scope does not match', async () => {
+    const db = database();
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await expect(
+      service.scheduled('schedule-a', {
+        connectionId: 'connection-a',
+        crmLeadId: 'another-lead',
+        crmProjectId: 'cyber-pulse-staging',
+        omnicusContactId: 'contact-a',
+        omnicusProjectId: 'project-a',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'CRM_SCHEDULE_NOT_FOUND' } });
+    expect(db.client.scheduledMessage.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ contact: { crmLeadId: 'another-lead' } }),
+      }),
+    );
+  });
+
+  it('cancels a queued schedule only after the full lead scope resolves', async () => {
+    const db = database();
+    db.transaction.scheduledMessage.findFirst.mockResolvedValue({
+      channelIdentityId: 'identity-a',
+      connectionId: 'connection-a',
+      contact: { crmLeadId: 'crm-lead-a' },
+      contactId: 'contact-a',
+      id: 'schedule-a',
+      messageId: 'message-a',
+      outboxRecordId: 'outbox-a',
+      status: 'QUEUED',
+    });
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await expect(
+      service.cancelScheduled('schedule-a', {
+        channelIdentityId: 'identity-a',
+        connectionId: 'connection-a',
+        crmLeadId: 'crm-lead-a',
+        crmProjectId: 'cyber-pulse-staging',
+        omnicusContactId: 'contact-a',
+        omnicusProjectId: 'project-a',
+      }),
+    ).resolves.toEqual({
+      channelIdentityId: 'identity-a',
+      connectionId: 'connection-a',
+      crmLeadId: 'crm-lead-a',
+      id: 'schedule-a',
+      omnicusContactId: 'contact-a',
+      replayed: false,
+      status: 'CANCELLED',
+    });
+    expect(db.transaction.scheduledMessage.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          channelIdentityId: 'identity-a',
+          connectionId: 'connection-a',
+          contactId: 'contact-a',
+          projectId: 'project-a',
+        }),
+      }),
+    );
   });
 
   it('rejects cross-project routing before creating side effects', async () => {

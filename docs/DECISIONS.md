@@ -961,6 +961,13 @@ normalized inbox events and transactional CRM outbox intents. Scenario and
 broadcast history carries a safe optional `sourceContext` object with stable
 identifier, display name and an allow-listed Omnicus web URL.
 
+CRM schedule enumeration, lookup and cancellation are lead-scoped rather than
+project-wide. The public route requires both `connectionId` and
+`omnicusContactId`; optional `channelIdentityId` and `crmLeadId` further narrow
+the same database query. Responses expose those routing identifiers but never
+the stored request JSON or message content. A mismatched scope is reported as
+not found, including when a valid `scheduleId` belongs to another lead.
+
 External Telegram deletion stays `supported=false`. External actions stay
 `supported=false` until Cyber Pulse publishes the callback ownership,
 authentication and retry contract. Telegram-native rich messages are not used

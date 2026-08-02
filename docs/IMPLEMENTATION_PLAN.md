@@ -572,3 +572,6 @@ conversation pause with automatic resume, application-owned scheduling,
 Telegram media-group aggregates, structured contact/location/poll messages and
 bot commands/menu configuration. External callbacks and external deletion
 remain capability-gated because no safe provider contract exists for them.
+Scheduled-message create/get/list/cancel responses carry safe routing IDs, and
+all public read/cancel operations require connection/contact scope so CRM lead
+managers cannot enumerate another lead's schedule.

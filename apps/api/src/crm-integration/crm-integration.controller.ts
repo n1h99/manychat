@@ -289,11 +289,7 @@ export class CrmIntegrationController {
     @Query() query: CrmScheduledMessageQueryDto,
     @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
-    return this.outbound.scheduledList(
-      query.crmProjectId,
-      query.omnicusProjectId,
-      request.crmIntegration?.projectId,
-    );
+    return this.outbound.scheduledList(query, request.crmIntegration?.projectId);
   }
 
   @Get('messages/scheduled/:scheduleId')
@@ -302,12 +298,7 @@ export class CrmIntegrationController {
     @Query() query: CrmScheduledMessageQueryDto,
     @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
-    return this.outbound.scheduled(
-      scheduleId,
-      query.crmProjectId,
-      query.omnicusProjectId,
-      request.crmIntegration?.projectId,
-    );
+    return this.outbound.scheduled(scheduleId, query, request.crmIntegration?.projectId);
   }
 
   @Delete('messages/scheduled/:scheduleId')
@@ -316,12 +307,7 @@ export class CrmIntegrationController {
     @Query() query: CrmScheduledMessageQueryDto,
     @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
-    return this.outbound.cancelScheduled(
-      scheduleId,
-      query.crmProjectId,
-      query.omnicusProjectId,
-      request.crmIntegration?.projectId,
-    );
+    return this.outbound.cancelScheduled(scheduleId, query, request.crmIntegration?.projectId);
   }
 
   @Post('chat-actions')

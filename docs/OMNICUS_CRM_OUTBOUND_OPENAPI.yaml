@@ -402,15 +402,23 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ScheduledOutboundMessage' }
       responses:
-        '200': { $ref: '#/components/responses/QueuedOperationResponse' }
+        '200':
+          description: Scheduled operation durably queued with safe lead routing identifiers.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduledQueuedOperation' }
     get:
       operationId: listScheduledCrmMessages
       parameters:
         - $ref: '#/components/parameters/CrmProjectId'
         - $ref: '#/components/parameters/OmnicusProjectId'
+        - $ref: '#/components/parameters/ScheduleConnectionId'
+        - $ref: '#/components/parameters/ScheduleContactId'
+        - $ref: '#/components/parameters/ScheduleIdentityId'
+        - $ref: '#/components/parameters/ScheduleCrmLeadId'
       responses:
         '200':
-          description: Up to 100 project-scoped schedules.
+          description: Up to 100 schedules inside the required lead and connection scope.
           content:
             application/json:
               schema:
@@ -422,6 +430,10 @@ paths:
       - { name: scheduleId, in: path, required: true, schema: { type: string, format: uuid } }
       - $ref: '#/components/parameters/CrmProjectId'
       - $ref: '#/components/parameters/OmnicusProjectId'
+      - $ref: '#/components/parameters/ScheduleConnectionId'
+      - $ref: '#/components/parameters/ScheduleContactId'
+      - $ref: '#/components/parameters/ScheduleIdentityId'
+      - $ref: '#/components/parameters/ScheduleCrmLeadId'
     get:
       operationId: getScheduledCrmMessage
       responses:
@@ -520,6 +532,26 @@ components:
       name: omnicusProjectId
       in: query
       required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ScheduleConnectionId:
+      name: connectionId
+      in: query
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ScheduleContactId:
+      name: omnicusContactId
+      in: query
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ScheduleIdentityId:
+      name: channelIdentityId
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ScheduleCrmLeadId:
+      name: crmLeadId
+      in: query
+      required: false
       schema: { type: string, minLength: 1, maxLength: 128 }
   schemas:
     Identity:
@@ -659,9 +691,25 @@ components:
     ScheduledMessage:
       type: object
       additionalProperties: false
-      required: [id, messageId, outboxRecordId, seriesId, occurrence, status, timezone, scheduledAt]
+      required:
+        - id
+        - messageId
+        - outboxRecordId
+        - seriesId
+        - occurrence
+        - status
+        - timezone
+        - scheduledAt
+        - connectionId
+        - channelIdentityId
+        - omnicusContactId
+        - crmLeadId
       properties:
         id: { type: string, format: uuid }
+        connectionId: { type: string, minLength: 1, maxLength: 128 }
+        channelIdentityId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        crmLeadId: { type: [string, 'null'], minLength: 1, maxLength: 128 }
         messageId: { type: string, format: uuid }
         outboxRecordId: { type: string, format: uuid }
         seriesId: { type: string, format: uuid }
@@ -674,11 +722,45 @@ components:
     ScheduledMessageCancellation:
       type: object
       additionalProperties: false
-      required: [id, replayed, status]
+      required:
+        - id
+        - replayed
+        - status
+        - connectionId
+        - channelIdentityId
+        - omnicusContactId
+        - crmLeadId
       properties:
         id: { type: string, format: uuid }
+        connectionId: { type: string, minLength: 1, maxLength: 128 }
+        channelIdentityId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        crmLeadId: { type: [string, 'null'], minLength: 1, maxLength: 128 }
         replayed: { type: boolean }
         status: { type: string, const: CANCELLED }
+    ScheduledQueuedOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - messageId
+        - scheduleId
+        - status
+        - replayed
+        - connectionId
+        - channelIdentityId
+        - omnicusContactId
+        - crmLeadId
+      properties:
+        operationId: { type: string, format: uuid }
+        messageId: { type: string, format: uuid }
+        scheduleId: { type: string, format: uuid }
+        status: { type: string, const: QUEUED }
+        replayed: { type: boolean }
+        connectionId: { type: string, minLength: 1, maxLength: 128 }
+        channelIdentityId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        crmLeadId: { type: [string, 'null'], minLength: 1, maxLength: 128 }
     MediaGroupItem:
       type: object
       additionalProperties: false
