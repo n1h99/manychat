@@ -251,12 +251,18 @@ const messageResultSchema = z.object({
   operationId: z.string().min(1),
 });
 
-const reactionResultSchema = z.object({
-  crmLeadId: z.string().min(1),
-  crmReactionEventId: z.string().min(1),
-  mode: z.enum(['created', 'duplicate']),
-  operationId: z.string().min(1),
-});
+const reactionResultSchema = z
+  .object({
+    applied: z.boolean(),
+    crmLeadId: z.string().min(1),
+    crmMessageId: z.string().min(1).optional(),
+    mode: z.enum(['created', 'duplicate']),
+    operationId: z.string().min(1),
+  })
+  .refine((result) => !result.applied || result.crmMessageId !== undefined, {
+    message: 'Applied reaction result requires crmMessageId',
+    path: ['crmMessageId'],
+  });
 
 const operationSchema = z.object({
   errorCode: z.string().optional(),
@@ -418,7 +424,7 @@ export class HttpCrmClient implements CrmClient {
     return {
       mode: result.mode,
       operationId: result.operationId,
-      providerReference: result.crmReactionEventId,
+      providerReference: result.crmMessageId ?? result.operationId,
     };
   }
 
@@ -691,7 +697,11 @@ export class MockCrmClient implements CrmClient {
             ...(kind === 'lead'
               ? { crmLeadId: result.providerReference }
               : kind === 'reaction'
-                ? { crmLeadId: 'mock-lead', crmReactionEventId: result.providerReference }
+                ? {
+                    applied: true,
+                    crmLeadId: 'mock-lead',
+                    crmMessageId: result.providerReference,
+                  }
                 : { crmMessageId: result.providerReference }),
             mode: result.mode,
             operationId: result.operationId,

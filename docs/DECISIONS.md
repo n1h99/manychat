@@ -797,6 +797,15 @@ outage cannot roll back a Telegram send. PostgreSQL remains the recovery source
 of truth, concurrent worker replicas are harmless, and no Telegram credential,
 raw payload, or signed media URL is persisted in the CRM operation journal.
 
+Live v3.2 reaction acceptance additionally established that the CRM reaction
+result identifies the affected CRM message rather than a separate reaction
+entity. The versioned result is `{applied, crmLeadId, crmMessageId?, mode,
+operationId}`: `crmMessageId` is required when `applied=true` and omitted while
+reaction-before-source is pending. Omnicus uses `operationId` as the temporary
+provider reference for that pending state. This shape must also be preserved
+inside reconciliation `result` so a successful CRM write is not classified as
+`UNKNOWN` merely because its source message has not arrived yet.
+
 ## ADR-038: CRM connections are paired and routed per project
 
 **Status:** Accepted, 2026-07-29.

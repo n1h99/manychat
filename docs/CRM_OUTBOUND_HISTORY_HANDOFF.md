@@ -88,6 +88,24 @@ connection and identity isolation and tolerate the source history message being
 inserted later. Omnicus will keep the advertised `userReactionEvents`
 capability disabled until this endpoint is deployed and verified end to end.
 
+The direct response and the nested reconciliation `result` use the same shape:
+
+```json
+{
+  "applied": true,
+  "crmLeadId": "...",
+  "crmMessageId": "...",
+  "mode": "created",
+  "operationId": "..."
+}
+```
+
+`crmMessageId` is required when `applied=true`. For reaction-before-source the
+initial result uses `applied=false` and omits `crmMessageId`; Omnicus retains
+`operationId` as the temporary provider reference. Replaying the same
+`Idempotency-Key` may return the original result, while the same
+`normalizedEventId` under a new operation must return `mode=duplicate`.
+
 ## Deployment order
 
 Deploy the CRM endpoint and verify its unauthenticated response is `401` before

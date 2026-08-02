@@ -238,8 +238,9 @@ describe('HttpCrmClient', () => {
   it('sends normalized user reaction events to their versioned CRM endpoint', async () => {
     const fetchImplementation = vi.fn().mockResolvedValue(
       Response.json({
+        applied: true,
         crmLeadId: 'crm-lead-a',
-        crmReactionEventId: 'crm-reaction-a',
+        crmMessageId: 'crm-message-a',
         mode: 'created',
         operationId: 'operation-provider-a',
       }),
@@ -266,7 +267,7 @@ describe('HttpCrmClient', () => {
         occurredAt: '2026-08-01T10:00:00.000Z',
         oldReactions: [],
       }),
-    ).resolves.toMatchObject({ providerReference: 'crm-reaction-a' });
+    ).resolves.toMatchObject({ providerReference: 'crm-message-a' });
 
     expect(fetchImplementation).toHaveBeenCalledWith(
       'https://crm.example.test/integrations/v1/omnicus/reactions/inbound',
@@ -278,6 +279,81 @@ describe('HttpCrmClient', () => {
       newReactions: [{ emoji: '👍', type: 'emoji' }],
       normalizedEventId: '22222222-2222-4222-8222-222222222222',
       oldReactions: [],
+    });
+  });
+
+  it('accepts a pending reaction-before-source result without a CRM message id', async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      Response.json({
+        applied: false,
+        crmLeadId: 'crm-lead-a',
+        mode: 'created',
+        operationId: 'operation-provider-a',
+      }),
+    );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.forwardReactionEvent(context, {
+        actor: { displayName: 'Test', externalUserId: '123', type: 'user' },
+        contactId: 'contact-a',
+        identity: leadInput.identity,
+        messageId: '11111111-1111-4111-8111-111111111111',
+        newReactions: [{ emoji: '👍', type: 'emoji' }],
+        normalizedEventId: '22222222-2222-4222-8222-222222222222',
+        occurredAt: '2026-08-01T10:00:00.000Z',
+        oldReactions: [],
+      }),
+    ).resolves.toMatchObject({
+      mode: 'created',
+      operationId: 'operation-provider-a',
+      providerReference: 'operation-provider-a',
+    });
+  });
+
+  it('reconciles a pending reaction result using its operation as the temporary reference', async () => {
+    const fetchImplementation = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('socket closed after request'))
+      .mockResolvedValueOnce(
+        Response.json({
+          operationId: 'operation-provider-a',
+          result: {
+            applied: false,
+            crmLeadId: 'crm-lead-a',
+            mode: 'created',
+            operationId: 'operation-provider-a',
+          },
+          status: 'SUCCEEDED',
+        }),
+      );
+    const client = new HttpCrmClient({
+      authToken: 'secret-service-token',
+      baseUrl: 'https://crm.example.test',
+      fetchImplementation,
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.forwardReactionEvent(context, {
+        actor: { displayName: 'Test', externalUserId: '123', type: 'user' },
+        contactId: 'contact-a',
+        identity: leadInput.identity,
+        messageId: '11111111-1111-4111-8111-111111111111',
+        newReactions: [{ emoji: '👍', type: 'emoji' }],
+        normalizedEventId: '22222222-2222-4222-8222-222222222222',
+        occurredAt: '2026-08-01T10:00:00.000Z',
+        oldReactions: [],
+      }),
+    ).resolves.toMatchObject({
+      mode: 'created',
+      operationId: 'operation-provider-a',
+      providerReference: 'operation-provider-a',
     });
   });
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Omnicus to CRM messaging contract
-  version: 3.2.0
+  version: 3.2.1
   description: Exact contract implemented by Omnicus for normalized Telegram messages, edits, contact shares, automation state and confirmed outbound history.
 security:
   - serviceBearer: []
@@ -64,6 +64,9 @@ paths:
       responses:
         '200':
           description: Created or idempotently replayed CRM reaction event.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReactionResult' }
         '400':
           description: Safe validation error.
         '401':
@@ -137,6 +140,34 @@ components:
         minLength: 1
         maxLength: 128
   schemas:
+    ReactionResult:
+      type: object
+      additionalProperties: false
+      required: [applied, crmLeadId, mode, operationId]
+      properties:
+        applied:
+          type: boolean
+          description: False while the referenced source message has not reached CRM yet.
+        crmLeadId:
+          type: string
+          minLength: 1
+        crmMessageId:
+          type: string
+          minLength: 1
+          description: Present when the reaction is already attached to the CRM message.
+        mode:
+          type: string
+          enum: [created, duplicate]
+        operationId:
+          type: string
+          minLength: 1
+      allOf:
+        - if:
+            properties:
+              applied: { const: true }
+            required: [applied]
+          then:
+            required: [crmMessageId]
     Identity:
       type: object
       additionalProperties: false

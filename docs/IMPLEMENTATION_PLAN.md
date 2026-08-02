@@ -566,6 +566,13 @@ explicitly distinguish editable and immutable fields. Since Bot API 10.2 has
 no effect-catalog discovery method for bots, Omnicus advertises an empty catalog
 with a stable reason code instead of inventing effect identifiers.
 
+Live reaction acceptance fixes the response boundary to the deployed CRM shape:
+immediately applied reactions return the affected `crmMessageId`; pending
+reaction-before-source returns `applied=false` without a message ID and remains
+reconcilable by `operationId`. Both direct and reconciliation responses use the
+same versioned result so a successful CRM side effect cannot be left `UNKNOWN`
+because Omnicus expected a synthetic reaction-record identifier.
+
 Provider contract 3.2.0 adds the CRM-requested durable boundary for safe
 scenario/broadcast `sourceContext`, client edit/contact events, temporary
 conversation pause with automatic resume, application-owned scheduling,
