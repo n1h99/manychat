@@ -18,9 +18,10 @@ v3.2.
 - WhatsApp and Instagram are deliberately deferred until test accounts and a
   separately approved scope exist.
 
-The only recorded product follow-up from the current verification cycle is the
-Telegram channel-detail cache refresh after disabling a webhook. It is tracked
-in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md#known-ui-follow-ups).
+The Telegram channel-detail cache refresh issue found during the current
+verification cycle is resolved: disable/connect mutations update the active
+detail immediately. Broad manual/live acceptance remains intentionally grouped
+into the final verification stage.
 
 ## Active references
 

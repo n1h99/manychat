@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { useAuth } from './auth';
 
@@ -140,10 +140,30 @@ export function useChannelOutboundEvents(projectId?: string, id?: string) {
     refetchInterval: 5_000,
   });
 }
+
+export async function syncChannelCache(
+  cache: QueryClient,
+  projectId: string | undefined,
+  channel: Channel,
+) {
+  cache.setQueryData<Channel[]>(['channels', projectId], (channels) =>
+    channels?.map((candidate) => (candidate.id === channel.id ? channel : candidate)),
+  );
+  cache.setQueryData(['channel', projectId, channel.id], channel);
+
+  await Promise.all([
+    cache.invalidateQueries({ queryKey: ['channels', projectId] }),
+    cache.invalidateQueries({
+      exact: true,
+      queryKey: ['channel', projectId, channel.id],
+    }),
+  ]);
+}
+
 export function useChannelMutations(projectId?: string) {
   const { accessToken } = useAuth();
   const cache = useQueryClient();
-  const invalidate = () => cache.invalidateQueries({ queryKey: ['channels', projectId] });
+  const synchronize = (channel: Channel) => syncChannelCache(cache, projectId, channel);
   const request = <T>(path: string, method: string, body?: unknown) =>
     apiRequest<T>(
       `/api/v1/projects/${projectId}/channels${path}`,
@@ -153,28 +173,28 @@ export function useChannelMutations(projectId?: string) {
   return {
     create: useMutation({
       mutationFn: (input: CreateInput) => request<Channel>('', 'POST', input),
-      onSuccess: invalidate,
+      onSuccess: synchronize,
     }),
     update: useMutation({
       mutationFn: ({ id, ...input }: { id: string } & UpdateInput) =>
         request<Channel>(`/${id}`, 'PATCH', input),
-      onSuccess: invalidate,
+      onSuccess: synchronize,
     }),
     test: useMutation({
       mutationFn: (id: string) => request<Channel>(`/${id}/test`, 'POST'),
-      onSuccess: invalidate,
+      onSuccess: synchronize,
     }),
     connect: useMutation({
       mutationFn: (id: string) => request<Channel>(`/${id}/connect`, 'POST', {}),
-      onSuccess: invalidate,
+      onSuccess: synchronize,
     }),
     disable: useMutation({
       mutationFn: (id: string) => request<Channel>(`/${id}/disable`, 'POST'),
-      onSuccess: invalidate,
+      onSuccess: synchronize,
     }),
     rotate: useMutation({
       mutationFn: (id: string) => request<Channel>(`/${id}/rotate-secret`, 'POST'),
-      onSuccess: invalidate,
+      onSuccess: synchronize,
     }),
     send: useMutation({
       mutationFn: ({ id, ...input }: { id: string } & MessageInput) =>
