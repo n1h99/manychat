@@ -82,6 +82,9 @@ importers:
       '@omnicus/automation-core':
         specifier: workspace:*
         version: link:../../packages/automation-core
+      '@omnicus/automation-http':
+        specifier: workspace:*
+        version: link:../../packages/automation-http
       '@omnicus/channel-secrets':
         specifier: workspace:*
         version: link:../../packages/channel-secrets
@@ -204,6 +207,9 @@ importers:
       '@omnicus/automation-core':
         specifier: workspace:*
         version: link:../../packages/automation-core
+      '@omnicus/automation-http':
+        specifier: workspace:*
+        version: link:../../packages/automation-http
       '@omnicus/channel-secrets':
         specifier: workspace:*
         version: link:../../packages/channel-secrets
@@ -247,6 +253,12 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/automation-http:
+    dependencies:
+      '@omnicus/automation-core':
+        specifier: workspace:*
+        version: link:../automation-core
 
   packages/channel-core: {}
 

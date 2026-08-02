@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  automationValueFor,
   evaluateCondition,
   evaluateConditionGroup,
   matchesWaitForReplyCriteria,
@@ -110,6 +111,34 @@ describe('automation graph validation', () => {
 
     expect(valid.errors).not.toContain('Wait for Reply node wait has invalid reply criteria');
     expect(invalid.errors).toContain('Wait for Reply node wait has invalid reply criteria');
+  });
+
+  it('requires a bounded external HTTP config and explicit outcome paths', () => {
+    const graph = {
+      edges: [
+        { from: 'trigger', to: 'http' },
+        { from: 'http', output: 'success', to: 'stop' },
+      ],
+      nodes: [
+        { id: 'trigger', type: 'INCOMING_MESSAGE' },
+        {
+          config: { method: 'POST', timeoutMs: 10_000, url: 'https://example.test/hooks' },
+          id: 'http',
+          type: 'EXTERNAL_HTTP_REQUEST',
+        },
+        { id: 'stop', type: 'STOP' },
+      ],
+    };
+
+    expect(validateScenarioGraph(graph).errors).toContain(
+      'External HTTP node http requires exactly one success and one failure path',
+    );
+    expect(
+      validateScenarioGraph({
+        ...graph,
+        edges: [...graph.edges, { from: 'http', output: 'failure', to: 'stop' }],
+      }).errors,
+    ).toEqual([]);
   });
 });
 
@@ -233,5 +262,42 @@ describe('condition groups and safe simulation', () => {
         event: { content: { text: 'no' }, type: 'MESSAGE' },
       }).steps.find((step) => step.nodeId === 'condition'),
     ).toMatchObject({ reasonCode: 'NO_BRANCH_MATCHED' });
+  });
+
+  it('simulates the selected external HTTP outcome without making a request', () => {
+    const graph = {
+      edges: [
+        { from: 'incoming', to: 'http' },
+        { from: 'http', output: 'success', to: 'success' },
+        { from: 'http', output: 'failure', to: 'failure' },
+      ],
+      nodes: [
+        { id: 'incoming', type: 'INCOMING_MESSAGE' },
+        {
+          config: { method: 'GET', url: 'https://example.test/status' },
+          id: 'http',
+          type: 'EXTERNAL_HTTP_REQUEST',
+        },
+        { id: 'success', type: 'STOP' },
+        { id: 'failure', type: 'STOP' },
+      ],
+    };
+
+    expect(simulateScenarioGraph(graph).steps.at(-1)).toMatchObject({
+      nodeId: 'http',
+      reasonCode: 'HTTP_OUTCOME_REQUIRED',
+      result: 'WAITING',
+    });
+    expect(simulateScenarioGraph(graph, { httpOutcome: 'failure' }).steps[1]).toMatchObject({
+      nextNodeId: 'failure',
+      reasonCode: 'HTTP_FAILURE_SIMULATED',
+      selectedOutput: 'failure',
+    });
+  });
+
+  it('resolves a mapped HTTP variable by its configured path', () => {
+    expect(automationValueFor('crm.leadId', {}, {}, {}, { crm: { leadId: 'lead-a' } })).toBe(
+      'lead-a',
+    );
   });
 });

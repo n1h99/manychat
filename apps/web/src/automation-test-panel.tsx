@@ -7,6 +7,7 @@ export interface AutomationTestInput {
   contact?: Record<string, unknown>;
   customFields?: Record<string, unknown>;
   event?: Record<string, unknown>;
+  httpOutcome?: 'success' | 'failure';
   waitOutcome?: 'reply' | 'timeout';
 }
 
@@ -25,6 +26,7 @@ export function AutomationTestPanel({
   const [text, setText] = useState('yes');
   const [callbackData, setCallbackData] = useState('confirm');
   const [firstName, setFirstName] = useState('Test customer');
+  const [httpOutcome, setHttpOutcome] = useState<'success' | 'failure'>('success');
   const [waitOutcome, setWaitOutcome] = useState<'reply' | 'timeout'>('reply');
 
   const run = async () => {
@@ -48,6 +50,7 @@ export function AutomationTestPanel({
       contact: { firstName },
       customFields,
       event: { content, type: eventType },
+      httpOutcome,
       waitOutcome,
     });
   };
@@ -112,6 +115,16 @@ export function AutomationTestPanel({
               { label: 'Timeout', value: 'timeout' },
             ]}
             value={waitOutcome}
+          />
+        </Form.Item>
+        <Form.Item label="External HTTP outcome">
+          <Select
+            onChange={setHttpOutcome}
+            options={[
+              { label: 'Success path', value: 'success' },
+              { label: 'Failure path', value: 'failure' },
+            ]}
+            value={httpOutcome}
           />
         </Form.Item>
         <Button loading={loading} onClick={() => void run()} type="primary">

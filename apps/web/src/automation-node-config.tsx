@@ -3,11 +3,28 @@ import {
   waitReplyMediaTypes,
   type ConditionOperator,
 } from '@omnicus/automation-core';
-import { Button, Checkbox, Form, Input, InputNumber, Select, Space, Typography } from 'antd';
+import {
+  Alert,
+  AutoComplete,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Tabs,
+  Typography,
+} from 'antd';
 import { useEffect, useState } from 'react';
 
 import type { ScenarioSummary } from './automation-api';
-import type { AutomationCustomField, AutomationTag } from './automation-studio-api';
+import type {
+  AutomationCustomField,
+  AutomationSecret,
+  AutomationTag,
+  ExternalHttpTestResult,
+} from './automation-studio-api';
 import {
   conditionFieldType,
   defaultCustomFieldValue,
@@ -23,10 +40,16 @@ interface Props {
   config: Record<string, unknown>;
   customFields: AutomationCustomField[];
   nodeType: string;
+  onCreateSecret(name: string, value: string): Promise<string>;
   onChange(config: Record<string, unknown>): void;
   scenarios: ScenarioSummary[];
+  secrets: AutomationSecret[];
   tags: AutomationTag[];
   templates: MessageTemplate[];
+  testHttpRequest(
+    config: Record<string, unknown>,
+    variables?: Record<string, unknown>,
+  ): Promise<ExternalHttpTestResult>;
 }
 
 interface ConditionProps {
@@ -76,10 +99,13 @@ export function AutomationNodeConfig({
   config,
   customFields,
   nodeType,
+  onCreateSecret,
   onChange,
   scenarios,
+  secrets,
   tags,
   templates,
+  testHttpRequest,
 }: Props) {
   const set = (key: string, value: unknown) => onChange({ ...config, [key]: value });
 
@@ -240,7 +266,424 @@ export function AutomationNodeConfig({
       </Form.Item>
     );
 
+  if (nodeType === 'EXTERNAL_HTTP_REQUEST')
+    return (
+      <ExternalHttpFields
+        config={config}
+        onChange={onChange}
+        onCreateSecret={onCreateSecret}
+        secrets={secrets}
+        testRequest={testHttpRequest}
+      />
+    );
+
   return <Typography.Text type="secondary">This node has no configurable fields.</Typography.Text>;
+}
+
+function ExternalHttpFields({
+  config,
+  onChange,
+  onCreateSecret,
+  secrets,
+  testRequest,
+}: {
+  config: Record<string, unknown>;
+  onChange(config: Record<string, unknown>): void;
+  onCreateSecret(name: string, value: string): Promise<string>;
+  secrets: AutomationSecret[];
+  testRequest(
+    config: Record<string, unknown>,
+    variables?: Record<string, unknown>,
+  ): Promise<ExternalHttpTestResult>;
+}) {
+  const [secretName, setSecretName] = useState('');
+  const [secretValue, setSecretValue] = useState('');
+  const [creatingSecret, setCreatingSecret] = useState(false);
+  const [secretError, setSecretError] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState(false);
+  const [testResult, setTestResult] = useState<ExternalHttpTestResult>();
+  const [testVariablesDraft, setTestVariablesDraft] = useState('{}');
+  const set = (key: string, value: unknown) => onChange({ ...config, [key]: value });
+  const query = objectArray(config.query);
+  const headers = objectArray(config.headers);
+  const mappings = objectArray(config.mappings);
+  const method = typeof config.method === 'string' ? config.method : 'GET';
+  const contentType =
+    typeof config.contentType === 'string' ? config.contentType : 'application/json';
+
+  const requestTab = (
+    <Space direction="vertical" style={{ width: '100%' }}>
+      <Form.Item label="Method">
+        <Select
+          onChange={(value) => set('method', value)}
+          options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((value) => ({
+            label: value,
+            value,
+          }))}
+          value={method}
+        />
+      </Form.Item>
+      <Form.Item label="HTTPS URL">
+        <Input
+          maxLength={2048}
+          onChange={(event) => set('url', event.target.value)}
+          placeholder="https://api.example.com/hooks/{{contact.id}}"
+          value={typeof config.url === 'string' ? config.url : 'https://'}
+        />
+      </Form.Item>
+      <Space.Compact block>
+        <Form.Item label="Timeout, ms" style={{ width: '50%' }}>
+          <InputNumber
+            max={30_000}
+            min={1_000}
+            onChange={(value) => set('timeoutMs', value ?? 10_000)}
+            precision={0}
+            style={{ width: '100%' }}
+            value={typeof config.timeoutMs === 'number' ? config.timeoutMs : 10_000}
+          />
+        </Form.Item>
+        <Form.Item label="Maximum attempts" style={{ width: '50%' }}>
+          <InputNumber
+            max={5}
+            min={1}
+            onChange={(value) => set('maxAttempts', value ?? 1)}
+            precision={0}
+            style={{ width: '100%' }}
+            value={typeof config.maxAttempts === 'number' ? config.maxAttempts : 1}
+          />
+        </Form.Item>
+      </Space.Compact>
+      <Typography.Text strong>Query parameters</Typography.Text>
+      {query.map((item, index) => (
+        <Space.Compact block key={`query-${index}`}>
+          <Input
+            onChange={(event) =>
+              set('query', replaceAt(query, index, { ...item, name: event.target.value }))
+            }
+            placeholder="name"
+            value={stringValue(item.name)}
+          />
+          <Input
+            onChange={(event) =>
+              set('query', replaceAt(query, index, { ...item, value: event.target.value }))
+            }
+            placeholder="{{contact.id}}"
+            value={stringValue(item.value)}
+          />
+          <Button danger onClick={() => set('query', removeAt(query, index))}>
+            Remove
+          </Button>
+        </Space.Compact>
+      ))}
+      <Button
+        disabled={query.length >= 20}
+        onClick={() => set('query', [...query, { name: '', value: '' }])}
+      >
+        Add query parameter
+      </Button>
+    </Space>
+  );
+
+  const headersTab = (
+    <Space direction="vertical" style={{ width: '100%' }}>
+      <Alert
+        message="Authorization, Cookie and X-Api-Key values must use a write-only project secret."
+        showIcon
+        type="info"
+      />
+      {headers.map((item, index) => {
+        const usesSecret = typeof item.secretId === 'string';
+        return (
+          <Space direction="vertical" key={`header-${index}`} style={{ width: '100%' }}>
+            <Input
+              onChange={(event) =>
+                set('headers', replaceAt(headers, index, { ...item, name: event.target.value }))
+              }
+              placeholder="Header name"
+              value={stringValue(item.name)}
+            />
+            <Select
+              onChange={(mode: 'secret' | 'value') =>
+                set(
+                  'headers',
+                  replaceAt(
+                    headers,
+                    index,
+                    mode === 'secret'
+                      ? { name: item.name, secretId: secrets[0]?.id }
+                      : { name: item.name, value: '' },
+                  ),
+                )
+              }
+              options={[
+                { label: 'Visible template value', value: 'value' },
+                { label: 'Write-only secret reference', value: 'secret' },
+              ]}
+              value={usesSecret ? 'secret' : 'value'}
+            />
+            {usesSecret ? (
+              <Select
+                onChange={(secretId) =>
+                  set('headers', replaceAt(headers, index, { name: item.name, secretId }))
+                }
+                options={secrets.map((secret) => ({ label: secret.name, value: secret.id }))}
+                placeholder="Select secret"
+                value={item.secretId}
+              />
+            ) : (
+              <Input
+                onChange={(event) =>
+                  set(
+                    'headers',
+                    replaceAt(headers, index, { name: item.name, value: event.target.value }),
+                  )
+                }
+                placeholder="Header value or {{variable}}"
+                value={stringValue(item.value)}
+              />
+            )}
+            <Button danger onClick={() => set('headers', removeAt(headers, index))} size="small">
+              Remove header
+            </Button>
+          </Space>
+        );
+      })}
+      <Button
+        disabled={headers.length >= 20}
+        onClick={() => set('headers', [...headers, { name: '', value: '' }])}
+      >
+        Add header
+      </Button>
+      <Typography.Text strong>Create write-only secret</Typography.Text>
+      <Input
+        onChange={(event) => setSecretName(event.target.value)}
+        placeholder="Secret name"
+        value={secretName}
+      />
+      <Input.Password
+        onChange={(event) => setSecretValue(event.target.value)}
+        placeholder="Secret value (never shown again)"
+        value={secretValue}
+      />
+      <Button
+        disabled={!secretName.trim() || !secretValue}
+        loading={creatingSecret}
+        onClick={async () => {
+          setCreatingSecret(true);
+          try {
+            await onCreateSecret(secretName, secretValue);
+            setSecretError(false);
+            setSecretName('');
+            setSecretValue('');
+          } catch {
+            setSecretError(true);
+          } finally {
+            setCreatingSecret(false);
+          }
+        }}
+      >
+        Save secret
+      </Button>
+      {secretError ? (
+        <Typography.Text type="danger">
+          Secret could not be saved. Check the name and try again.
+        </Typography.Text>
+      ) : null}
+    </Space>
+  );
+
+  const bodyTab = (
+    <Space direction="vertical" style={{ width: '100%' }}>
+      <Form.Item label="Content type">
+        <Select
+          disabled={method === 'GET'}
+          onChange={(value) => set('contentType', value)}
+          options={['application/json', 'application/x-www-form-urlencoded', 'text/plain'].map(
+            (value) => ({ label: value, value }),
+          )}
+          value={contentType}
+        />
+      </Form.Item>
+      {method === 'GET' ? (
+        <Typography.Text type="secondary">GET requests do not send a body.</Typography.Text>
+      ) : contentType === 'application/json' ? (
+        <JsonValueInput onChange={(value) => set('body', value)} value={config.body ?? {}} />
+      ) : (
+        <Input.TextArea
+          maxLength={65_536}
+          onChange={(event) => set('body', event.target.value)}
+          rows={8}
+          value={typeof config.body === 'string' ? config.body : ''}
+        />
+      )}
+    </Space>
+  );
+
+  const responseTab = (
+    <Space direction="vertical" style={{ width: '100%' }}>
+      <Space.Compact block>
+        <Form.Item label="Success from" style={{ width: '50%' }}>
+          <InputNumber
+            max={599}
+            min={100}
+            onChange={(value) => set('successStatusMinimum', value ?? 200)}
+            value={
+              typeof config.successStatusMinimum === 'number' ? config.successStatusMinimum : 200
+            }
+          />
+        </Form.Item>
+        <Form.Item label="Success through" style={{ width: '50%' }}>
+          <InputNumber
+            max={599}
+            min={100}
+            onChange={(value) => set('successStatusMaximum', value ?? 299)}
+            value={
+              typeof config.successStatusMaximum === 'number' ? config.successStatusMaximum : 299
+            }
+          />
+        </Form.Item>
+      </Space.Compact>
+      {mappings.map((item, index) => (
+        <Space direction="vertical" key={`mapping-${index}`} style={{ width: '100%' }}>
+          <Input
+            onChange={(event) =>
+              set(
+                'mappings',
+                replaceAt(mappings, index, { ...item, sourcePath: event.target.value }),
+              )
+            }
+            placeholder="response.data.customerId"
+            value={stringValue(item.sourcePath)}
+          />
+          <Input
+            onChange={(event) =>
+              set(
+                'mappings',
+                replaceAt(mappings, index, { ...item, targetPath: event.target.value }),
+              )
+            }
+            placeholder="crm.customerId"
+            value={stringValue(item.targetPath)}
+          />
+          <Select
+            onChange={(type) => set('mappings', replaceAt(mappings, index, { ...item, type }))}
+            options={['json', 'string', 'number', 'boolean'].map((value) => ({
+              label: value,
+              value,
+            }))}
+            value={typeof item.type === 'string' ? item.type : 'json'}
+          />
+          <Checkbox
+            checked={item.required === true}
+            onChange={(event) =>
+              set(
+                'mappings',
+                replaceAt(mappings, index, { ...item, required: event.target.checked }),
+              )
+            }
+          >
+            Required mapping
+          </Checkbox>
+          <Button danger onClick={() => set('mappings', removeAt(mappings, index))} size="small">
+            Remove mapping
+          </Button>
+        </Space>
+      ))}
+      <Button
+        disabled={mappings.length >= 20}
+        onClick={() =>
+          set('mappings', [
+            ...mappings,
+            {
+              required: false,
+              sourcePath: 'response.data',
+              targetPath: 'http.result',
+              type: 'json',
+            },
+          ])
+        }
+      >
+        Add response mapping
+      </Button>
+    </Space>
+  );
+
+  const testTab = (
+    <Space direction="vertical" style={{ width: '100%' }}>
+      <Alert
+        message="Test performs a real bounded HTTPS request and does not publish the scenario."
+        showIcon
+        type="warning"
+      />
+      <Form.Item label="Sample variables JSON">
+        <Input.TextArea
+          onChange={(event) => setTestVariablesDraft(event.target.value)}
+          rows={6}
+          value={testVariablesDraft}
+        />
+      </Form.Item>
+      <Button
+        loading={testing}
+        onClick={async () => {
+          setTesting(true);
+          try {
+            const parsed = JSON.parse(testVariablesDraft) as unknown;
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+            setTestResult(await testRequest(config, parsed as Record<string, unknown>));
+            setTestError(false);
+          } catch {
+            setTestError(true);
+          } finally {
+            setTesting(false);
+          }
+        }}
+        type="primary"
+      >
+        Test request
+      </Button>
+      {testError ? (
+        <Typography.Text type="danger">
+          Test failed safely. Check the request and sample variables.
+        </Typography.Text>
+      ) : null}
+      {testResult ? (
+        <Alert
+          description={
+            <pre className="automation-http-preview">
+              {JSON.stringify(
+                {
+                  data: testResult.data,
+                  mappingKeys: testResult.mappingKeys,
+                  outcome: testResult.outcome,
+                  previewTruncated: testResult.previewTruncated,
+                  sizeBytes: testResult.sizeBytes,
+                  statusCode: testResult.statusCode,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          }
+          message="Safe response preview"
+          type={testResult.outcome === 'success' ? 'success' : 'warning'}
+        />
+      ) : null}
+    </Space>
+  );
+
+  return (
+    <Tabs
+      items={[
+        { children: requestTab, key: 'request', label: 'Request' },
+        { children: headersTab, key: 'headers', label: 'Headers' },
+        { children: bodyTab, key: 'body', label: 'Body' },
+        { children: responseTab, key: 'response', label: 'Response' },
+        { children: testTab, key: 'test', label: 'Test' },
+      ]}
+      size="small"
+    />
+  );
 }
 
 export function AutomationConditionFields({ condition, customFields, onChange }: ConditionProps) {
@@ -275,7 +718,7 @@ export function AutomationConditionFields({ condition, customFields, onChange }:
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
       <Form.Item label="Field">
-        <Select
+        <AutoComplete
           onChange={(value: string) => {
             const type = conditionFieldType(value, customFields);
             const nextOperator = operatorsFor(type).includes(operator) ? operator : 'equals';
@@ -291,6 +734,7 @@ export function AutomationConditionFields({ condition, customFields, onChange }:
             });
           }}
           options={conditionFieldOptions(customFields)}
+          placeholder="Choose a field or enter crm.leadId"
           showSearch
           value={field}
         />
@@ -590,6 +1034,15 @@ function conditionFieldOptions(customFields: AutomationCustomField[]) {
       ],
     },
     {
+      label: 'Execution variables',
+      options: [
+        {
+          label: 'Mapped HTTP value (replace path)',
+          value: 'crm.leadId',
+        },
+      ],
+    },
+    {
       label: 'Contact',
       options: [
         { label: 'Display name', value: 'contact.displayName' },
@@ -658,6 +1111,29 @@ function operatorsFor(type: AutomationCustomField['type'] | 'TEXT'): ConditionOp
 
 function numberValue(value: unknown): number | null {
   return typeof value === 'number' ? value : null;
+}
+
+function objectArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.map(record) : [];
+}
+
+function replaceAt(
+  values: Array<Record<string, unknown>>,
+  index: number,
+  value: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  return values.map((candidate, candidateIndex) => (candidateIndex === index ? value : candidate));
+}
+
+function removeAt(
+  values: Array<Record<string, unknown>>,
+  index: number,
+): Array<Record<string, unknown>> {
+  return values.filter((_, candidateIndex) => candidateIndex !== index);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function defaultComparisonValue(

@@ -104,6 +104,66 @@ describe('AutomationService lifecycle', () => {
     });
   });
 
+  it('persists a structurally valid incomplete draft while retaining publish errors', async () => {
+    const graph = {
+      edges: [],
+      nodes: [
+        { id: 'incoming', type: 'INCOMING_MESSAGE' },
+        { id: 'stop', type: 'STOP' },
+      ],
+    };
+    const scenarioVersionUpdate = vi.fn();
+    const transaction = {
+      scenario: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'scenario-a', updatedAt: new Date() }),
+        update: vi.fn(),
+      },
+      scenarioVersion: { update: scenarioVersionUpdate },
+    };
+    const audit = { record: vi.fn() };
+    const service = new AutomationService(
+      audit as never,
+      {
+        client: {
+          $transaction: vi.fn((callback) => callback(transaction)),
+          scenario: {
+            findUnique: vi.fn().mockResolvedValue({
+              activeVersion: null,
+              draftVersion: { graph, id: 'draft-a' },
+              draftVersionId: 'draft-a',
+              id: 'scenario-a',
+              versions: [],
+            }),
+          },
+        },
+      } as never,
+    );
+
+    await expect(
+      service.update(
+        'project-a',
+        'scenario-a',
+        { graph },
+        {
+          email: 'admin@example.test',
+          globalPermissions: [],
+          globalRoleNames: [],
+          userId: 'user-a',
+        },
+        { correlationId: 'correlation-a' },
+      ),
+    ).resolves.toMatchObject({ id: 'scenario-a' });
+    expect(scenarioVersionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          validation: expect.objectContaining({
+            errors: expect.arrayContaining(['Incoming Message trigger must have an outgoing path']),
+          }),
+        }),
+      }),
+    );
+  });
+
   it('rejects a stale draft update instead of overwriting a concurrent editor', async () => {
     const graph = {
       edges: [{ from: 'incoming', to: 'stop' }],

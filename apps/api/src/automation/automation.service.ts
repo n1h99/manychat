@@ -8,6 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  externalHttpRequestConfigSchema,
   scenarioGraphSchema,
   simulateScenarioGraph,
   validateScenarioGraph,
@@ -115,6 +116,7 @@ export class AutomationService {
       ...(dto.contact ? { contact: dto.contact } : {}),
       ...(dto.customFields ? { customFields: dto.customFields } : {}),
       ...(dto.event ? { event: dto.event } : {}),
+      ...(dto.httpOutcome ? { httpOutcome: dto.httpOutcome } : {}),
       ...(dto.waitOutcome ? { waitOutcome: dto.waitOutcome } : {}),
     });
   }
@@ -169,7 +171,7 @@ export class AutomationService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ) {
-    const validation = this.assertValidGraph(dto.graph);
+    const validation = this.validateDraftGraph(dto.graph);
     return this.database.client.$transaction(async (transaction) => {
       const scenario = await transaction.scenario.create({
         data: { description: dto.description ?? null, name: dto.name, projectId },
@@ -216,7 +218,7 @@ export class AutomationService {
         code: 'SCENARIO_DRAFT_REQUIRED',
         message: 'A scenario draft is required',
       });
-    const validation = this.assertValidGraph(graph);
+    const validation = this.validateDraftGraph(graph);
     return this.database.client.$transaction(async (transaction) => {
       let draftId = scenario.draftVersionId;
       if (!draftId) {
@@ -299,6 +301,7 @@ export class AutomationService {
     await this.assertReferencedResources(projectId, draftVersion.graph);
     await this.assertPinnedTemplates(projectId, draftVersion.graph);
     await this.assertPinnedSubflows(projectId, scenarioId, draftVersion.graph);
+    await this.assertAutomationSecrets(projectId, draftVersion.graph);
     return this.database.client.$transaction(async (transaction) => {
       if (scenario.activeVersionId)
         await transaction.scenarioVersion.update({
@@ -468,6 +471,16 @@ export class AutomationService {
     return validation;
   }
 
+  private validateDraftGraph(graph: unknown) {
+    const parsed = scenarioGraphSchema.safeParse(graph);
+    if (!parsed.success)
+      throw new BadRequestException({
+        code: 'SCENARIO_GRAPH_SCHEMA_INVALID',
+        message: 'Scenario graph structure is invalid',
+      });
+    return validateScenarioGraph(parsed.data);
+  }
+
   private async assertPinnedTemplates(projectId: string, graph: unknown): Promise<void> {
     const parsed = scenarioGraphSchema.safeParse(graph);
     if (!parsed.success) return;
@@ -492,6 +505,30 @@ export class AutomationService {
           message: 'Scenario references an unavailable template version',
         });
     }
+  }
+
+  private async assertAutomationSecrets(projectId: string, graph: unknown): Promise<void> {
+    const parsed = scenarioGraphSchema.safeParse(graph);
+    if (!parsed.success) return;
+    const secretIds = new Set(
+      parsed.data.nodes
+        .filter((node) => node.type === 'EXTERNAL_HTTP_REQUEST')
+        .flatMap((node) => {
+          const config = externalHttpRequestConfigSchema.safeParse(node.config);
+          return config.success
+            ? config.data.headers.flatMap((header) => (header.secretId ? [header.secretId] : []))
+            : [];
+        }),
+    );
+    if (!secretIds.size) return;
+    const available = await this.database.client.automationSecret.count({
+      where: { archivedAt: null, id: { in: [...secretIds] }, projectId },
+    });
+    if (available !== secretIds.size)
+      throw new BadRequestException({
+        code: 'SCENARIO_AUTOMATION_SECRET_INVALID',
+        message: 'Scenario references a missing automation secret',
+      });
   }
 
   private async assertReferencedResources(projectId: string, graph: unknown): Promise<void> {

@@ -86,6 +86,8 @@ const expectedTables = new Set([
   'crm_project_configs',
   'wait_states',
   'delayed_actions',
+  'automation_secrets',
+  'external_http_operations',
   'broadcasts',
   'broadcast_recipients',
   'media_assets',
@@ -576,6 +578,39 @@ if (!existsSync(telegramChatV32MigrationPath)) {
   }
   if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(telegramChatV32Sql))
     failures.push('Telegram Chat v3.2 migration contains a destructive operation');
+}
+
+const automationStudio22MigrationPath = resolve(
+  repositoryRoot,
+  'packages/database/prisma/migrations/20260802000200_automation_studio_22_http/migration.sql',
+);
+if (!existsSync(automationStudio22MigrationPath)) {
+  failures.push('Automation Studio 2.2 HTTP migration proposal is missing');
+} else {
+  const automationStudio22Sql = readFileSync(automationStudio22MigrationPath, 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
+  for (const fragment of [
+    'ALTER TYPE "OutboxKind" ADD VALUE \'HTTP\'',
+    'CREATE TABLE "automation_secrets"',
+    'CREATE TABLE "external_http_operations"',
+    'CREATE UNIQUE INDEX "automation_secrets_projectId_normalizedName_key"',
+    'CREATE UNIQUE INDEX "external_http_operations_projectId_scenarioExecutionId_nodeId_key"',
+    'FOREIGN KEY ("projectId", "outboxRecordId") REFERENCES "outbox_records"("projectId", "id")',
+    'FOREIGN KEY ("projectId", "scenarioExecutionId") REFERENCES "scenario_executions"("projectId", "id")',
+    '"valueEncrypted" JSONB NOT NULL',
+    'TIMESTAMPTZ(3)',
+  ]) {
+    if (!automationStudio22Sql.includes(fragment))
+      failures.push(`Automation Studio 2.2 migration is missing invariant: ${fragment}`);
+  }
+  for (const forbidden of ['renderedUrl', 'requestBody', 'responseBody', 'secretValue']) {
+    if (automationStudio22Sql.includes(forbidden))
+      failures.push(`Automation Studio 2.2 migration contains unsafe persistence: ${forbidden}`);
+  }
+  if (/\bDROP\s+(?:TABLE|TYPE|INDEX|COLUMN)\b/i.test(automationStudio22Sql))
+    failures.push('Automation Studio 2.2 migration contains a destructive operation');
 }
 
 if (failures.length > 0) {

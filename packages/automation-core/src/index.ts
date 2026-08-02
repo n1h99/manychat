@@ -13,6 +13,7 @@ export const automationNodeTypes = [
   'DELAY',
   'WAIT_FOR_REPLY',
   'START_SUBFLOW',
+  'EXTERNAL_HTTP_REQUEST',
   'PAUSE_AUTOMATION',
   'RESUME_AUTOMATION',
   'STOP',
@@ -92,6 +93,97 @@ export const conditionGroupSchema = z.object({
 
 export type ConditionRule = z.infer<typeof conditionRuleSchema>;
 export type ConditionGroup = z.infer<typeof conditionGroupSchema>;
+
+export const externalHttpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+export const externalHttpContentTypes = [
+  'application/json',
+  'application/x-www-form-urlencoded',
+  'text/plain',
+] as const;
+export const externalHttpValueTypes = ['string', 'number', 'boolean', 'json'] as const;
+
+const externalHttpTemplateSchema = z.string().max(65_536);
+const dangerousPathSegments = new Set(['__proto__', 'constructor', 'prototype']);
+const reservedExternalHttpMappingRoots = new Set([
+  'contact',
+  'conversation',
+  'message',
+  'nodes',
+  'project',
+  'trigger',
+  'variables',
+]);
+const externalHttpNameSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_.-]+$/);
+
+export const externalHttpRequestConfigSchema = z
+  .object({
+    body: z.unknown().optional(),
+    contentType: z.enum(externalHttpContentTypes).default('application/json'),
+    headers: z
+      .array(
+        z
+          .object({
+            name: externalHttpNameSchema,
+            secretId: z.string().min(1).optional(),
+            value: externalHttpTemplateSchema.optional(),
+          })
+          .refine((header) => Boolean(header.secretId) !== (header.value !== undefined), {
+            message: 'Header requires exactly one value or secretId',
+          }),
+      )
+      .max(20)
+      .default([]),
+    mappings: z
+      .array(
+        z.object({
+          defaultValue: z.unknown().optional(),
+          required: z.boolean().default(false),
+          sourcePath: z
+            .string()
+            .min(1)
+            .max(256)
+            .regex(/^response\.(?:status|data(?:\.[A-Za-z][A-Za-z0-9_]*)*)$/)
+            .refine((path) => path.split('.').every((part) => !dangerousPathSegments.has(part))),
+          targetPath: z
+            .string()
+            .min(1)
+            .max(256)
+            .regex(/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*$/)
+            .refine(
+              (path) =>
+                path.split('.').every((part) => !dangerousPathSegments.has(part)) &&
+                !reservedExternalHttpMappingRoots.has(path.split('.')[0]!),
+            ),
+          type: z.enum(externalHttpValueTypes).default('json'),
+        }),
+      )
+      .max(20)
+      .default([]),
+    maxAttempts: z.number().int().min(1).max(5).default(1),
+    method: z.enum(externalHttpMethods).default('GET'),
+    query: z
+      .array(z.object({ name: externalHttpNameSchema, value: externalHttpTemplateSchema }))
+      .max(20)
+      .default([]),
+    successStatusMaximum: z.number().int().min(100).max(599).default(299),
+    successStatusMinimum: z.number().int().min(100).max(599).default(200),
+    timeoutMs: z.number().int().min(1_000).max(30_000).default(10_000),
+    url: z
+      .string()
+      .min(1)
+      .max(2_048)
+      .regex(/^https:\/\//i),
+  })
+  .superRefine((config, context) => {
+    if (config.body !== undefined && JSON.stringify(config.body).length > 65_536)
+      context.addIssue({ code: 'custom', message: 'External HTTP body is too large' });
+  });
+
+export type ExternalHttpRequestConfig = z.infer<typeof externalHttpRequestConfigSchema>;
 
 export const graphNodeSchema = z.object({
   config: z.record(z.string(), z.unknown()).default({}),
@@ -249,6 +341,18 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
     ) {
       errors.push(`Send Template node ${node.id} requires a pinned template version`);
     }
+    if (node.type === 'EXTERNAL_HTTP_REQUEST') {
+      const config = externalHttpRequestConfigSchema.safeParse(node.config);
+      if (!config.success) errors.push(`External HTTP node ${node.id} has invalid request config`);
+      else if (config.data.successStatusMinimum > config.data.successStatusMaximum)
+        errors.push(`External HTTP node ${node.id} has an invalid success status range`);
+      const successEdges = edges.filter((edge) => edge.output === 'success');
+      const failureEdges = edges.filter((edge) => edge.output === 'failure');
+      if (successEdges.length !== 1 || failureEdges.length !== 1)
+        errors.push(
+          `External HTTP node ${node.id} requires exactly one success and one failure path`,
+        );
+    }
   }
 
   const reachable = new Set<string>();
@@ -384,11 +488,13 @@ export function automationValueFor(
   payloadInput: unknown,
   customFieldsInput: unknown,
   contactInput: unknown,
+  variablesInput: unknown = {},
 ): unknown {
   const payload = record(payloadInput);
   const content = record(payload.content);
   const customFields = record(customFieldsInput);
   const contact = record(contactInput);
+  const variables = record(variablesInput);
   if (field === 'message.text') return content.text ?? null;
   if (field === 'callback.data') return content.data ?? null;
   if (field === 'event.type') return payload.type ?? null;
@@ -396,6 +502,10 @@ export function automationValueFor(
     return contact[field.slice('contact.'.length)] ?? null;
   if (field?.startsWith('contact.customFields.'))
     return customFields[field.slice('contact.customFields.'.length)];
+  if (field?.startsWith('variables.'))
+    return valueAtPath(variables, field.slice('variables.'.length));
+  if (field?.startsWith('nodes.')) return valueAtPath(variables, field);
+  if (field) return valueAtPath(variables, field);
   return undefined;
 }
 
@@ -403,6 +513,7 @@ export interface AutomationSimulationInput {
   contact?: Record<string, unknown>;
   customFields?: Record<string, unknown>;
   event?: Record<string, unknown>;
+  httpOutcome?: 'success' | 'failure';
   waitOutcome?: 'reply' | 'timeout';
 }
 
@@ -464,6 +575,16 @@ export function simulateScenarioGraph(
       }
     } else if (currentNode.type === 'DELAY') {
       reasonCode = 'DELAY_SKIPPED_IN_TEST';
+    } else if (currentNode.type === 'EXTERNAL_HTTP_REQUEST') {
+      if (!input.httpOutcome) {
+        result = 'WAITING';
+        selected = undefined;
+        reasonCode = 'HTTP_OUTCOME_REQUIRED';
+      } else {
+        selected = edges.find((edge) => edge.output === input.httpOutcome);
+        reasonCode =
+          input.httpOutcome === 'success' ? 'HTTP_SUCCESS_SIMULATED' : 'HTTP_FAILURE_SIMULATED';
+      }
     } else if (currentNode.type === 'STOP') {
       result = 'COMPLETED';
       selected = undefined;
@@ -508,4 +629,12 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function valueAtPath(value: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((current, part) => {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
+    if (dangerousPathSegments.has(part) || !Object.hasOwn(current, part)) return undefined;
+    return (current as Record<string, unknown>)[part];
+  }, value);
 }

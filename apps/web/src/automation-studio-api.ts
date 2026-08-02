@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiRequest } from './api';
 import { useAuth } from './auth';
@@ -15,6 +15,23 @@ export interface AutomationCustomField {
   name: string;
   options: string[] | null;
   type: 'TEXT' | 'NUMBER' | 'BOOLEAN' | 'DATE' | 'DATETIME' | 'SELECT' | 'MULTI_SELECT' | 'JSON';
+}
+
+export interface AutomationSecret {
+  createdAt: string;
+  id: string;
+  name: string;
+  updatedAt: string;
+}
+
+export interface ExternalHttpTestResult {
+  contentType: string | null;
+  data: unknown;
+  mappingKeys: string[];
+  outcome: 'failure' | 'success';
+  previewTruncated: boolean;
+  sizeBytes: number;
+  statusCode: number;
 }
 
 export function useAutomationTags(projectId?: string) {
@@ -39,4 +56,43 @@ export function useAutomationCustomFields(projectId?: string) {
       ),
     queryKey: ['custom-fields', projectId, accessToken, 'active'],
   });
+}
+
+export function useAutomationSecrets(projectId?: string) {
+  const { accessToken } = useAuth();
+  return useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () =>
+      apiRequest<AutomationSecret[]>(
+        `/api/v1/projects/${projectId}/automation/secrets`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['automation-secrets', projectId, accessToken],
+  });
+}
+
+export function useAutomationHttpMutations(projectId?: string) {
+  const { accessToken } = useAuth();
+  const client = useQueryClient();
+  const request = <T>(path: string, method: string, body?: unknown) =>
+    apiRequest<T>(
+      `/api/v1/projects/${projectId}/automation${path}`,
+      { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
+      accessToken,
+    );
+  return {
+    createSecret: useMutation({
+      mutationFn: (input: { name: string; value: string }) =>
+        request<AutomationSecret>('/secrets', 'POST', input),
+      onSuccess: async () =>
+        client.invalidateQueries({ queryKey: ['automation-secrets', projectId] }),
+    }),
+    testRequest: useMutation({
+      mutationFn: (input: {
+        config: Record<string, unknown>;
+        variables?: Record<string, unknown>;
+      }) => request<ExternalHttpTestResult>('/http/test', 'POST', input),
+    }),
+  };
 }

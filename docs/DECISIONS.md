@@ -1030,3 +1030,40 @@ selectors resolve tags and active custom-field definitions through existing
 project-scoped APIs, while the saved graph keeps stable IDs/keys. Regex matching,
 side-effecting retry/replay, arbitrary HTTP actions and additional channels remain
 separate reviewed slices.
+
+## ADR-044: External HTTP is a durable, SSRF-safe automation continuation
+
+**Status:** Accepted, 2026-08-02.
+
+**Decision:** Automation Studio 2.2 adds `EXTERNAL_HTTP_REQUEST` as an explicit
+two-branch continuation. Runtime execution transactionally creates one
+project-scoped HTTP outbox operation keyed by scenario execution and node, then
+suspends. A stateless worker validates and pins DNS, performs the request and
+resumes exactly one `success` or `failure` edge. A mutating request whose
+transport outcome is uncertain remains `UNKNOWN`; it is never retried blindly.
+Every request carries the stable outbox ID as `Idempotency-Key`.
+
+Production requests require HTTPS, reject URL credentials, loopback, private,
+link-local, multicast, reserved and cloud-metadata targets, pin the validated IP
+for the connection, and revalidate every permitted redirect. Hop-by-hop and
+forwarding headers are blocked. Time, request-body and 5 MB response limits are
+hard bounds. Responses are never persisted wholesale. Only explicitly mapped
+JSON paths enter execution variables, while diagnostics retain safe status and
+size metadata.
+
+Secrets are separate encrypted project records and scenario versions contain
+only their IDs. Secret values are write-only, use record-bound AES-GCM AAD and
+are never returned in API responses, graph JSON, execution diagnostics or logs.
+Publish rejects missing, archived or cross-project references.
+
+Draft persistence and publish validation are separate boundaries. Structurally
+valid graphs may be autosaved with missing connections or incomplete node
+configuration and retain validation errors. Publish and test run still require a
+fully valid graph. Autosave reports a quiet status and does not animate the
+manual Save button; selected connections have an explicit delete action.
+
+**Consequences:** PostgreSQL remains authoritative for the pending continuation;
+worker loss cannot lose it. The first release supports bounded methods, headers,
+query/body templates, response mapping, safe test requests and explicit outcome
+edges. It does not provide arbitrary code, `eval`, unrestricted redirects,
+cookies, raw response retention or automatic retry of uncertain mutations.

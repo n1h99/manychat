@@ -1140,6 +1140,30 @@ self-reference for awaited subflows. A child is pinned by its already immutable
 The worker scans due `DelayedAction` and expired `WaitState` records in bounded
 batches. Conditional database updates make concurrent worker replicas safe.
 
+### Automation Studio 2.2 external HTTP boundary
+
+External HTTP calls use the existing transactional outbox with `kind=HTTP` and
+a project-owned `ExternalHttpOperation`. The operation references exactly one
+`ScenarioExecution`, one node and one outbox record through composite
+project-scoped keys. It stores continuation node IDs and safe result metadata,
+but never stores a rendered URL, request/response body, authorization value or
+raw response headers. Its unique `(projectId, scenarioExecutionId, nodeId)` key
+prevents a replayed runtime step from scheduling a second side effect.
+
+`AutomationSecret` stores a project-scoped name and an AES-256-GCM envelope.
+The value is accepted only on create/rotation and is never returned. Encryption
+AAD is `projectId:secretId:automation:value`, so ciphertext copied between
+projects or records cannot be decrypted. Scenario graphs contain only secret
+IDs. Publish validates every reference against a non-archived secret in the
+same project.
+
+Known HTTP responses may continue through the explicit `success` or `failure`
+edge. A transport-ambiguous mutating request becomes terminal `UNKNOWN` and is
+not replayed automatically. GET may use bounded retry. Mapped response values
+are written only to `ScenarioExecution.variables`; `NodeExecution` and
+`ExternalHttpOperation.resultSafe` keep status, byte count, content type and
+mapping names without copying mapped values.
+
 ## Telegram broadcasts
 
 Post-pilot Telegram broadcasts use two project-owned tables. `Broadcast` pins

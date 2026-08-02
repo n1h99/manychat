@@ -85,6 +85,8 @@ import { AutomationTestPanel, type AutomationTestInput } from '../automation-tes
 import { ApiError } from '../api';
 import { automationEditorSignature, safeDiagnosticJson } from '../automation-studio';
 import {
+  useAutomationHttpMutations,
+  useAutomationSecrets,
   useAutomationCustomFields,
   useAutomationTags,
   type AutomationCustomField,
@@ -93,6 +95,11 @@ import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { useTemplates } from '../templates-api';
 
 const paletteGroups = [
+  {
+    key: 'integrations',
+    label: 'Integrations',
+    nodes: [['EXTERNAL_HTTP_REQUEST', 'External HTTP request']],
+  },
   {
     key: 'triggers',
     label: 'Triggers',
@@ -144,7 +151,7 @@ function automationNodeIcon(type: string) {
   if (type === 'INCOMING_MESSAGE') return <ThunderboltOutlined />;
   if (type === 'CONDITION') return <BranchesOutlined />;
   if (type === 'SEND_MESSAGE' || type === 'SEND_TEMPLATE') return <SendOutlined />;
-  if (type === 'FORWARD_TO_CRM') return <ApiOutlined />;
+  if (type === 'FORWARD_TO_CRM' || type === 'EXTERNAL_HTTP_REQUEST') return <ApiOutlined />;
   if (type === 'CREATE_OR_UPDATE_LEAD' || type === 'SET_CUSTOM_FIELD') return <DatabaseOutlined />;
   if (type === 'ADD_TAG' || type === 'REMOVE_TAG') return <TagsOutlined />;
   if (type === 'DELAY' || type === 'WAIT_FOR_REPLY') return <ClockCircleOutlined />;
@@ -218,6 +225,8 @@ export function ScenarioEditorPage() {
   const templates = useTemplates(projectId);
   const tags = useAutomationTags(projectId);
   const customFields = useAutomationCustomFields(projectId);
+  const automationSecrets = useAutomationSecrets(projectId);
+  const automationHttp = useAutomationHttpMutations(projectId);
   const executions = useScenarioExecutions(projectId, scenarioId);
   const mutations = useScenarioMutations(projectId);
   const [form] = Form.useForm<{ description?: string; name: string }>();
@@ -242,6 +251,7 @@ export function ScenarioEditorPage() {
   const copiedConfig = useRef<Record<string, unknown> | undefined>(undefined);
   const [lastSavedSignature, setLastSavedSignature] = useState<string>();
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string>();
+  const [manualSavePending, setManualSavePending] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'conflict' | 'dirty' | 'saved' | 'saving'>('saved');
   const scenarioName = Form.useWatch('name', form);
   const scenarioDescription = Form.useWatch('description', form);
@@ -412,8 +422,8 @@ export function ScenarioEditorPage() {
     if (
       !scenarioQuery.data ||
       !draftDirty ||
-      validation.errors.length ||
       !scenarioName?.trim() ||
+      manualSavePending ||
       mutations.update.isPending ||
       saveStatus === 'conflict'
     )
@@ -445,12 +455,12 @@ export function ScenarioEditorPage() {
   }, [
     draftDirty,
     expectedUpdatedAt,
+    manualSavePending,
     saveStatus,
     scenarioDescription,
     scenarioName,
     scenarioQuery.data,
     signature,
-    validation.errors.length,
   ]);
 
   if (scenarioId !== 'new' && scenarioQuery.isLoading)
@@ -489,7 +499,20 @@ export function ScenarioEditorPage() {
           ? { delaySeconds: 60 }
           : type === 'WAIT_FOR_REPLY'
             ? { timeoutSeconds: 300 }
-            : {},
+            : type === 'EXTERNAL_HTTP_REQUEST'
+              ? {
+                  contentType: 'application/json',
+                  headers: [],
+                  mappings: [],
+                  maxAttempts: 1,
+                  method: 'GET',
+                  query: [],
+                  successStatusMaximum: 299,
+                  successStatusMinimum: 200,
+                  timeoutMs: 10_000,
+                  url: 'https://',
+                }
+              : {},
     }));
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
@@ -503,7 +526,12 @@ export function ScenarioEditorPage() {
     const source = nodes.find((node) => node.id === connection.source);
     const outgoing = edges.filter((edge) => edge.source === connection.source);
     const sourceType = String(source?.data.label);
-    if (sourceType !== 'CONDITION' && sourceType !== 'WAIT_FOR_REPLY' && outgoing.length) {
+    if (
+      sourceType !== 'CONDITION' &&
+      sourceType !== 'WAIT_FOR_REPLY' &&
+      sourceType !== 'EXTERNAL_HTTP_REQUEST' &&
+      outgoing.length
+    ) {
       void message.warning('This output already has an active connection.');
       return;
     }
@@ -516,7 +544,9 @@ export function ScenarioEditorPage() {
           }
         : sourceType === 'WAIT_FOR_REPLY'
           ? { output: outgoing.length === 0 ? 'reply' : 'timeout' }
-          : { output: 'default' };
+          : sourceType === 'EXTERNAL_HTTP_REQUEST'
+            ? { output: outgoing.length === 0 ? 'success' : 'failure' }
+            : { output: 'default' };
     captureHistory();
     setEdges((current) =>
       addEdge(
@@ -531,10 +561,7 @@ export function ScenarioEditorPage() {
   };
 
   const save = async (values: { description?: string; name: string }) => {
-    if (validation.errors.length) {
-      void message.error('Fix graph validation errors before saving.');
-      return;
-    }
+    setManualSavePending(true);
     try {
       if (scenarioQuery.data) {
         const updated = await mutations.update.mutateAsync({
@@ -556,6 +583,8 @@ export function ScenarioEditorPage() {
         setSaveStatus('conflict');
         void message.error('This draft changed in another session. Reload before saving again.');
       } else void message.error('Scenario could not be saved.');
+    } finally {
+      setManualSavePending(false);
     }
   };
 
@@ -610,8 +639,9 @@ export function ScenarioEditorPage() {
               Test run
             </Button>
             <Button
+              disabled={saveStatus === 'saving'}
               htmlType="submit"
-              loading={mutations.create.isPending || mutations.update.isPending}
+              loading={mutations.create.isPending || manualSavePending}
               type="primary"
             >
               Save draft
@@ -740,6 +770,7 @@ export function ScenarioEditorPage() {
                 connectionLineStyle={{ stroke: '#0f766e', strokeWidth: 2 }}
                 defaultEdgeOptions={automationEdgeDefaults}
                 edges={edges}
+                deleteKeyCode={['Backspace', 'Delete']}
                 fitView
                 fitViewOptions={{ padding: 0.24 }}
                 maxZoom={1.6}
@@ -801,13 +832,27 @@ export function ScenarioEditorPage() {
                     config={configs[selected.id] ?? {}}
                     customFields={customFields.data ?? []}
                     nodeType={String(selected.data.label)}
+                    onCreateSecret={async (name, value) => {
+                      const created = await automationHttp.createSecret.mutateAsync({
+                        name,
+                        value,
+                      });
+                      return created.id;
+                    }}
                     onChange={(config) => {
                       captureHistory();
                       setConfigs((current) => ({ ...current, [selected.id]: config }));
                     }}
                     scenarios={scenarios.data ?? []}
+                    secrets={automationSecrets.data ?? []}
                     tags={tags.data ?? []}
                     templates={templates.data ?? []}
+                    testHttpRequest={async (config, variables) =>
+                      automationHttp.testRequest.mutateAsync({
+                        config,
+                        ...(variables ? { variables } : {}),
+                      })
+                    }
                   />
                   {String(selected.data.label) !== 'INCOMING_MESSAGE' ? (
                     <Button
@@ -828,19 +873,31 @@ export function ScenarioEditorPage() {
                   ) : null}
                 </>
               ) : selectedEdge ? (
-                <EdgeConfiguration
-                  customFields={customFields.data ?? []}
-                  edge={selectedEdge}
-                  onChange={(next) => {
-                    captureHistory();
-                    setEdges((current) =>
-                      current.map((edge) => (edge.id === next.id ? next : edge)),
-                    );
-                  }}
-                  sourceType={String(
-                    nodes.find((node) => node.id === selectedEdge.source)?.data.label ?? '',
-                  )}
-                />
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <EdgeConfiguration
+                    customFields={customFields.data ?? []}
+                    edge={selectedEdge}
+                    onChange={(next) => {
+                      captureHistory();
+                      setEdges((current) =>
+                        current.map((edge) => (edge.id === next.id ? next : edge)),
+                      );
+                    }}
+                    sourceType={String(
+                      nodes.find((node) => node.id === selectedEdge.source)?.data.label ?? '',
+                    )}
+                  />
+                  <Button
+                    danger
+                    onClick={() => {
+                      captureHistory();
+                      setEdges((current) => current.filter((edge) => edge.id !== selectedEdge.id));
+                      setSelectedEdgeId(undefined);
+                    }}
+                  >
+                    Delete connection
+                  </Button>
+                </Space>
               ) : (
                 <div className="automation-settings-empty">
                   <SettingOutlined />
@@ -858,8 +915,9 @@ export function ScenarioEditorPage() {
             Test run
           </Button>
           <Button
+            disabled={saveStatus === 'saving'}
             htmlType="submit"
-            loading={mutations.create.isPending || mutations.update.isPending}
+            loading={mutations.create.isPending || manualSavePending}
             type="primary"
           >
             Save draft
@@ -1092,13 +1150,20 @@ function EdgeConfiguration({
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
       <Form.Item label="Output port">
-        {sourceType === 'WAIT_FOR_REPLY' ? (
+        {sourceType === 'WAIT_FOR_REPLY' || sourceType === 'EXTERNAL_HTTP_REQUEST' ? (
           <Select
             onChange={(output: string) => update({ output })}
-            options={[
-              { label: 'Reply matched', value: 'reply' },
-              { label: 'Timed out', value: 'timeout' },
-            ]}
+            options={
+              sourceType === 'WAIT_FOR_REPLY'
+                ? [
+                    { label: 'Reply matched', value: 'reply' },
+                    { label: 'Timed out', value: 'timeout' },
+                  ]
+                : [
+                    { label: 'Request succeeded', value: 'success' },
+                    { label: 'Request failed', value: 'failure' },
+                  ]
+            }
             value={data.output ?? null}
           />
         ) : (

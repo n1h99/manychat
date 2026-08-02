@@ -59,4 +59,8 @@ export class TestScenarioDto {
   @IsOptional()
   @IsIn(['reply', 'timeout'])
   waitOutcome?: 'reply' | 'timeout';
+
+  @IsOptional()
+  @IsIn(['success', 'failure'])
+  httpOutcome?: 'success' | 'failure';
 }

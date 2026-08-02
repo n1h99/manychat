@@ -1542,6 +1542,15 @@ button:disabled,
   white-space: pre-wrap;
 }
 
+.automation-http-preview {
+  margin: 0;
+  max-height: 320px;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .automation-flow-node {
   --node-accent: #0f766e;
   --node-soft: rgba(15, 118, 110, 0.1);

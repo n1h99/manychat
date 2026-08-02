@@ -580,6 +580,22 @@ connection routing is rejected, and a post-fix production worker operation
 completed `SUCCEEDED` on its first attempt. Connection-scoped capability
 discovery now advertises `userReactionEvents.supported=true`.
 
+## Automation Studio 2.2 — external HTTP and incomplete-draft authoring
+
+This approved slice adds an SSRF-safe `EXTERNAL_HTTP_REQUEST` node with bounded
+HTTPS request configuration, project secret references, stable idempotency,
+transactional HTTP outbox persistence, explicit success/failure branches,
+response mapping into execution variables, safe test preview and execution
+diagnostics. DNS and every redirect are validated and pinned; raw request and
+response bodies, rendered URLs and secret values are not persisted in technical
+operation metadata.
+
+Drafts may retain publish-validation errors, disconnected nodes and empty paths.
+The server stores those validation results while publish/test remain strict.
+Autosave uses a quiet `Unsaved / Saving / Saved` indicator and never drives the
+manual Save button spinner. Connections can be removed explicitly or with the
+Delete/Backspace keys and restored through the existing local undo history.
+
 Provider contract 3.2.0 adds the CRM-requested durable boundary for safe
 scenario/broadcast `sourceContext`, client edit/contact events, temporary
 conversation pause with automatic resume, application-owned scheduling,

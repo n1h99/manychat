@@ -5,6 +5,7 @@ import {
   automationValueFor,
   evaluateCondition,
   evaluateConditionGroup,
+  externalHttpRequestConfigSchema,
   matchesWaitForReplyCriteria,
   scenarioGraphSchema,
   waitForReplyCriteriaSchema,
@@ -32,6 +33,7 @@ interface RuntimeContext extends AutomationTriggerInput {
   contactVariables: Record<string, Prisma.JsonValue>;
   customFields: Prisma.JsonValue;
   eventPayload: Prisma.JsonValue;
+  variables: Prisma.JsonValue;
   subflowDepth: number;
 }
 
@@ -150,6 +152,7 @@ export class AutomationRuntimeService {
       customFields: contact.customFields,
       eventPayload: event.payload,
       subflowDepth: 0,
+      variables: {},
     };
     for (const scenario of scenarios) {
       const version = scenario.activeVersion;
@@ -296,6 +299,7 @@ export class AutomationRuntimeService {
         normalizedEventId: eventOverride?.normalizedEventId ?? execution.triggerEventId,
         projectId,
         subflowDepth: 0,
+        variables: execution.variables,
       },
       startNodeId ?? undefined,
     );
@@ -391,6 +395,7 @@ export class AutomationRuntimeService {
             context.eventPayload,
             context.customFields,
             context.contactVariables,
+            context.variables,
           );
         if (edge.conditionGroup) return evaluateConditionGroup(edge.conditionGroup, valueFor);
         const rule = edge.condition ?? config;
@@ -544,6 +549,8 @@ export class AutomationRuntimeService {
         });
       return awaitChild ? { suspended: true } : { next: defaultEdge };
     }
+    if (node.type === 'EXTERNAL_HTTP_REQUEST')
+      return this.queueExternalHttpOperation(transaction, node, edges, context, executionId);
     if (node.type === 'SET_CUSTOM_FIELD') {
       const key = typeof node.config.key === 'string' ? node.config.key : undefined;
       if (!key) throw new Error('automation_custom_field_invalid');
@@ -602,6 +609,96 @@ export class AutomationRuntimeService {
     if (node.type === 'CREATE_OR_UPDATE_LEAD' || node.type === 'FORWARD_TO_CRM')
       await this.queueCrmOperation(transaction, node, context, executionId);
     return { next: defaultEdge };
+  }
+
+  async resumeExternalHttpInTransaction(
+    transaction: RuntimeTransaction,
+    input: {
+      mappedVariables: Prisma.InputJsonValue;
+      nodeId: string;
+      outcome: 'failure' | 'success';
+      projectId: string;
+      safeOutput: Prisma.InputJsonObject;
+      scenarioExecutionId: string;
+      startNodeId?: string | null;
+    },
+  ): Promise<void> {
+    const execution = await transaction.scenarioExecution.findUnique({
+      where: {
+        projectId_id: { id: input.scenarioExecutionId, projectId: input.projectId },
+      },
+    });
+    if (!execution || ['COMPLETED', 'FAILED', 'CANCELLED'].includes(execution.status)) return;
+    const variables = this.deepMerge(
+      this.object(execution.variables),
+      this.object(input.mappedVariables),
+    );
+    await transaction.scenarioExecution.update({
+      data: { variables: variables as Prisma.InputJsonValue },
+      where: {
+        projectId_id: { id: input.scenarioExecutionId, projectId: input.projectId },
+      },
+    });
+    await transaction.nodeExecution.updateMany({
+      data: { completedAt: new Date(), outputSafe: input.safeOutput, status: 'SUCCEEDED' },
+      where: {
+        nodeId: input.nodeId,
+        projectId: input.projectId,
+        scenarioExecutionId: input.scenarioExecutionId,
+      },
+    });
+    await this.resumeExecutionInTransaction(
+      transaction,
+      input.scenarioExecutionId,
+      input.projectId,
+      input.startNodeId,
+    );
+  }
+
+  private async queueExternalHttpOperation(
+    transaction: RuntimeTransaction,
+    node: ScenarioGraphNode,
+    edges: ScenarioGraphEdge[],
+    context: RuntimeContext,
+    executionId: string,
+  ): Promise<NodeResult> {
+    const config = externalHttpRequestConfigSchema.safeParse(node.config);
+    if (!config.success) throw new Error('automation_external_http_invalid');
+    const idempotencyKey = `http-${executionId}-${node.id}`;
+    const existing = await transaction.outboxRecord.findUnique({
+      where: { projectId_idempotencyKey: { idempotencyKey, projectId: context.projectId } },
+    });
+    if (!existing) {
+      const outbox = await transaction.outboxRecord.create({
+        data: {
+          idempotencyKey,
+          kind: 'HTTP',
+          maxAttempts: config.data.maxAttempts,
+          nextAttemptAt: new Date(),
+          payload: {},
+          projectId: context.projectId,
+        },
+      });
+      const operation = await transaction.externalHttpOperation.create({
+        data: {
+          failureNodeId: edges.find((edge) => edge.output === 'failure')?.to ?? null,
+          nodeId: node.id,
+          outboxRecordId: outbox.id,
+          projectId: context.projectId,
+          scenarioExecutionId: executionId,
+          successNodeId: edges.find((edge) => edge.output === 'success')?.to ?? null,
+        },
+      });
+      await transaction.outboxRecord.update({
+        data: { payload: { externalHttpOperationId: operation.id } },
+        where: { projectId_id: { id: outbox.id, projectId: context.projectId } },
+      });
+    }
+    await transaction.scenarioExecution.update({
+      data: { currentNodeId: node.id, status: 'WAITING' },
+      where: { projectId_id: { id: executionId, projectId: context.projectId } },
+    });
+    return { suspended: true };
   }
 
   private async resumeParentIfNeeded(
@@ -722,8 +819,11 @@ export class AutomationRuntimeService {
             : undefined;
     if (sourceText === undefined) return;
     const rendered = renderTemplate(sourceText, {
+      ...this.object(context.variables),
       contact: context.contactVariables,
       event: context.eventPayload,
+      nodes: this.object(context.variables).nodes,
+      variables: context.variables,
     });
     if (rendered.missing.length) throw new Error('automation_template_variable_missing');
     const identity = await transaction.channelIdentity.findFirst({
@@ -833,10 +933,42 @@ export class AutomationRuntimeService {
         operator:
           typeof node.config.operator === 'string' ? node.config.operator : 'branch-defined',
       };
+    if (node.type === 'EXTERNAL_HTTP_REQUEST') {
+      const config = externalHttpRequestConfigSchema.safeParse(node.config);
+      return {
+        eventType,
+        mappingCount: config.success ? config.data.mappings.length : 0,
+        method: config.success ? config.data.method : 'INVALID',
+        timeoutMs: config.success ? config.data.timeoutMs : 0,
+      };
+    }
     return { eventType };
   }
 
-  private object(value: Prisma.JsonValue): Record<string, Prisma.JsonValue> {
+  private deepMerge(
+    current: Record<string, Prisma.JsonValue>,
+    incoming: Record<string, Prisma.JsonValue>,
+  ): Record<string, Prisma.JsonValue> {
+    const output = { ...current };
+    for (const [key, value] of Object.entries(incoming)) {
+      const existing = output[key];
+      output[key] =
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        existing &&
+        typeof existing === 'object' &&
+        !Array.isArray(existing)
+          ? this.deepMerge(
+              existing as Record<string, Prisma.JsonValue>,
+              value as Record<string, Prisma.JsonValue>,
+            )
+          : value;
+    }
+    return output;
+  }
+
+  private object(value: unknown): Record<string, Prisma.JsonValue> {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, Prisma.JsonValue>)
       : {};

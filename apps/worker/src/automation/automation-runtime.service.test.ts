@@ -154,4 +154,85 @@ describe('AutomationRuntimeService Wait for Reply criteria', () => {
       reasonCode: 'CONDITION_MATCHED',
     });
   });
+
+  it('queues one durable idempotent HTTP operation and suspends the execution', async () => {
+    const outboxCreate = vi.fn().mockResolvedValue({ id: 'outbox-a' });
+    const operationCreate = vi.fn().mockResolvedValue({ id: 'operation-a' });
+    const outboxUpdate = vi.fn();
+    const executionUpdate = vi.fn();
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      applyNode(
+        transaction: unknown,
+        node: unknown,
+        edges: unknown[],
+        context: unknown,
+        executionId: string,
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      service.applyNode(
+        {
+          externalHttpOperation: { create: operationCreate },
+          outboxRecord: {
+            create: outboxCreate,
+            findUnique: vi.fn().mockResolvedValue(null),
+            update: outboxUpdate,
+          },
+          scenarioExecution: { update: executionUpdate },
+        },
+        {
+          config: {
+            headers: [],
+            mappings: [],
+            maxAttempts: 3,
+            method: 'POST',
+            query: [],
+            timeoutMs: 5_000,
+            url: 'https://example.test/hook',
+          },
+          id: 'http-a',
+          type: 'EXTERNAL_HTTP_REQUEST',
+        },
+        [
+          { from: 'http-a', output: 'success', to: 'success-a' },
+          { from: 'http-a', output: 'failure', to: 'failure-a' },
+        ],
+        {
+          connectionId: 'connection-a',
+          contactId: 'contact-a',
+          contactVariables: {},
+          conversationId: 'conversation-a',
+          customFields: {},
+          eventPayload: { type: 'MESSAGE' },
+          normalizedEventId: 'event-a',
+          projectId: 'project-a',
+          subflowDepth: 0,
+          variables: {},
+        },
+        'execution-a',
+      ),
+    ).resolves.toEqual({ suspended: true });
+
+    expect(outboxCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        idempotencyKey: 'http-execution-a-http-a',
+        kind: 'HTTP',
+        maxAttempts: 3,
+        projectId: 'project-a',
+      }),
+    });
+    expect(operationCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        failureNodeId: 'failure-a',
+        successNodeId: 'success-a',
+      }),
+    });
+    expect(outboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { payload: { externalHttpOperationId: 'operation-a' } } }),
+    );
+    expect(executionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { currentNodeId: 'http-a', status: 'WAITING' } }),
+    );
+  });
 });

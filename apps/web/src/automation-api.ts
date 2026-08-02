@@ -176,6 +176,7 @@ export function useScenarioMutations(projectId?: string) {
         customFields?: Record<string, unknown>;
         event?: Record<string, unknown>;
         graph: ScenarioGraph;
+        httpOutcome?: 'success' | 'failure';
         scenarioId: string;
         waitOutcome?: 'reply' | 'timeout';
       }) => request<AutomationSimulationResult>(`/${scenarioId}/test-run`, 'POST', input),

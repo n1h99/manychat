@@ -105,6 +105,7 @@ enum OutboxRecordStatus {
 enum OutboxKind {
   TELEGRAM
   CRM
+  HTTP
 }
 
 enum CrmOperationType {
@@ -604,6 +605,8 @@ model Project {
   scenarioExecutions       ScenarioExecution[]
   waitStates               WaitState[]
   delayedActions           DelayedAction[]
+  automationSecrets        AutomationSecret[]
+  externalHttpOperations   ExternalHttpOperation[]
   crmConfig                CrmProjectConfig?
   crmOperations            CrmOperation[]
   broadcasts               Broadcast[]
@@ -878,6 +881,7 @@ model ScenarioExecution {
   delayedActions          DelayedAction[]
   parentExecution         ScenarioExecution?      @relation("ScenarioExecutionSubflow", fields: [projectId, parentExecutionId], references: [projectId, id], onDelete: Restrict)
   childExecutions         ScenarioExecution[]     @relation("ScenarioExecutionSubflow")
+  externalHttpOperations  ExternalHttpOperation[]
 
   @@unique([projectId, id])
   @@unique([projectId, scenarioId, triggerKey])
@@ -972,6 +976,45 @@ model DelayedAction {
   @@map("delayed_actions")
 }
 
+model AutomationSecret {
+  id             String    @id @default(uuid())
+  projectId      String
+  name           String
+  normalizedName String
+  valueEncrypted Json
+  archivedAt     DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, normalizedName])
+  @@index([projectId, archivedAt, name])
+  @@map("automation_secrets")
+}
+
+model ExternalHttpOperation {
+  id                  String            @id @default(uuid())
+  projectId           String
+  outboxRecordId      String            @unique
+  scenarioExecutionId String
+  nodeId              String
+  successNodeId       String?
+  failureNodeId       String?
+  resultSafe          Json?
+  createdAt           DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @db.Timestamptz(3)
+  project             Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  outbox              OutboxRecord      @relation(fields: [projectId, outboxRecordId], references: [projectId, id], onDelete: Restrict)
+  execution           ScenarioExecution @relation(fields: [projectId, scenarioExecutionId], references: [projectId, id], onDelete: Cascade)
+
+  @@unique([projectId, id])
+  @@unique([projectId, outboxRecordId])
+  @@unique([projectId, scenarioExecutionId, nodeId])
+  @@index([projectId, scenarioExecutionId, createdAt])
+  @@map("external_http_operations")
+}
+
 model Conversation {
   id                     String                      @id @default(uuid())
   projectId              String
@@ -1038,28 +1081,29 @@ model Message {
 }
 
 model OutboxRecord {
-  id                   String                @id @default(uuid())
-  projectId            String
-  connectionId         String?
-  kind                 OutboxKind            @default(TELEGRAM)
-  idempotencyKey       String
-  status               OutboxRecordStatus    @default(PENDING)
-  payload              Json
-  attempts             Int                   @default(0)
-  maxAttempts          Int                   @default(8)
-  nextAttemptAt        DateTime?             @db.Timestamptz(3)
-  lockedAt             DateTime?             @db.Timestamptz(3)
-  lockedBy             String?
-  lastError            String?
-  completedAt          DateTime?             @db.Timestamptz(3)
-  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
-  connection           ChannelConnection?    @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  crmOperation         CrmOperation?
-  broadcastRecipient   BroadcastRecipient?   @relation("BroadcastRecipientOutbox")
-  scheduledMessage     ScheduledMessage?
-  telegramMediaGroup   TelegramMediaGroup?
-  telegramBotInterface TelegramBotInterface?
+  id                    String                 @id @default(uuid())
+  projectId             String
+  connectionId          String?
+  kind                  OutboxKind             @default(TELEGRAM)
+  idempotencyKey        String
+  status                OutboxRecordStatus     @default(PENDING)
+  payload               Json
+  attempts              Int                    @default(0)
+  maxAttempts           Int                    @default(8)
+  nextAttemptAt         DateTime?              @db.Timestamptz(3)
+  lockedAt              DateTime?              @db.Timestamptz(3)
+  lockedBy              String?
+  lastError             String?
+  completedAt           DateTime?              @db.Timestamptz(3)
+  createdAt             DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime               @updatedAt @db.Timestamptz(3)
+  connection            ChannelConnection?     @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  crmOperation          CrmOperation?
+  broadcastRecipient    BroadcastRecipient?    @relation("BroadcastRecipientOutbox")
+  scheduledMessage      ScheduledMessage?
+  telegramMediaGroup    TelegramMediaGroup?
+  telegramBotInterface  TelegramBotInterface?
+  externalHttpOperation ExternalHttpOperation?
 
   @@unique([projectId, id])
   @@unique([projectId, idempotencyKey])
