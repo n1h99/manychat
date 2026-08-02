@@ -1,0 +1,61 @@
+# Omnicus documentation index
+
+Status reviewed: 2026-08-02, `main` at Automation Studio 2.2 and Telegram Chat
+v3.2.
+
+## Current product status
+
+- Railway runs the web, API and worker services from `main`; deployments are
+  automatic after a push.
+- Telegram and Cyber Pulse CRM are the active live integration slice.
+- Telegram Chat v3.2 live E2E passed for inbound edits, shared contacts,
+  automation/broadcast `sourceContext`, reaction add/change/remove, duplicate
+  delivery, reaction-before-source and routing isolation.
+- Connection-scoped discovery advertises
+  `userReactionEvents.supported=true`.
+- Automation Studio 2.2 supports incomplete/disconnected drafts, quiet
+  autosave, explicit edge deletion and durable SSRF-safe External HTTP nodes.
+- WhatsApp and Instagram are deliberately deferred until test accounts and a
+  separately approved scope exist.
+
+The only recorded product follow-up from the current verification cycle is the
+Telegram channel-detail cache refresh after disabling a webhook. It is tracked
+in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md#known-ui-follow-ups).
+
+## Active references
+
+| Area                                   | Authoritative document                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| Architecture and trust boundaries      | [ARCHITECTURE.md](ARCHITECTURE.md)                                     |
+| Product stages and follow-ups          | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)                       |
+| Accepted decisions                     | [DECISIONS.md](DECISIONS.md)                                           |
+| Prisma schema and migration invariants | [DATABASE.md](DATABASE.md)                                             |
+| Automation semantics                   | [AUTOMATION_ENGINE.md](AUTOMATION_ENGINE.md)                           |
+| Durable lifecycle rules                | [STATE_MACHINES.md](STATE_MACHINES.md)                                 |
+| Operations and incident recovery       | [RUNBOOK.md](RUNBOOK.md)                                               |
+| Railway topology                       | [RAILWAY.md](RAILWAY.md)                                               |
+| Test gates                             | [TESTING.md](TESTING.md)                                               |
+| Cyber Pulse integration                | [CRM_INTEGRATION.md](CRM_INTEGRATION.md)                               |
+| CRM-to-Omnicus OpenAPI                 | [OMNICUS_CRM_OUTBOUND_OPENAPI.yaml](OMNICUS_CRM_OUTBOUND_OPENAPI.yaml) |
+| Omnicus-to-CRM OpenAPI                 | [OMNICUS_TO_CRM_OPENAPI.yaml](OMNICUS_TO_CRM_OPENAPI.yaml)             |
+| Pairing OpenAPI                        | [CRM_PAIRING_OPENAPI.yaml](CRM_PAIRING_OPENAPI.yaml)                   |
+
+## Historical and handoff references
+
+The following files are retained for audit/history and are not current blockers:
+
+- [CRM_CONTRACT_REQUIRED.md](CRM_CONTRACT_REQUIRED.md): original CRM contract
+  gate, satisfied by the published Cyber Pulse contracts.
+- [CRM_OUTBOUND_HISTORY_HANDOFF.md](CRM_OUTBOUND_HISTORY_HANDOFF.md): completed
+  outbound-history handoff.
+- [CRM_TELEGRAM_STICKER_MEDIA_HANDOFF.md](CRM_TELEGRAM_STICKER_MEDIA_HANDOFF.md):
+  completed 3.1 media handoff; current capability values come from v3.2
+  discovery and OpenAPI.
+- [PILOT_EXTERNAL_GATES.md](PILOT_EXTERNAL_GATES.md): gate ledger showing what
+  is complete and what remains deliberately deferred.
+- [STAGE1_BASELINE_SQL_PROPOSAL.sql](STAGE1_BASELINE_SQL_PROPOSAL.sql): retained
+  Stage 1 SQL review artifact, not the current full schema.
+
+When prose and executable behavior differ, the OpenAPI contracts, Prisma
+schema, accepted ADRs and capability response take precedence over historical
+handoff text.

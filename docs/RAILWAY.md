@@ -1,109 +1,71 @@
 # Railway deployment
 
-Stage 0 is Railway-ready but has not been deployed.
+Status reviewed: 2026-08-02. Omnicus is deployed on Railway from `main`; pushes
+to `origin/main` trigger the configured web, API and worker deployments.
 
-Create three services from the same repository. Keep the repository root as the
-service root; each service points to its own configuration file:
+## Services
 
-- Web: `apps/web/railway.toml`
-- API: `apps/api/railway.toml`
-- Worker: `apps/worker/railway.toml`
+All three services use the repository root and the same lockfile:
 
-Railpack reads `packageManager`, exact `engines.node=24.18.0`, and
-`pnpm-lock.yaml`, so custom build commands do not run a second install. Each
-build logs actual Node/pnpm versions, runs the strict preflight, and builds only
-the selected application plus its workspace dependencies.
+| Service | Config                     | Start command                       | Health path     |
+| ------- | -------------------------- | ----------------------------------- | --------------- |
+| Web     | `apps/web/railway.toml`    | `node .runtime/web/server.mjs`      | `/health/ready` |
+| API     | `apps/api/railway.toml`    | `node .runtime/api/dist/main.js`    | `/health/ready` |
+| Worker  | `apps/worker/railway.toml` | `node .runtime/worker/dist/main.js` | `/health/ready` |
 
-| Service | Build command                                          | Start command                       | Health path     |
-| ------- | ------------------------------------------------------ | ----------------------------------- | --------------- |
-| web     | `pnpm versions && pnpm preflight && pnpm build:web`    | `node .runtime/web/server.mjs`      | `/health/ready` |
-| api     | `pnpm versions && pnpm preflight && pnpm build:api`    | `node .runtime/api/dist/main.js`    | `/health/ready` |
-| worker  | `pnpm versions && pnpm preflight && pnpm build:worker` | `node .runtime/worker/dist/main.js` | `/health/ready` |
+Railpack reads the exact Node/pnpm versions from the repository and builds only
+the selected service plus its workspace dependencies. All servers bind
+`0.0.0.0`; Railway's `PORT` overrides local defaults.
 
-All HTTP servers bind `0.0.0.0` and use Railway's `PORT` regardless of
-`APP_ENV`. The worker owns a small HTTP health server on that same process/port;
-readiness covers both the BullMQ producer and actual consumer.
+## Core variables
 
-## Variables
+Shared API/worker values include `APP_ENV`, `DATABASE_URL`, `REDIS_URL`,
+`CHANNEL_SECRETS_KEY` and the reviewed proxy/health settings from
+`.env.example`. The API additionally requires `JWT_ACCESS_SECRET`,
+`API_PUBLIC_URL`, `CORS_ALLOWED_ORIGINS` and `CRM_INBOUND_ENABLED`. The worker
+uses `CRM_INTEGRATION_ENABLED` and the bounded worker/continuation intervals.
 
-Shared server variables:
+The web build requires `VITE_API_URL`, which is used server-side as the upstream
+for the same-origin `/api` proxy. Browser code must not receive database, Redis,
+CRM, Telegram, media bucket or project-secret credentials.
 
-- `NODE_ENV=production`
-- `APP_ENV=production` (or `staging` for a staging environment)
-- `DATABASE_URL` using `postgres://` or `postgresql://`
-- `REDIS_URL` using `redis://` or `rediss://`
-- `CORS_ALLOWED_ORIGINS` as one or more comma-separated exact HTTP(S) origins
-- `TRUST_PROXY` is required in staging/production. Until Railway ingress CIDRs
-  and X-Forwarded-For overwrite behavior are explicitly verified, use a
-  fail-closed reviewed value; do not trust broad private ranges by default.
-- `SWAGGER_ENABLED=false`
-- `RAILPACK_PRUNE_DEPS=true`
+Media storage requires the `MEDIA_BUCKET_*` values and
+`MEDIA_STORAGE_ENABLED=true`. CRM inbound and outbound credentials are
+different values. New project pairings store project-scoped credentials; the
+global `CRM_BASE_URL`, `CRM_AUTH_TOKEN` and `CRM_INBOUND_AUTH_TOKEN` values are
+compatibility inputs only for the legacy paired project.
 
-Web build:
-
-- `VITE_API_URL`: required exact API base URL for staging/production builds.
-  The browser does not call that cross-site origin directly: the production web
-  server uses it as the upstream for its same-origin `/api` reverse proxy.
-
-API:
-
-- `API_PORT` is only a local fallback; Railway `PORT` wins.
-- `API_PUBLIC_URL` is the exact public HTTPS origin of the API service, for
-  example `https://${{RAILWAY_PUBLIC_DOMAIN}}`. Telegram webhook URLs are
-  derived only from this server-owned value; clients cannot override it.
-
-Worker:
-
-- `WORKER_PORT` is only a local fallback; Railway `PORT` wins.
-- `WORKER_SHUTDOWN_TIMEOUT_MS` and `BULLMQ_READY_TIMEOUT_MS` may override
-  bounded defaults.
-- `DEMO_JOB_ENABLED` must remain false in staging/production; validation rejects
-  an enabled value there.
-- `CRM_INTEGRATION_ENABLED=true` enables CRM delivery. New project connections
-  receive their own CRM origin and encrypted credential through application
-  pairing. `CRM_BASE_URL` and `CRM_AUTH_TOKEN` are compatibility values for the
-  existing pre-pairing deployment only.
-- `CRM_REQUEST_TIMEOUT_MS`, `CRM_OUTBOX_INTERVAL_MS`, and
-  `CRM_OUTBOX_LEASE_MS` have bounded defaults.
-
-API:
-
-- `CRM_INBOUND_ENABLED=true` enables the independent Cyber-Pulse-to-Omnicus
-  service API. New pairings issue a project-scoped inbound token and store only
-  its hash.
-- `CRM_INBOUND_AUTH_TOKEN` is a compatibility credential for the existing
-  pre-pairing deployment and must not equal `CRM_AUTH_TOKEN`.
-
-Never commit real CRM credentials, database credentials, Redis credentials, or
-Railway-generated values. `.railway/` is ignored.
+Never commit Railway variables or paste them into logs, documentation or test
+fixtures. `.railway/` is ignored.
 
 ## Networking and health
 
-In production the SPA sends application API requests to `/api` on the web
-origin. The lightweight web server forwards those requests to `VITE_API_URL`
-without exposing the upstream origin to application code. Browser
-authentication uses a persistent bearer session in `localStorage`; the proxy
-is no longer relied upon for refresh-cookie persistence. Telegram webhooks
-continue to use the API service's `API_PUBLIC_URL` directly.
+- Web serves the SPA and proxies `/api` to the API origin.
+- Telegram calls the public API webhook derived from server-owned
+  `API_PUBLIC_URL`.
+- API readiness probes PostgreSQL and Redis.
+- Worker readiness requires both its BullMQ producer and running consumer.
+- Dependency failure returns `503`; liveness stays independent of external
+  dependencies.
 
-Use Railway private service URLs for PostgreSQL/Redis where Railway provides
-them, while still treating credentials and transport security as required
-controls. Private networking is not a substitute for authentication or
-encryption.
-
-The web readiness probe confirms its built assets, API readiness probes
-PostgreSQL and Redis, and worker readiness requires a running BullMQ consumer.
-Failed dependency probes return `503`.
+Railway private networking does not replace authentication or encryption.
+`TRUST_PROXY` must match the reviewed ingress topology and must not trust broad
+ranges by convenience.
 
 ## Migration flow
 
-There is no approved migration in Stage 0 and no `preDeployCommand` is
-configured.
+The executable schema has reviewed migrations through
+`20260802000200_automation_studio_22_http`. Exactly one designated API
+pre-deploy step runs:
 
-After a migration receives the required schema/SQL report and approval, use
-exactly one designated release/migrator service or one designated API
-pre-deploy step to run `prisma migrate deploy` with the real `DATABASE_URL`.
-Do not configure that command on web/worker services, in replica start
-commands, or independently on multiple services. Application replicas start
-only after the single-run migration succeeds. Rollback and restore procedures
-must be rehearsed before the first production use.
+```text
+pnpm db:migrate:deploy
+```
+
+Do not run migrations from web, worker, replica start commands or multiple
+services. A failed migration blocks the new application release. Never use
+`prisma db push` against Railway.
+
+The one-time administrator bootstrap is a separate, explicitly enabled API
+pre-deploy operation. Remove all bootstrap variables immediately after it
+succeeds. Details and incident procedures are in [RUNBOOK.md](RUNBOOK.md).

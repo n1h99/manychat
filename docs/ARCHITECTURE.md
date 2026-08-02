@@ -1,90 +1,92 @@
-# Stage 0 architecture
+# Omnicus architecture
 
-## Monorepo boundaries
+Status reviewed: 2026-08-02.
 
-- `apps/web`: React/Vite application shell and a minimal hardened production
-  static server.
-- `apps/api`: NestJS HTTP API with health probes and no business modules.
-- `apps/worker`: NestJS/BullMQ process with an HTTP health server and a
-  feature-gated demo queue only.
-- `packages/database`: Prisma schema, generated client, safe CLI wrappers, and
-  guarded empty seed.
-- `packages/config`: separate public entry points:
-  `@omnicus/config/server` and `@omnicus/config/web`.
-- `packages/contracts`: cross-process DTO and error-envelope types.
-- `packages/shared`: generic runtime helpers.
-- `packages/channel-core`: channel abstractions only; no provider adapter.
-- `packages/test-fixtures`: test-only fixtures.
+## Runtime topology
 
-Applications import package exports, never another package's internal `src`
-path. Turborepo builds dependency packages before applications. Shared compiler
-defaults live in `tsconfig.base.json`; Vite/browser projects explicitly use
-bundler module resolution.
+Omnicus is a pnpm/Turborepo monorepo deployed to Railway as three services:
 
-## Configuration boundary
+- `apps/web`: React/Vite SPA plus a hardened Node static server and same-origin
+  `/api` reverse proxy;
+- `apps/api`: NestJS API, authenticated management endpoints, CRM service API
+  and Telegram webhook;
+- `apps/worker`: BullMQ consumers and a small readiness/liveness HTTP server.
 
-Server and browser configuration are physically separated by package exports.
-The web bundle can resolve only the `web` schema and accepts only `VITE_*`
-values. A post-build assertion scans the production output for source maps,
-server schema markers, and server variable names.
+Shared business boundaries live in packages. Applications import public
+package exports and never another application's source. Important packages are
+`database`, `contracts`, `automation-core`, `automation-http`,
+`channel-telegram`, `crm-core` and `media-core`.
 
-API, worker, Prisma configuration, and seed locate the repository `.env` from
-their module location rather than the process working directory. A standalone
-pruned API/worker artifact does not fall back to CWD when workspace markers are
-absent; it validates `process.env` directly. An explicit staging/production
-`APP_ENV` also disables `.env` loading, so local defaults cannot complete a
-partially configured deployment. Runtime validation is fail-closed:
+## Durable processing model
 
-- `APP_ENV` is explicit;
-- database and Redis URLs have protocol allowlists;
-- CORS values are exact HTTP(S) origins;
-- production Swagger is rejected;
-- `PORT` always wins over local service defaults.
+PostgreSQL is authoritative. Redis/BullMQ accelerates execution and may be
+reconstructed from committed records. External processing is at-least-once:
 
-## HTTP applications
+```text
+provider/web/API request
+  -> PostgreSQL inbox or durable intent
+  -> recoverable BullMQ job
+  -> normalized domain mutation
+  -> PostgreSQL outbox operation
+  -> provider/CRM/HTTPS side effect
+  -> SUCCEEDED | FAILED | UNKNOWN
+```
 
-The API applies correlation IDs, exact-origin CORS, an explicit Railway-aware
-proxy trust policy, baseline security headers, validation, and a stable error
-envelope. Internal exceptions are logged with their correlation ID; 5xx
-responses expose only a fixed code and message.
+Stable idempotency keys prevent duplicate logical effects. A confirmed safe
+failure may retry according to policy. `UNKNOWN` is never retried blindly and
+requires reconciliation or an audited operator decision.
 
-The web production server has a guarded request pipeline. Malformed percent
-encoding returns `400`, missing assets return `404`, extensionless routes use
-the SPA fallback, and filesystem failures return a safe `500` without
-terminating the process. CSP and baseline headers are applied to every
-response.
+Telegram webhooks acknowledge after durable inbox commit and do not wait for
+automation, CRM or outbound delivery. Scenario waits, delays, schedules and
+external HTTP continuations are stored in PostgreSQL, so worker restarts do not
+lose them.
 
-## Health model
+## Tenant and secret boundaries
 
-| Process | Liveness                    | Readiness                                                                        |
-| ------- | --------------------------- | -------------------------------------------------------------------------------- |
-| Web     | HTTP process responds       | static build is present                                                          |
-| API     | NestJS process responds     | PostgreSQL and Redis answer probes                                               |
-| Worker  | worker HTTP server responds | BullMQ producer is ready and the actual consumer connection is ready and running |
+Every tenant-owned record carries `projectId`. Composite database relations and
+application guards prevent cross-project contact, channel, scenario, message
+and operation references.
 
-The worker producer and consumer have separate connections because BullMQ
-requires different blocking/retry behavior. Shutdown is ordered and bounded:
-the HTTP server stops accepting requests, then the consumer, queue, and Redis
-resources close within the configured timeout.
+Server and browser configuration use separate package exports. Browser bundles
+accept only reviewed `VITE_*` values. Telegram tokens, CRM credentials and
+project HTTP secrets are encrypted or one-way hashed as appropriate, never
+returned after creation, and excluded from logs, audit metadata and runtime
+artifacts.
+
+CRM inbound and outbound credentials are independent. Provider payloads pass
+runtime validation and are normalized before business logic sees them.
+
+## Automation and external HTTP
+
+Published scenario versions are immutable. Editing produces a draft version;
+drafts may be incomplete or disconnected, while publish and test execution
+remain strict.
+
+External HTTP nodes create durable HTTP outbox operations. Only HTTPS is
+accepted. DNS results and every redirect are validated and pinned; private,
+loopback, link-local and cloud metadata targets are blocked. Request/response
+limits are bounded, project secrets are write-only, and raw bodies, rendered
+URLs and secret values are absent from technical metadata.
+
+## HTTP and health model
+
+The API applies correlation IDs, exact-origin CORS, reviewed proxy trust,
+security headers, runtime DTO validation and a stable safe error envelope. The
+web server rejects malformed paths, applies CSP and distinguishes missing
+assets from SPA routes.
+
+| Process | Liveness                | Readiness                              |
+| ------- | ----------------------- | -------------------------------------- |
+| Web     | HTTP process responds   | built assets are present               |
+| API     | NestJS process responds | PostgreSQL and Redis probes pass       |
+| Worker  | health server responds  | BullMQ producer and consumer are ready |
+
+Shutdown stops HTTP intake, consumers and connections in a bounded order.
 
 ## Production artifacts
 
-`pnpm build` emits deployable artifacts under `.runtime/`. API and worker are
-assembled with `pnpm deploy --prod --legacy`, followed by a reachability pass
-over pnpm's isolated dependency graph. Unreachable virtual-store entries and
-all source maps are removed; Prisma CLI/config/engine tooling, TypeScript, Vite,
-test tooling, database seed, and schema sources are asserted absent. Generated
-Prisma and TypeScript output is cleaned before every build so removed
-future-stage models cannot survive as stale runtime files. Web source maps are
-disabled.
-
-Railpack performs the lockfile-driven install once. Railway build commands only
-run version/preflight checks and build the selected service plus workspace
-dependencies. Details are in [RAILWAY.md](RAILWAY.md).
-
-## Stage boundary
-
-The executable Prisma schema is a migration-free, 14-table Stage 1 baseline
-proposal. It is intentionally not the entire product data model. No Auth/RBAC
-service, Project API, Contacts, Telegram, CRM, automation runtime,
-transactional inbox/outbox runtime, or broadcasts are present in Stage 0.
+`pnpm build` emits `.runtime/web`, `.runtime/api` and `.runtime/worker`.
+Production artifacts exclude source maps, test/build tooling, Prisma CLI and
+secret-bearing source configuration. Railway builds each service from the same
+lockfile and applies migrations only through the designated API pre-deploy
+step. See [RAILWAY.md](RAILWAY.md) and [RUNBOOK.md](RUNBOOK.md).

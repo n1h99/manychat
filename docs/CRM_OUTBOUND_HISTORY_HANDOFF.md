@@ -1,5 +1,8 @@
 # CRM handoff: Omnicus outbound history
 
+Status: completed and deployed. Retained as the implementation handoff and
+regression checklist; current schemas are the versioned OpenAPI documents.
+
 ## Purpose
 
 Cyber Pulse already receives normalized inbound Telegram events and stores

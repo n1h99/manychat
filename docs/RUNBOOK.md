@@ -1,4 +1,6 @@
-# Operations runbook — Stage 3B.3b
+# Omnicus operations runbook
+
+Status reviewed: 2026-08-02 for the deployed Railway `main` environment.
 
 ## One-time production administrator bootstrap
 
@@ -86,20 +88,22 @@ After recovery, verify API and worker `/health/ready`.
 
 ## Database changes
 
-There is no Stage 0 migration. Never use `prisma db push` against shared or
-production databases. The initial migration requires:
+Never use `prisma db push` against shared or production databases. Every schema
+change requires:
 
 1. successful `pnpm db:validate`;
 2. reviewed generated SQL;
 3. tenant constraint review against `docs/DATABASE.md`;
-4. an explicit approval and migration report.
+4. an explicit approval and migration report;
+5. exactly one `pnpm db:migrate:deploy` release owner.
 
 ## Backup restore
 
-The accepted pilot targets are RPO 24 hours and RTO 4 hours. A real restore test
-has not yet been performed because Stage 0 has no deployed database. Before pilot
-deployment, record backup identifier, restore destination, timestamps, integrity
-checks, measured RPO/RTO and cleanup confirmation in an operations report.
+The accepted targets are RPO 24 hours and RTO 4 hours. Railway is deployed, so
+backup/restore verification is an ongoing operational gate. Every drill must
+record the backup identifier, isolated restore destination, timestamps,
+integrity checks, measured RPO/RTO and cleanup confirmation. Never restore over
+the active database as a test.
 
 ## Telegram inbound recovery and dead letters
 
@@ -335,6 +339,24 @@ Spoilers are accepted only for PHOTO, VIDEO and ANIMATION. A safe
 indicates that the caller used another kind. Stickers never accept captions.
 Do not diagnose failures by logging file bytes, captions or provider payloads.
 
-Inbound `mediaGroupId` is grouping metadata only. `mediaGroups.supported=false`
-means CRM must not construct outbound albums; multiple independent sends do not
-have Telegram album atomicity or reconciliation semantics.
+Inbound `mediaGroupId` is grouping metadata. Outbound albums are supported only
+through the v3.2 durable media-group aggregate; multiple independent sends do
+not have Telegram album atomicity or reconciliation semantics.
+
+## External HTTP automation recovery
+
+External HTTP nodes persist `ExternalHttpOperation` and a matching HTTP outbox
+intent before any network call. Inspect the execution ID, node ID, operation
+status, attempt count, lease and safe error code. Do not copy rendered URLs,
+headers, request/response bodies or project secret values into an incident.
+
+Safe terminal failures may follow the configured failure branch. A timeout or
+ambiguous transport result is `UNKNOWN` and must not be retried blindly. First
+determine whether the remote service supports reconciliation using the stable
+idempotency key; otherwise require an audited operator decision.
+
+If DNS, redirect or SSRF validation fails, fix the scenario target rather than
+relaxing network policy. Private, loopback, link-local and cloud metadata
+addresses are intentionally blocked. Rotating a project secret creates a new
+write-only value; old values must not be recovered from logs or operation
+metadata.

@@ -1,5 +1,8 @@
 # OMNICUS — Architecture Decision Records
 
+Status reviewed: 2026-08-02. ADR-001 through ADR-044 are the accepted decision
+history; superseded implementation-stage language is retained for traceability.
+
 Статус документа: обязательные решения для pilot.  
 Дата фиксации: 2026-07-24.
 
@@ -78,7 +81,7 @@ classification и reconciliation API/UI. Дубликаты исполнения
   использует `SameSite=None; Secure`; API принимает refresh/logout только от
   точных `CORS_ALLOWED_ORIGINS`, а SPA хранит на своём origin только
   synchronizer CSRF token;
-- `JWT_REFRESH_SECRET` не используется.
+- отдельный refresh-JWT secret не используется.
 
 **Последствия:** нужны `Session`/token-family fields и `csrfTokenHash`.
 

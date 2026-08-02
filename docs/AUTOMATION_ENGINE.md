@@ -1,6 +1,12 @@
 # Automation v2 runtime
 
-Automation v2 executes published, immutable `ScenarioVersion` graphs. The visual editor changes only a draft; publishing validates the graph and pins the graph for every execution.
+Status reviewed: 2026-08-02, including Automation Studio 2.2.
+
+Automation v2 executes published, immutable `ScenarioVersion` graphs. The
+visual editor changes only a draft; publishing validates the graph and pins the
+graph for every execution. Saving is intentionally more permissive than
+publishing: disconnected nodes and empty paths remain valid draft work with
+stored validation issues.
 
 ## Determinism
 

@@ -1,6 +1,7 @@
 # CRM handoff: Telegram stickers and media spoilers
 
-Status: Omnicus provider contract 3.1.0
+Status: completed historical handoff for provider contract 3.1.0. Current
+capabilities are published by contract 3.2.0.
 
 Authoritative schemas:
 
@@ -15,8 +16,10 @@ features only when these exact keys have `supported=true`:
 - `stickers`
 - `mediaSpoilers`
 
-`mediaGroups` remains `supported=false`. Do not implement an outbound album by
-calling the single-message endpoint repeatedly.
+At the time of the 3.1.0 handoff, `mediaGroups` was `supported=false`. Contract
+3.2.0 now publishes a dedicated durable media-group aggregate. Do not implement
+an outbound album by calling the single-message endpoint repeatedly; use the
+current v3.2 OpenAPI and capability response.
 
 ## CRM to Omnicus
 

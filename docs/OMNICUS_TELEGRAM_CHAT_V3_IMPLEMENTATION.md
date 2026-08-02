@@ -1,6 +1,7 @@
 # Omnicus response to Telegram Chat v3 contract gaps
 
-Status: implemented provider contracts 3.0.0-3.2.0, 2026-08-02
+Status: implemented, deployed and live-verified CRM-to-Omnicus contract 3.2.0
+and Omnicus-to-CRM delivery contract 3.2.1, 2026-08-02.
 
 Input: Cyber Pulse `OMNICUS_TELEGRAM_CHAT_V3_GAPS.md`, based on Omnicus
 baseline `4345938027ccf0b323bff1a41b4799b0e28bf2d2`.
@@ -28,6 +29,7 @@ The authoritative CRM-to-Omnicus contract is
 | G03 | Static, animated and video stickers; media spoilers for photo, video and animation                                |
 | V32 | Safe source context, inbound message edits and explicit contact-share events                                      |
 | V32 | One-shot scheduling, durable media-group aggregate, structured messages and bot commands/menu                     |
+| V32 | Inbound user reactions advertised after duplicate, pending-source and routing-isolation live verification         |
 
 The capability response explicitly publishes `quote`, `linkPreviewOptions`
 and `explicitRetry`. CRM must gate these features by those keys rather than
@@ -75,16 +77,16 @@ mistaking that metadata for an outbound album operation.
 
 Capability discovery returns `supported=false` with a stable reason code for:
 
-- G05 inbound user-reaction advertisement remains disabled until the published
-  Omnicus-to-CRM reaction endpoint passes live E2E; normalization, persistence
-  and transactional delivery are implemented;
 - G09 reply keyboards and Force Reply;
 - G13 external action callbacks;
 - recurring schedules, rich-message blocks and media-rich streaming drafts.
 
-CRM must not infer or enable an absent/false capability. These remaining groups
-need their persistence, inbound event model and recovery semantics completed
-before their OpenAPI paths are published.
+`userReactionEvents.supported=true` is now published connection-by-connection.
+Live acceptance confirmed add/change/remove, duplicate `normalizedEventId`,
+reaction-before-source, routing isolation and a final worker result of
+`SUCCEEDED`. CRM must not infer or enable any other absent/false capability.
+The remaining groups need an approved persistence and recovery contract before
+their OpenAPI paths are published.
 
 ## Security and isolation
 

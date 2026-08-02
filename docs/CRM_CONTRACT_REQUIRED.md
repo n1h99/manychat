@@ -8,15 +8,16 @@ The external gate is satisfied for Cyber Pulse staging by backend commit
 independent reverse-direction contract are recorded in
 `docs/CRM_INTEGRATION.md` and `docs/OMNICUS_CRM_OUTBOUND_OPENAPI.yaml`.
 
-The original checklist below remains as the historical safety gate. Live
-staging E2E and secret installation are still required before production
-acceptance or legacy CRM cleanup.
+The original checklist below remains only as the historical safety gate. The
+real adapter, independent service credentials, pairing, contract tests and live
+Telegram/CRM E2E are now complete. Current behavior is authoritative in
+`CRM_INTEGRATION.md` and the versioned OpenAPI documents.
 
-## Статус
+## Historical status
 
-Production CRM adapter заблокирован до предоставления и анализа реального
-контракта. Запрещено выводить endpoint, payload и response shape из названий
-методов или примеров Omnicus.
+This section records the original pre-contract restriction and is not an active
+blocker. Endpoints, payloads and response shapes still must never be invented;
+future changes require an updated authoritative contract.
 
 ## Что разрешено до получения контракта
 

@@ -1,7 +1,8 @@
 # Dependency audit exceptions
 
 `pnpm audit:production` fails CI for every new high or critical production
-advisory. The Stage 0 baseline has no accepted audit exceptions.
+advisory. As reviewed on 2026-08-02, the repository has no accepted audit
+exceptions.
 
 An exception is allowed only through a new ADR and must record:
 

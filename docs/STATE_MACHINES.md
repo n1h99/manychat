@@ -1,5 +1,8 @@
 # OMNICUS — формальные state machines
 
+Status reviewed: 2026-08-02. The generic outbox machine applies to Telegram,
+CRM and Automation Studio 2.2 HTTP operations.
+
 ## Общие правила
 
 - Status изменяется только через перечисленные events.
@@ -231,3 +234,21 @@ segment не меняет recipients.
 Relay периодически сканирует PostgreSQL, поэтому потеря BullMQ job не теряет
 намерение. `IdempotencyRecord` хранит logical key, operation type, scope,
 request fingerprint и последний известный result reference.
+
+## ExternalHttpOperation
+
+States: `PENDING`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`.
+
+| From         | Event                    | Guard                                              | To                       | Side effects                                 | Retry policy     |
+| ------------ | ------------------------ | -------------------------------------------------- | ------------------------ | -------------------------------------------- | ---------------- |
+| —            | `http.intent.created`    | Valid published node and project secret references | `PENDING`                | Persist operation and HTTP outbox atomically | Relay automatic  |
+| `PENDING`    | `http.claim`             | Due and lease free/expired                         | `PROCESSING`             | Pin validated DNS target and claim lease     | Lease recovery   |
+| `PROCESSING` | `http.response.accepted` | Bounded response and configured success rule       | `SUCCEEDED`              | Persist safe projection and mapped variables | none             |
+| `PROCESSING` | `http.safe_failure`      | Confirmed response/validation failure              | `FAILED`                 | Safe code and failure branch                 | Policy/manual    |
+| `PROCESSING` | `http.outcome_unknown`   | Remote side effect may have happened               | `UNKNOWN`                | Block blind retry; expose safe diagnostics   | Reconcile/manual |
+| `FAILED`     | `http.retry`             | Retry policy permits and idempotency is stable     | `PENDING`                | New leased attempt, same logical operation   | bounded          |
+| `UNKNOWN`    | `http.reconciled`        | Remote proves applied/not applied                  | `SUCCEEDED` or `PENDING` | Safe reconciliation result                   | reconcile only   |
+
+SSRF/DNS/redirect rejection is a confirmed `FAILED` security result, never an
+`UNKNOWN`. Request/response bodies, rendered URLs and secret values are not
+state-machine metadata.

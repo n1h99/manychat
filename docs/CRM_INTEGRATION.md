@@ -1,5 +1,8 @@
 # Cyber Pulse CRM integration
 
+Status reviewed: 2026-08-02. Telegram Chat v3.2 is deployed and its final
+reaction-event acceptance gate has passed.
+
 ## Verified contract
 
 The production adapter is based on the Cyber Pulse staging backend contract:
@@ -108,8 +111,10 @@ Telegram user reactions are normalized as standalone `REACTION` events and
 forwarded through a transactional CRM outbox to the versioned endpoint in
 `OMNICUS_TO_CRM_OPENAPI.yaml`. They do not create synthetic messages. A
 reaction received before its target message is available remains retryable.
-The advertised capability remains disabled until the paired CRM deployment is
-live-verified.
+The paired CRM deployment is live-verified. Connection-scoped capability
+discovery advertises `userReactionEvents.supported=true`; duplicate events are
+idempotent, reaction-before-source is reconciled onto the source bubble and
+incorrect project/contact/connection routing is rejected.
 
 Bot API 10.2 does not expose a bot method for discovering available message
 effects. Capability discovery therefore publishes an empty
@@ -117,21 +122,24 @@ effects. Capability discovery therefore publishes an empty
 invents effect IDs. Empty streaming draft updates are ignored because Telegram
 uses them as a Thinking placeholder, not as cancellation.
 
-Conversation automation control currently exposes only `AUTO` and `MANUAL`,
-mapped to the existing conversation override. `PAUSED` with automatic resume,
-application scheduling, albums, structured messages, reply
-keyboards, bot-interface configuration and rich-message blocks remain
-machine-readably unsupported; CRM must keep those controls disabled.
+Conversation automation control exposes `AUTO`, `MANUAL` and temporary
+`PAUSED` with revision concurrency and automatic resume. Contract 3.2.0 also
+supports application-owned one-shot scheduling, durable Telegram media groups,
+structured contact/location/poll messages, scenario/broadcast `sourceContext`
+and bot commands/menu configuration. Recurring schedules, reply keyboards,
+rich-message blocks and external callbacks remain machine-readably unsupported.
 
 Contract 3.1.0 exposes stickers and media spoilers separately. CRM must gate
 sticker UI on `stickers.supported` and spoiler UI on
-`mediaSpoilers.supported`; `mediaGroups.supported=false` still prohibits an
-outbound album composer.
+`mediaSpoilers.supported`. Contract 3.2.0 advertises
+`mediaGroups.supported=true` for its bounded aggregate contract; clients must
+still use the media-group endpoint rather than emulate an album with repeated
+single-message sends.
 
-## Live acceptance gate
+## Live acceptance status
 
-Code and mock-backed contract tests do not constitute live acceptance. Before
-legacy CRM cleanup, verify on staging:
+The core Telegram/CRM path and Chat v3.2 acceptance scenarios have passed live
+E2E on 2026-08-02. The retained checklist is the regression gate:
 
 1. Telegram contact creates one CRM lead.
 2. A repeated lead operation is idempotent.

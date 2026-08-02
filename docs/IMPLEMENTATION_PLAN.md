@@ -1,5 +1,13 @@
 # OMNICUS — implementation plan
 
+Current status (reviewed 2026-08-02): the pilot and approved post-pilot Telegram,
+CRM, broadcasts, media/templates, Automation Studio 2.1 and Automation Studio
+2.2 slices are implemented and deployed from `main`. Telegram Chat v3.2 live
+acceptance is complete and `userReactionEvents.supported=true`. WhatsApp and
+Instagram remain intentionally deferred until test accounts and a separate
+scope are approved. Earlier stage sections below are retained as implementation
+history, not as the current deployment status.
+
 ## Stage 3C.2 — Telegram channel UI
 
 The protected web shell includes Telegram channel list, create and details routes.

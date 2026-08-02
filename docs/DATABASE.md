@@ -1,4 +1,17 @@
-# OMNICUS — Prisma model proposal
+# OMNICUS — Prisma schema and migration design
+
+Current status (reviewed 2026-08-02):
+`packages/database/prisma/schema.prisma` is the executable platform schema with
+50 models. Reviewed ordered migrations cover Auth/RBAC, contacts, Telegram
+inbox/outbox and chat v3.2, automation and continuations, CRM, broadcasts,
+media/templates and Automation Studio 2.2 External HTTP through
+`20260802000200_automation_studio_22_http`. Railway applies these migrations
+once through the designated release path.
+
+The stage-by-stage prose and model excerpts below record the design evolution.
+Where an old paragraph says a later model is only proposed or not deployed,
+the executable Prisma schema and migration directory now define the current
+truth. The invariants and review checklists remain mandatory.
 
 ## Статус
 
