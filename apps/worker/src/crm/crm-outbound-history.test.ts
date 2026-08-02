@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { crmOutboundHistorySource, ensureCrmOutboundHistoryIntent } from './crm-outbound-history';
 
-function transaction(metadata: Record<string, unknown>) {
+function transaction(metadata: Record<string, unknown>, deliveryConfirmed = true) {
   const outbox = { crmOperation: null, id: 'crm-outbox-a' };
   return {
     crmOperation: {
@@ -23,6 +23,7 @@ function transaction(metadata: Record<string, unknown>) {
     },
     outboxRecord: {
       createMany: vi.fn().mockResolvedValue({ count: 1 }),
+      findFirst: vi.fn().mockResolvedValue(deliveryConfirmed ? { id: 'telegram-outbox-a' } : null),
       findUnique: vi.fn().mockResolvedValue(outbox),
       update: vi.fn().mockResolvedValue({}),
     },
@@ -86,6 +87,16 @@ describe('CRM outbound history intent', () => {
 
     expect(tx.outboxRecord.createMany).not.toHaveBeenCalled();
     expect(crmOutboundHistorySource({ source: 'crm' })).toBeUndefined();
+  });
+
+  it('does not publish a synthetic sent message without a succeeded Telegram outbox', async () => {
+    const tx = transaction({ source: 'system' }, false);
+
+    await expect(
+      ensureCrmOutboundHistoryIntent(tx as never, 'project-a', 'message-a'),
+    ).resolves.toBe(false);
+
+    expect(tx.outboxRecord.createMany).not.toHaveBeenCalled();
   });
 
   it('classifies broadcasts without relying on mutable message text', () => {

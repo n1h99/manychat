@@ -1,7 +1,7 @@
 # Omnicus response to Telegram Chat v3 contract gaps
 
 Status: CRM-to-Omnicus contract 3.3.0 implemented; 3.2.0 live acceptance and
-Omnicus-to-CRM delivery contract 3.2.1 remain verified, 2026-08-02.
+Omnicus-to-CRM delivery contract 3.2.2 remain verified, 2026-08-02.
 
 Input: Cyber Pulse `OMNICUS_TELEGRAM_CHAT_V3_GAPS.md`, based on Omnicus
 baseline `4345938027ccf0b323bff1a41b4799b0e28bf2d2`.

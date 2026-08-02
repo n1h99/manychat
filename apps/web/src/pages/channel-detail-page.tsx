@@ -21,7 +21,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router';
 
 import {
@@ -56,6 +56,62 @@ export function ChannelDetailPage() {
   const canManage = hasProjectPermission(access.data, 'channels:manage');
   const identities = useChannelIdentities(projectId, canManage ? connectionId : undefined);
   const retryKey = useRef<string | undefined>(undefined);
+  const pipelineNotificationState = useRef<{
+    key: string;
+    inbound: Map<string, string>;
+    outbound: Map<string, string>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!projectId || !connectionId || !inbound.data || !outbound.data) return;
+    const key = `${projectId}:${connectionId}`;
+    const previous = pipelineNotificationState.current;
+    if (!previous || previous.key !== key) {
+      pipelineNotificationState.current = {
+        key,
+        inbound: new Map(
+          inbound.data.map((event) => [
+            `${event.externalUpdateId}:${event.receivedAt}`,
+            event.inboxRecord?.status ?? event.status,
+          ]),
+        ),
+        outbound: new Map(outbound.data.map((event) => [event.id, event.status])),
+      };
+      return;
+    }
+
+    for (const event of outbound.data) {
+      const priorStatus = previous.outbound.get(event.id);
+      if (priorStatus !== event.status) {
+        if (event.status === 'FAILED') {
+          void message.error(
+            event.lastError
+              ? `Telegram delivery failed: ${event.lastError}`
+              : 'Telegram delivery failed. Open the outbound pipeline for safe diagnostics.',
+          );
+        } else if (event.status === 'UNKNOWN') {
+          void message.warning(
+            'Telegram delivery has an unknown result. Reconcile it before any retry.',
+          );
+        }
+      }
+      previous.outbound.set(event.id, event.status);
+    }
+
+    for (const event of inbound.data) {
+      const eventKey = `${event.externalUpdateId}:${event.receivedAt}`;
+      const status = event.inboxRecord?.status ?? event.status;
+      const priorStatus = previous.inbound.get(eventKey);
+      if (priorStatus !== status && ['FAILED', 'DEAD_LETTER'].includes(status)) {
+        void message.error(
+          event.inboxRecord?.lastError
+            ? `Telegram inbound processing failed: ${event.inboxRecord.lastError}`
+            : 'Telegram inbound processing failed. Open the inbound pipeline for safe diagnostics.',
+        );
+      }
+      previous.inbound.set(eventKey, status);
+    }
+  }, [connectionId, inbound.data, outbound.data, projectId]);
 
   if (channel.isLoading) return <Spin className="route-loading" />;
   if (!channel.data) {

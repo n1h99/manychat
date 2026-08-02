@@ -85,6 +85,8 @@ describe('workspace lifecycle UI contracts', () => {
     expect(channel).toContain('className="channel-management-stack"');
     expect(channel).toContain('className="channel-actions-card"');
     expect(channel).toContain('className="channel-test-message-card"');
+    expect(channel).toContain('Telegram delivery has an unknown result');
+    expect(channel).toContain('Telegram inbound processing failed');
     expect(channel.indexOf('Replace bot token')).toBeLessThan(
       channel.indexOf('Connection actions'),
     );

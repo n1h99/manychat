@@ -784,6 +784,12 @@ creates a separate CRM outbox intent with the stable key
 `crm-outbound-history-<messageId>`. CRM-originated messages are excluded to
 prevent a synchronization loop.
 
+Both the immediate path and recovery scan require the originating Telegram
+outbox to be `SUCCEEDED`; setting a message row to `SENT` is not delivery proof.
+The normalized provider message ID must be the positive decimal representation
+of the integer Telegram `message_id`. Synthetic identifiers are rejected and cannot
+materialize a CRM history bubble.
+
 The explicit service contract is
 `POST /integrations/v1/omnicus/messages/outbound`; an outbound event is never
 misrepresented as inbound. It carries the stable Omnicus message UUID, the

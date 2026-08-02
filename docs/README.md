@@ -18,6 +18,10 @@ v3.3.
   rich Markdown messages and rich draft previews that reuse provider media IDs.
 - Rich content never accepts arbitrary media URLs; durable media is resolved
   only from a project/connection-scoped Omnicus asset.
+- CRM history now requires both a numeric Telegram provider message ID and a
+  matching `SUCCEEDED` Telegram outbox; synthetic rows cannot become chat
+  bubbles. Channel pipeline failures/unknown outcomes raise safe UI
+  notifications when the operator is viewing that channel.
 - Automation Studio 2.2 supports incomplete/disconnected drafts, quiet
   autosave, explicit edge deletion and durable SSRF-safe External HTTP nodes.
 - WhatsApp and Instagram are deliberately deferred until test accounts and a

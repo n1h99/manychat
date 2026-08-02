@@ -46,6 +46,9 @@ CRM-originated messages are not echoed back. The history operation carries the
 stable Omnicus message UUID and Telegram provider message ID, allowing a
 callback that arrived first to resolve its `sourceMessageId` later. Telegram
 delivery success is not rolled back if CRM history synchronization is delayed.
+History creation and recovery additionally require a matching `SUCCEEDED`
+Telegram outbox, and `providerMessageId` is a positive decimal Telegram `message_id`;
+synthetic E2E identifiers are never published as customer-visible history.
 
 ## Direction: Omnicus to CRM
 

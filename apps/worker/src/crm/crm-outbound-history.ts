@@ -23,7 +23,7 @@ export async function ensureCrmOutboundHistoryIntent(
   projectId: string,
   messageId: string,
 ): Promise<boolean> {
-  const [message, crmConfig] = await Promise.all([
+  const [message, crmConfig, telegramDelivery] = await Promise.all([
     transaction.message.findUnique({
       select: {
         contactId: true,
@@ -38,11 +38,21 @@ export async function ensureCrmOutboundHistoryIntent(
       select: { enabled: true },
       where: { projectId },
     }),
+    transaction.outboxRecord.findFirst({
+      select: { id: true },
+      where: {
+        kind: 'TELEGRAM',
+        payload: { equals: messageId, path: ['messageId'] },
+        projectId,
+        status: 'SUCCEEDED',
+      },
+    }),
   ]);
   const source = crmOutboundHistorySource(message?.metadata);
   if (
     !message ||
     !crmConfig?.enabled ||
+    !telegramDelivery ||
     message.direction !== 'OUTBOUND' ||
     message.status !== 'SENT' ||
     !message.externalMessageId ||

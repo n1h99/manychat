@@ -129,6 +129,7 @@ describe('CrmOutboxService', () => {
       },
       outboxRecord: {
         createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findFirst: vi.fn().mockResolvedValue({ id: 'telegram-outbox-history-a' }),
         findUnique: vi.fn().mockResolvedValue({
           crmOperation: null,
           id: 'crm-outbox-history-a',
