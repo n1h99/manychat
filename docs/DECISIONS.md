@@ -1117,3 +1117,27 @@ ordinary `QUEUED → PROCESSING → SENT | FAILED | UNKNOWN` lifecycle and
 idempotency rules. No provider token, signed URL, raw Telegram response or
 arbitrary remote media URL is persisted. CRM can safely gate each feature and
 must finalize a draft through the ordinary durable outbound endpoint.
+
+## ADR-046: Automation drafts are saved only by an explicit operator action
+
+**Status:** Accepted, 2026-08-02. Supersedes the editor-autosave clauses of
+ADR-043 and ADR-044.
+
+**Context:** A graph round-trip can mark an editor session dirty immediately
+after loading. Background PATCH attempts then repeat an unsuccessful save,
+produce avoidable API traffic and make the manual **Save draft** button appear
+active even though the operator did not request persistence.
+
+**Decision:** Automation Studio keeps graph, form and undo/redo changes in local
+React state until the operator presses **Save draft**. Dirty state remains
+visible and protects browser unload/navigation. The explicit save sends the
+latest graph once, carries `expectedUpdatedAt` for optimistic concurrency and
+shows its spinner only for that user-triggered request. A conflict remains
+terminal for the current editor state until reload/merge; it is never retried
+in the background.
+
+**Consequences:** PostgreSQL remains authoritative only for the last confirmed
+save. Closing or reloading with unsaved changes can discard local edits after
+the existing warning. Structurally incomplete drafts remain saveable, while
+publish and test validation stay strict. There are no timer-driven scenario
+update requests.

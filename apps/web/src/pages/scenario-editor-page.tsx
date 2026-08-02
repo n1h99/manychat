@@ -252,16 +252,12 @@ export function ScenarioEditorPage() {
   const [lastSavedSignature, setLastSavedSignature] = useState<string>();
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string>();
   const [manualSavePending, setManualSavePending] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'conflict' | 'dirty' | 'saved' | 'saving'>('saved');
+  const [saveStatus, setSaveStatus] = useState<'conflict' | 'dirty' | 'saved'>('saved');
   const scenarioName = Form.useWatch('name', form);
   const scenarioDescription = Form.useWatch('description', form);
   const graph = flowToScenarioGraph(nodes, edges, configs);
   const validation = validateScenarioGraph(graph);
   const signature = automationEditorSignature(graph, scenarioName, scenarioDescription);
-  const graphRef = useRef(graph);
-  graphRef.current = graph;
-  const updateDraftRef = useRef(mutations.update.mutateAsync);
-  updateDraftRef.current = mutations.update.mutateAsync;
   const newScenarioInitialSignature = useMemo(
     () => automationEditorSignature(emptyScenarioGraph, '', undefined),
     [],
@@ -419,49 +415,8 @@ export function ScenarioEditorPage() {
   }, [draftDirty]);
 
   useEffect(() => {
-    if (
-      !scenarioQuery.data ||
-      !draftDirty ||
-      !scenarioName?.trim() ||
-      manualSavePending ||
-      mutations.update.isPending ||
-      saveStatus === 'conflict'
-    )
-      return;
-    setSaveStatus('dirty');
-    const timer = window.setTimeout(async () => {
-      setSaveStatus('saving');
-      try {
-        const updated = await updateDraftRef.current({
-          ...(scenarioDescription === undefined ? {} : { description: scenarioDescription }),
-          ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
-          graph: graphRef.current,
-          id: scenarioQuery.data!.id,
-          name: scenarioName,
-        });
-        setExpectedUpdatedAt(updated.updatedAt);
-        setLastSavedSignature(signature);
-        setSaveStatus('saved');
-      } catch (error) {
-        if (error instanceof ApiError && error.code === 'SCENARIO_DRAFT_CONFLICT') {
-          setSaveStatus('conflict');
-          void message.error('Autosave stopped: this draft changed in another session.');
-        } else {
-          setSaveStatus('dirty');
-        }
-      }
-    }, 1_500);
-    return () => window.clearTimeout(timer);
-  }, [
-    draftDirty,
-    expectedUpdatedAt,
-    manualSavePending,
-    saveStatus,
-    scenarioDescription,
-    scenarioName,
-    scenarioQuery.data,
-    signature,
-  ]);
+    if (draftDirty && saveStatus === 'saved') setSaveStatus('dirty');
+  }, [draftDirty, saveStatus]);
 
   if (scenarioId !== 'new' && scenarioQuery.isLoading)
     return <Spin className="route-loading" size="large" />;
@@ -639,7 +594,6 @@ export function ScenarioEditorPage() {
               Test run
             </Button>
             <Button
-              disabled={saveStatus === 'saving'}
               htmlType="submit"
               loading={mutations.create.isPending || manualSavePending}
               type="primary"
@@ -752,14 +706,10 @@ export function ScenarioEditorPage() {
                     Duplicate
                   </Button>
                 </Space>
-                <Tag
-                  color={
-                    saveStatus === 'conflict' ? 'red' : saveStatus === 'saved' ? 'green' : 'gold'
-                  }
-                >
+                <Tag color={saveStatus === 'conflict' ? 'red' : draftDirty ? 'gold' : 'green'}>
                   {saveStatus === 'conflict'
                     ? 'Save conflict'
-                    : saveStatus === 'saving'
+                    : manualSavePending
                       ? 'Saving…'
                       : draftDirty
                         ? 'Unsaved changes'
@@ -915,7 +865,6 @@ export function ScenarioEditorPage() {
             Test run
           </Button>
           <Button
-            disabled={saveStatus === 'saving'}
             htmlType="submit"
             loading={mutations.create.isPending || manualSavePending}
             type="primary"

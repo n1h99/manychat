@@ -285,7 +285,7 @@ paused project → deferred inbox → resume processing
 - события одной conversation исполняются последовательно;
 - branch выбирается по priority;
 - null не coerced;
-- published graph не изменяется draft autosave;
+- published graph не изменяется при explicit draft save;
 - node side effect переживает worker restart без слепого дублирования.
 
 ### Exit criteria
@@ -394,7 +394,7 @@ outside this pilot.
 ## Automation v2 — approved post-pilot slice
 
 This slice is limited to the existing Telegram channel and adds a React Flow
-canvas, draft autosave/history, durable Delay, Wait for Reply, and Subflow
+canvas, explicit draft persistence/local history, durable Delay, Wait for Reply, and Subflow
 continuations. The worker recovers due delays and wait timeouts from PostgreSQL;
 it never relies on a process-local timer. The slice does not add External HTTP,
 WhatsApp/Instagram, broadcasts, templates or media workflows.
@@ -427,7 +427,7 @@ This Telegram-only increment improves the existing versioned editor and runtime:
 - Send Message provides a project-aware variable picker and deterministic sample
   preview;
 - the editor provides a 50-step local undo/redo history, node copy/paste and
-  duplication, grid snapping, debounced draft autosave, optimistic concurrency
+  duplication, grid snapping, explicit draft save, optimistic concurrency
   and navigation guards;
 - safe test run and execution replay simulate the pinned graph and branch choices
   without creating Telegram, CRM, tag, contact, delay or wait side effects.
@@ -603,9 +603,10 @@ operation metadata.
 
 Drafts may retain publish-validation errors, disconnected nodes and empty paths.
 The server stores those validation results while publish/test remain strict.
-Autosave uses a quiet `Unsaved / Saving / Saved` indicator and never drives the
-manual Save button spinner. Connections can be removed explicitly or with the
-Delete/Backspace keys and restored through the existing local undo history.
+The editor keeps changes local with an `Unsaved changes` indicator and writes
+only after an explicit **Save draft** action. Connections can be removed
+explicitly or with the Delete/Backspace keys and restored through the existing
+local undo history.
 
 Provider contract 3.2.0 adds the CRM-requested durable boundary for safe
 scenario/broadcast `sourceContext`, client edit/contact events, temporary

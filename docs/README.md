@@ -22,8 +22,9 @@ v3.3.
   matching `SUCCEEDED` Telegram outbox; synthetic rows cannot become chat
   bubbles. Channel pipeline failures/unknown outcomes raise safe UI
   notifications when the operator is viewing that channel.
-- Automation Studio 2.2 supports incomplete/disconnected drafts, quiet
-  autosave, explicit edge deletion and durable SSRF-safe External HTTP nodes.
+- Automation Studio 2.2 supports incomplete/disconnected drafts, explicit
+  operator-controlled saving, edge deletion and durable SSRF-safe External
+  HTTP nodes. Editor changes remain local until **Save draft** is pressed.
 - WhatsApp and Instagram are deliberately deferred until test accounts and a
   separately approved scope exist.
 

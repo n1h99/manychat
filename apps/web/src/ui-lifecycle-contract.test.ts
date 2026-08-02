@@ -19,6 +19,16 @@ describe('workspace lifecycle UI contracts', () => {
     expect(editor).toContain('showZoom={isCanvasInteractive}');
   });
 
+  it('saves automation drafts only after an explicit Save draft action', () => {
+    const editor = source('./pages/scenario-editor-page.tsx');
+    expect(editor).toContain('onFinish={save}');
+    expect(editor).toContain('Unsaved changes');
+    expect(editor).toContain('setManualSavePending(true)');
+    expect(editor).not.toContain('updateDraftRef');
+    expect(editor).not.toContain('Autosave stopped');
+    expect(editor).not.toContain('}, 1_500)');
+  });
+
   it('uses an in-app template archive dialog and a deferred media selection', () => {
     const templates = source('./pages/templates-page.tsx');
     const media = source('./pages/media-assets-page.tsx');

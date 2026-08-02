@@ -61,17 +61,17 @@ storm.
 Состояния aggregate: `draft`, `published`, `paused`, `archived`. Published
 `ScenarioVersion` immutable.
 
-| From        | Event                    | Guard                                                             | To          | Side effects                                                             | Retry policy                            |
-| ----------- | ------------------------ | ----------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------ | --------------------------------------- |
-| —           | `scenario.create`        | Permission, уникальное имя не обязательно                         | `draft`     | Создать draft version; audit                                             | Idempotency-Key                         |
-| `draft`     | `scenario.publish`       | Graph valid; нет unguarded cycle; ports/capabilities/config valid | `published` | Immutable published version, compiled definition, activeVersionId; audit | none                                    |
-| `published` | `scenario.edit`          | Permission                                                        | `published` | Создать/обновить отдельную draft version; activeVersion не менять        | Autosave retry с optimistic concurrency |
-| `published` | `scenario.publish_draft` | Draft valid и base revision не устарела                           | `published` | Новая immutable version становится active; старая superseded; audit      | none                                    |
-| `published` | `scenario.pause`         | Permission                                                        | `paused`    | Не создавать новые executions; активные продолжаются по policy; audit    | none                                    |
-| `paused`    | `scenario.resume`        | Active version всё ещё valid                                      | `published` | Разрешить matching; audit                                                | none                                    |
-| `published` | `scenario.rollback`      | Target version published и compatible                             | `published` | Target становится active без изменения immutable graph; audit            | none                                    |
-| `draft`     | `scenario.archive`       | Нет published version                                             | `archived`  | Закрыть draft; audit                                                     | none                                    |
-| `paused`    | `scenario.archive`       | Нет running/waiting executions либо выбрана cancel policy         | `archived`  | Cancel по policy; audit                                                  | Cancellation recovery                   |
+| From        | Event                    | Guard                                                             | To          | Side effects                                                             | Retry policy                           |
+| ----------- | ------------------------ | ----------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------ | -------------------------------------- |
+| —           | `scenario.create`        | Permission, уникальное имя не обязательно                         | `draft`     | Создать draft version; audit                                             | Idempotency-Key                        |
+| `draft`     | `scenario.publish`       | Graph valid; нет unguarded cycle; ports/capabilities/config valid | `published` | Immutable published version, compiled definition, activeVersionId; audit | none                                   |
+| `published` | `scenario.edit`          | Permission                                                        | `published` | Создать/обновить отдельную draft version; activeVersion не менять        | Explicit Save с optimistic concurrency |
+| `published` | `scenario.publish_draft` | Draft valid и base revision не устарела                           | `published` | Новая immutable version становится active; старая superseded; audit      | none                                   |
+| `published` | `scenario.pause`         | Permission                                                        | `paused`    | Не создавать новые executions; активные продолжаются по policy; audit    | none                                   |
+| `paused`    | `scenario.resume`        | Active version всё ещё valid                                      | `published` | Разрешить matching; audit                                                | none                                   |
+| `published` | `scenario.rollback`      | Target version published и compatible                             | `published` | Target становится active без изменения immutable graph; audit            | none                                   |
+| `draft`     | `scenario.archive`       | Нет published version                                             | `archived`  | Закрыть draft; audit                                                     | none                                   |
+| `paused`    | `scenario.archive`       | Нет running/waiting executions либо выбрана cancel policy         | `archived`  | Cancel по policy; audit                                                  | Cancellation recovery                  |
 
 Matching нескольких scenarios создаёт executions для всех совпадений. Порядок
 между scenarios не гарантируется.

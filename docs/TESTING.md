@@ -46,7 +46,8 @@ wait/delay/subflow continuation, immutable published versions and execution
 journaling. Automation Studio 2.2 adds explicit coverage for:
 
 - saving incomplete/disconnected drafts while publish/test stays strict;
-- quiet autosave and explicit connection deletion;
+- explicit draft save without background update requests, plus explicit
+  connection deletion;
 - External HTTP method/query/header/body validation and response mapping;
 - project-secret isolation and write-only secret values;
 - DNS/redirect validation, SSRF and cloud-metadata blocking;
