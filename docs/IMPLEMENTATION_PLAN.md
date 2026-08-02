@@ -582,3 +582,13 @@ remain capability-gated because no safe provider contract exists for them.
 Scheduled-message create/get/list/cancel responses carry safe routing IDs, and
 all public read/cancel operations require connection/contact scope so CRM lead
 managers cannot enumerate another lead's schedule.
+
+## Known UI follow-ups
+
+- Telegram channel detail keeps stale connection data after **Disable channel**:
+  the mutation invalidates the channel list but not the active channel-detail
+  query, so **Connect webhook** appears only after a manual page refresh. Fix the
+  mutation cache update/invalidation for the affected connection. Acceptance:
+  after a successful disable response, the same open page immediately renders
+  the updated status and **Connect webhook** action; reconnecting immediately
+  restores the active/connected state without navigation or reload.
