@@ -1,20 +1,7 @@
-import {
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Button, Card, Form, Input, Modal, Select, Space, Typography, message } from 'antd';
 import {
   CopyOutlined,
   DeleteOutlined,
-  EditOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   SaveOutlined,
@@ -51,14 +38,6 @@ export function ProjectSettingsPage() {
       />
     );
   const data = project.data;
-  const focusGeneralSettings = () => {
-    document.getElementById('project-general-settings')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
-    const nameInput = form.getFieldInstance('name') as { focus?: () => void } | undefined;
-    nameInput?.focus?.();
-  };
   return (
     <section className="project-settings-page">
       <div className="page-heading-row project-settings-heading">
@@ -70,11 +49,7 @@ export function ProjectSettingsPage() {
         </div>
         {data ? (
           <div className="project-settings-heading-actions">
-            <Tag color={data.status === 'ACTIVE' ? 'green' : 'orange'}>{data.status}</Tag>
             <Space wrap>
-              <Button icon={<EditOutlined />} onClick={focusGeneralSettings}>
-                Edit
-              </Button>
               <Button
                 danger={data.status === 'ACTIVE'}
                 icon={data.status === 'ACTIVE' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
@@ -106,11 +81,7 @@ export function ProjectSettingsPage() {
         ) : null}
       </div>
       <div className={`project-settings-grid${canClone ? '' : ' is-single'}`}>
-        <Card
-          className="settings-card settings-card--general"
-          id="project-general-settings"
-          title="General"
-        >
+        <Card className="settings-card settings-card--general" title="General">
           {data ? (
             <Form
               form={form}

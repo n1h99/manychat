@@ -578,14 +578,6 @@
   gap: 10px;
 }
 
-.project-settings-heading-actions > .ant-tag {
-  margin: 0;
-}
-
-#project-general-settings {
-  scroll-margin-top: 88px;
-}
-
 .settings-card {
   width: 100%;
   height: 100%;
