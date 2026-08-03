@@ -1967,6 +1967,7 @@ button:disabled,
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   padding-block: 24px;
 }
 
@@ -1976,8 +1977,10 @@ button:disabled,
 }
 
 .ant-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
   max-height: calc(100dvh - 48px);
-  overflow-y: auto;
+  overflow: hidden;
   padding: 24px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1985,7 +1988,19 @@ button:disabled,
 }
 
 .ant-modal .ant-modal-header {
+  flex: 0 0 auto;
   margin-bottom: 18px;
+}
+
+.ant-modal .ant-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.ant-modal .ant-modal-footer {
+  flex: 0 0 auto;
 }
 
 .ant-drawer .ant-drawer-content,
