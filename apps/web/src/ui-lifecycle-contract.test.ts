@@ -132,6 +132,14 @@ describe('workspace lifecycle UI contracts', () => {
   it('exposes the completed operations and account lifecycle surfaces safely', () => {
     const operations = source('./pages/operations-page.tsx');
     const settings = source('./pages/project-settings-page.tsx');
+    const styles = source('./styles.css');
+    const settingsGrid = styles.match(/\.project-settings-grid\s*\{(?<rules>[^}]*)\}/)?.groups
+      ?.rules;
+    const singleSettingsGrid = styles.match(
+      /\.project-settings-grid\.is-single\s*\{(?<rules>[^}]*)\}/,
+    )?.groups?.rules;
+    const settingsHeading = styles.match(/\.project-settings-heading\s*\{(?<rules>[^}]*)\}/)?.groups
+      ?.rules;
     const users = source('./pages/users-page.tsx');
     const health = source('./pages/system-health-page.tsx');
     expect(operations).toContain('Reconcile unknown outcome');
@@ -148,6 +156,11 @@ describe('workspace lifecycle UI contracts', () => {
     expect(settings).not.toContain('EditOutlined');
     expect(settings).not.toContain('<Tag');
     expect(settings).not.toContain('clone-project-icon');
+    expect(settingsGrid).toContain('max-width: none');
+    expect(settingsGrid).not.toContain('max-width: 1280px');
+    expect(settingsHeading).toContain('max-width: none');
+    expect(singleSettingsGrid).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(singleSettingsGrid).toContain('justify-content: stretch');
     expect(source('./pages/project-detail-page.tsx')).not.toContain('Pause project');
     expect(source('./pages/project-detail-page.tsx')).not.toContain('Delete this project?');
     expect(users).toContain('Create invitation');

@@ -555,19 +555,19 @@
   gap: 18px;
   align-items: start;
   width: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
 }
 
 .project-settings-grid.is-single {
-  grid-template-columns: minmax(0, 850px);
-  justify-content: center;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
 }
 
 .project-settings-heading {
   width: 100%;
-  max-width: 1280px;
-  margin-inline: auto;
+  max-width: none;
+  margin-inline: 0;
 }
 
 .settings-card {
