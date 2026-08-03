@@ -335,7 +335,7 @@ export function OperationsPage() {
                       width: 180,
                     },
                     {
-                      align: 'right',
+                      align: 'center',
                       render: (_, row) =>
                         canRecover ? (
                           <Space>

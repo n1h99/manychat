@@ -1,17 +1,17 @@
 import { Body, Controller, Get, Inject, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiExtraModels, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
 import { PermissionGuard } from '../access/permission.guard';
 import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RetryCrmOperationDto } from './dto';
-import type { CrmOperationsQueryDto } from './dto';
+import { CrmOperationsQueryDto, RetryCrmOperationDto } from './dto';
 import { CrmService } from './crm.service';
 
 @ApiTags('crm')
 @ApiBearerAuth()
+@ApiExtraModels(CrmOperationsQueryDto)
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('api/v1/projects/:projectId/crm-operations')
 export class CrmOperationsController {

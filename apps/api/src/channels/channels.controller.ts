@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiExtraModels, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
 import { PermissionGuard } from '../access/permission.guard';
@@ -7,12 +7,18 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { ChannelsService } from './channels.service';
-import { CreateTelegramChannelDto, TestTelegramMessageDto, UpdateTelegramChannelDto } from './dto';
-import type { ChannelEventsQueryDto, CompleteWhatsAppSetupDto } from './dto';
+import {
+  ChannelEventsQueryDto,
+  CompleteWhatsAppSetupDto,
+  CreateTelegramChannelDto,
+  TestTelegramMessageDto,
+  UpdateTelegramChannelDto,
+} from './dto';
 import { WhatsAppChannelsService } from './whatsapp-channels.service';
 
 @ApiTags('channels')
 @ApiBearerAuth()
+@ApiExtraModels(ChannelEventsQueryDto)
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('api/v1/projects/:projectId/channels')
 export class ChannelsController {
@@ -32,6 +38,7 @@ export class ChannelsController {
   }
   @Post('whatsapp/setup/complete')
   @RequireProjectPermission('channels:manage')
+  @ApiBody({ type: CompleteWhatsAppSetupDto })
   async completeWhatsAppSetup(
     @Param('projectId') projectId: string,
     @Body() dto: CompleteWhatsAppSetupDto,
