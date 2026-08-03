@@ -3,6 +3,7 @@ import { Alert, Button, Empty, Modal, Space, Spin, Table, Tag, Typography, messa
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import { type ScenarioSummary, useScenarioMutations, useScenarios } from '../automation-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
@@ -14,6 +15,16 @@ export function ScenariosPage() {
   const mutations = useScenarioMutations(projectId);
   const [removing, setRemoving] = useState<ScenarioSummary>();
   const canManage = hasProjectPermission(access.data, 'automation:manage');
+  const action = async (operation: () => Promise<unknown>, success: string, fallback: string) => {
+    try {
+      await operation();
+      void message.success(success);
+      return true;
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, fallback));
+      return false;
+    }
+  };
 
   if (scenarios.isLoading) return <Spin className="route-loading" />;
 
@@ -71,7 +82,13 @@ export function ScenariosPage() {
                       {scenario.status === 'PUBLISHED' ? (
                         <Button
                           icon={<PauseOutlined />}
-                          onClick={() => void mutations.pause.mutateAsync(scenario.id)}
+                          onClick={() =>
+                            void action(
+                              () => mutations.pause.mutateAsync(scenario.id),
+                              'Automation deactivated.',
+                              'Automation could not be deactivated.',
+                            )
+                          }
                           size="small"
                           className="scenario-state-action"
                         >
@@ -80,7 +97,13 @@ export function ScenariosPage() {
                       ) : scenario.status === 'PAUSED' ? (
                         <Button
                           icon={<PlayCircleOutlined />}
-                          onClick={() => void mutations.resume.mutateAsync(scenario.id)}
+                          onClick={() =>
+                            void action(
+                              () => mutations.resume.mutateAsync(scenario.id),
+                              'Automation resumed.',
+                              'Automation could not be resumed.',
+                            )
+                          }
                           size="small"
                           className="scenario-state-action"
                         >
@@ -124,9 +147,13 @@ export function ScenariosPage() {
         onCancel={() => setRemoving(undefined)}
         onOk={async () => {
           if (!removing) return;
-          await mutations.remove.mutateAsync(removing.id);
+          const succeeded = await action(
+            () => mutations.remove.mutateAsync(removing.id),
+            'Automation archived.',
+            'Automation could not be archived.',
+          );
+          if (!succeeded) return;
           setRemoving(undefined);
-          void message.success('Automation archived.');
         }}
         open={Boolean(removing)}
         title="Archive this automation?"

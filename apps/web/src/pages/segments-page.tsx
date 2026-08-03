@@ -1,8 +1,8 @@
-import { Button, Form, Input, Popconfirm, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Form, Input, Popconfirm, Table, Tag, Typography, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
@@ -59,14 +59,18 @@ export function SegmentsPage() {
           className="segment-create-form surface"
           layout="inline"
           onFinish={async (values: { filter: string; name: string }) => {
+            let filter: Record<string, unknown>;
             try {
-              await create.mutateAsync({
-                filter: JSON.parse(values.filter) as Record<string, unknown>,
-                name: values.name,
-              });
-              void message.success('Segment created.');
+              filter = JSON.parse(values.filter) as Record<string, unknown>;
             } catch {
-              void message.error('Could not create segment. Check the filter.');
+              void message.error('Segment could not be created. The filter is not valid JSON.');
+              return;
+            }
+            try {
+              await create.mutateAsync({ filter, name: values.name });
+              void message.success('Segment created.');
+            } catch (error) {
+              void message.error(getUserErrorMessage(error, 'Segment could not be created.'));
             }
           }}
         >
@@ -85,6 +89,13 @@ export function SegmentsPage() {
             Create segment
           </Button>
         </Form>
+      ) : null}
+      {segments.isError ? (
+        <Alert
+          message={getUserErrorMessage(segments.error, 'Segments could not be loaded.')}
+          showIcon
+          type="error"
+        />
       ) : null}
       <Table<Segment>
         columns={[
@@ -106,7 +117,16 @@ export function SegmentsPage() {
               canEdit ? (
                 <Popconfirm
                   title="Archive this segment?"
-                  onConfirm={() => void archive.mutateAsync(row.id)}
+                  onConfirm={async () => {
+                    try {
+                      await archive.mutateAsync(row.id);
+                      void message.success('Segment archived.');
+                    } catch (error) {
+                      void message.error(
+                        getUserErrorMessage(error, 'Segment could not be archived.'),
+                      );
+                    }
+                  }}
                 >
                   <Button danger size="small">
                     Archive

@@ -21,6 +21,7 @@ import {
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import { type Broadcast, useBroadcastMutations, useBroadcasts } from '../broadcasts-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
@@ -35,6 +36,16 @@ export function BroadcastsPage() {
   const canArchive = hasProjectPermission(access.data, 'broadcasts:cancel');
   const mutations = useBroadcastMutations(projectId);
   const [removing, setRemoving] = useState<Broadcast>();
+  const action = async (operation: () => Promise<unknown>, success: string, fallback: string) => {
+    try {
+      await operation();
+      void message.success(success);
+      return true;
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, fallback));
+      return false;
+    }
+  };
 
   if (query.isLoading) return <Spin className="route-loading" />;
 
@@ -104,7 +115,13 @@ export function BroadcastsPage() {
                         <Button
                           icon={<UndoOutlined />}
                           loading={mutations.restore.isPending}
-                          onClick={() => void mutations.restore.mutateAsync(broadcast.id)}
+                          onClick={() =>
+                            void action(
+                              () => mutations.restore.mutateAsync(broadcast.id),
+                              'Broadcast restored.',
+                              'Broadcast could not be restored.',
+                            )
+                          }
                           size="small"
                           type="primary"
                         >
@@ -115,7 +132,13 @@ export function BroadcastsPage() {
                         <Button
                           className="broadcast-state-action"
                           icon={<PauseOutlined />}
-                          onClick={() => void mutations.pause.mutateAsync(broadcast.id)}
+                          onClick={() =>
+                            void action(
+                              () => mutations.pause.mutateAsync(broadcast.id),
+                              'Broadcast paused.',
+                              'Broadcast could not be paused.',
+                            )
+                          }
                           size="small"
                         >
                           Deactivate
@@ -124,7 +147,13 @@ export function BroadcastsPage() {
                         <Button
                           className="broadcast-state-action"
                           icon={<PlayCircleOutlined />}
-                          onClick={() => void mutations.resume.mutateAsync(broadcast.id)}
+                          onClick={() =>
+                            void action(
+                              () => mutations.resume.mutateAsync(broadcast.id),
+                              'Broadcast resumed.',
+                              'Broadcast could not be resumed.',
+                            )
+                          }
                           size="small"
                         >
                           Resume
@@ -173,9 +202,13 @@ export function BroadcastsPage() {
         onCancel={() => setRemoving(undefined)}
         onOk={async () => {
           if (!removing) return;
-          await mutations.remove.mutateAsync(removing.id);
+          const succeeded = await action(
+            () => mutations.remove.mutateAsync(removing.id),
+            'Broadcast archived.',
+            'Broadcast could not be archived.',
+          );
+          if (!succeeded) return;
           setRemoving(undefined);
-          void message.success('Broadcast archived.');
         }}
         open={Boolean(removing)}
         title="Archive this broadcast?"

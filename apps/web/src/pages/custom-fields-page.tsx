@@ -1,5 +1,6 @@
 import { EditOutlined, InboxOutlined, PlusOutlined, UndoOutlined } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Drawer,
   Form,
@@ -15,7 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 
 interface Field {
@@ -99,6 +100,13 @@ export function CustomFieldsPage() {
         ]}
         value={view}
       />
+      {fields.isError ? (
+        <Alert
+          message={getUserErrorMessage(fields.error, 'Custom fields could not be loaded.')}
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Table<Field>
         className="archive-state-table"
         columns={[
@@ -154,16 +162,21 @@ export function CustomFieldsPage() {
                     <Button
                       danger
                       icon={<InboxOutlined />}
-                      onClick={() =>
-                        void apiRequest(
-                          `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
-                          { method: 'DELETE' },
-                          accessToken,
-                        ).then(async () => {
+                      onClick={async () => {
+                        try {
+                          await apiRequest(
+                            `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
+                            { method: 'DELETE' },
+                            accessToken,
+                          );
                           await reload();
                           void message.success('Custom field archived.');
-                        })
-                      }
+                        } catch (error) {
+                          void message.error(
+                            getUserErrorMessage(error, 'Custom field could not be archived.'),
+                          );
+                        }
+                      }}
                       size="small"
                     >
                       Archive
@@ -172,16 +185,21 @@ export function CustomFieldsPage() {
                 ) : (
                   <Button
                     icon={<UndoOutlined />}
-                    onClick={() =>
-                      void apiRequest(
-                        `/api/v1/projects/${projectId}/custom-fields/${row.id}/restore`,
-                        { method: 'POST' },
-                        accessToken,
-                      ).then(async () => {
+                    onClick={async () => {
+                      try {
+                        await apiRequest(
+                          `/api/v1/projects/${projectId}/custom-fields/${row.id}/restore`,
+                          { method: 'POST' },
+                          accessToken,
+                        );
                         await reload();
                         void message.success('Custom field restored.');
-                      })
-                    }
+                      } catch (error) {
+                        void message.error(
+                          getUserErrorMessage(error, 'Custom field could not be restored.'),
+                        );
+                      }
+                    }}
                     size="small"
                     type="primary"
                   >
@@ -221,25 +239,30 @@ export function CustomFieldsPage() {
                     .filter(Boolean)
                 : undefined,
             };
-            await apiRequest(
-              `/api/v1/projects/${projectId}/custom-fields${editing ? `/${editing.id}` : ''}`,
-              {
-                body: JSON.stringify(
-                  editing
-                    ? {
-                        description: payload.description,
-                        name: payload.name,
-                        options: payload.options,
-                      }
-                    : payload,
-                ),
-                method: editing ? 'PATCH' : 'POST',
-              },
-              accessToken,
-            );
-            form.resetFields();
-            setOpen(false);
-            await reload();
+            try {
+              await apiRequest(
+                `/api/v1/projects/${projectId}/custom-fields${editing ? `/${editing.id}` : ''}`,
+                {
+                  body: JSON.stringify(
+                    editing
+                      ? {
+                          description: payload.description,
+                          name: payload.name,
+                          options: payload.options,
+                        }
+                      : payload,
+                  ),
+                  method: editing ? 'PATCH' : 'POST',
+                },
+                accessToken,
+              );
+              form.resetFields();
+              setOpen(false);
+              await reload();
+              void message.success(editing ? 'Custom field updated.' : 'Custom field created.');
+            } catch (error) {
+              void message.error(getUserErrorMessage(error, 'Custom field could not be saved.'));
+            }
           }}
         >
           <Form.Item label="Name" name="name" rules={[{ required: true }]}>

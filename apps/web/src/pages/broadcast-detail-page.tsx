@@ -14,6 +14,7 @@ import {
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import { useBroadcast, useBroadcastMutations, useBroadcastRecipients } from '../broadcasts-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
@@ -26,18 +27,32 @@ export function BroadcastDetailPage() {
   const recipients = useBroadcastRecipients(projectId, broadcastId);
   const access = useProjectAccess(projectId);
   const mutations = useBroadcastMutations(projectId);
-  if (query.isLoading || !query.data) return <Spin className="route-loading" size="large" />;
+  if (query.isLoading) return <Spin className="route-loading" size="large" />;
+  if (query.isError || !query.data)
+    return (
+      <Alert
+        message={getUserErrorMessage(query.error, 'Broadcast could not be loaded.')}
+        showIcon
+        type="error"
+      />
+    );
   const broadcast = query.data;
   const canLaunch = hasProjectPermission(access.data, 'broadcasts:launch');
   const canCreate = hasProjectPermission(access.data, 'broadcasts:create');
   const canPause = hasProjectPermission(access.data, 'broadcasts:pause');
   const canCancel = hasProjectPermission(access.data, 'broadcasts:cancel');
-  const action = async (operation: () => Promise<unknown>, success: string) => {
+  const action = async (
+    operation: () => Promise<unknown>,
+    success: string,
+    fallback = 'The broadcast action could not be completed.',
+  ) => {
     try {
       await operation();
       void message.success(success);
-    } catch {
-      void message.error('The operation failed. Check the current broadcast status.');
+      return true;
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, fallback));
+      return false;
     }
   };
   return (
@@ -165,7 +180,12 @@ export function BroadcastDetailPage() {
         okText="Archive broadcast"
         onCancel={() => setRemoving(false)}
         onOk={async () => {
-          await mutations.remove.mutateAsync(broadcast.id);
+          const succeeded = await action(
+            () => mutations.remove.mutateAsync(broadcast.id),
+            'Broadcast archived.',
+            'Broadcast could not be archived.',
+          );
+          if (!succeeded) return;
           setRemoving(false);
           void navigate(`/projects/${projectId}/broadcasts`, { replace: true });
         }}
@@ -182,10 +202,16 @@ export function BroadcastDetailPage() {
         okText="Create new draft"
         onCancel={() => setRestarting(false)}
         onOk={async () => {
-          const copy = await mutations.runAgain.mutateAsync(broadcast.id);
-          setRestarting(false);
-          void message.success('A new broadcast draft was created.');
-          void navigate(`/projects/${projectId}/broadcasts/${copy.id}`);
+          try {
+            const copy = await mutations.runAgain.mutateAsync(broadcast.id);
+            setRestarting(false);
+            void message.success('A new broadcast draft was created.');
+            void navigate(`/projects/${projectId}/broadcasts/${copy.id}`);
+          } catch (error) {
+            void message.error(
+              getUserErrorMessage(error, 'A new broadcast draft could not be created.'),
+            );
+          }
         }}
         open={restarting}
         title="Run this broadcast again?"

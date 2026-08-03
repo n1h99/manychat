@@ -1,8 +1,9 @@
 import { DeleteOutlined, FileOutlined } from '@ant-design/icons';
-import { Button, Modal, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, Modal, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import { type MediaAsset, type MediaKind, useMediaAssets, useMediaMutations } from '../media-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
@@ -20,10 +21,8 @@ export function MediaAssetsPage() {
       await mutations.upload.mutateAsync({ file, kind });
       setFile(undefined);
       void message.success('Media asset uploaded.');
-    } catch {
-      void message.error(
-        'Upload failed. Make sure the image, PDF or ZIP is complete, uses the selected format and is within the upload limit.',
-      );
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, 'Media asset could not be uploaded.'));
     }
   };
   return (
@@ -101,6 +100,13 @@ export function MediaAssetsPage() {
           </Button>
         </Space>
       ) : null}
+      {assets.isError ? (
+        <Alert
+          message={getUserErrorMessage(assets.error, 'Media assets could not be loaded.')}
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Table<MediaAsset>
         dataSource={assets.data ?? []}
         loading={assets.isLoading}
@@ -122,8 +128,14 @@ export function MediaAssetsPage() {
                 {asset.status === 'AVAILABLE' ? (
                   <Button
                     onClick={async () => {
-                      const result = await mutations.signedUrl.mutateAsync(asset.id);
-                      window.open(result.url, '_blank', 'noopener,noreferrer');
+                      try {
+                        const result = await mutations.signedUrl.mutateAsync(asset.id);
+                        window.open(result.url, '_blank', 'noopener,noreferrer');
+                      } catch (error) {
+                        void message.error(
+                          getUserErrorMessage(error, 'Media preview could not be opened.'),
+                        );
+                      }
                     }}
                     size="small"
                   >
@@ -133,7 +145,19 @@ export function MediaAssetsPage() {
                 {canManage && asset.status === 'PROVIDER_REFERENCE' ? (
                   <Button
                     loading={mutations.materialize.isPending}
-                    onClick={() => void mutations.materialize.mutateAsync(asset.id)}
+                    onClick={async () => {
+                      try {
+                        await mutations.materialize.mutateAsync(asset.id);
+                        void message.success('Media downloaded from Telegram.');
+                      } catch (error) {
+                        void message.error(
+                          getUserErrorMessage(
+                            error,
+                            'Media could not be downloaded from Telegram.',
+                          ),
+                        );
+                      }
+                    }}
                     size="small"
                   >
                     Download from Telegram
@@ -144,7 +168,17 @@ export function MediaAssetsPage() {
                     danger
                     onClick={() =>
                       Modal.confirm({
-                        onOk: () => mutations.remove.mutateAsync(asset.id),
+                        onOk: async () => {
+                          try {
+                            await mutations.remove.mutateAsync(asset.id);
+                            void message.success('Media asset deleted.');
+                          } catch (error) {
+                            void message.error(
+                              getUserErrorMessage(error, 'Media asset could not be deleted.'),
+                            );
+                            throw error;
+                          }
+                        },
                         title: 'Delete this media asset?',
                       })
                     }

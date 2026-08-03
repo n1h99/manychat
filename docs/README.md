@@ -7,6 +7,9 @@ v3.3.
 
 - Railway runs the web, API and worker services from `main`; deployments are
   automatic after a push.
+- All operator mutations expose action-specific success/failure feedback. Safe
+  API codes and validation field names are translated into actionable UI copy;
+  internal 5xx details remain hidden behind a correlation reference.
 - Telegram and Cyber Pulse CRM are the active live integration slice.
 - Every normalized Telegram inbound message is queued to an active paired CRM
   independently of Automation Studio. Inbound replies keep a same-conversation

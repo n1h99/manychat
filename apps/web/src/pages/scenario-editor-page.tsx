@@ -88,7 +88,7 @@ import {
   useScenarios,
 } from '../automation-api';
 import { AutomationTestPanel, type AutomationTestInput } from '../automation-test-panel';
-import { ApiError } from '../api';
+import { ApiError, getUserErrorMessage } from '../api';
 import {
   automationActionErrorMessage,
   automationEditorSignature,
@@ -622,7 +622,7 @@ export function ScenarioEditorPage() {
       if (error instanceof ApiError && error.code === 'SCENARIO_DRAFT_CONFLICT') {
         setSaveStatus('conflict');
         void message.error('This draft changed in another session. Reload before saving again.');
-      } else void message.error('Scenario could not be saved.');
+      } else void message.error(getUserErrorMessage(error, 'Scenario could not be saved.'));
     } finally {
       setManualSavePending(false);
     }
@@ -1147,12 +1147,19 @@ export function ScenarioEditorPage() {
                   (!scenarioQuery.data?.draftVersion &&
                     version.id === scenarioQuery.data?.activeVersion?.id) ? null : (
                     <Button
-                      onClick={() =>
-                        void mutations.restoreVersion.mutateAsync({
-                          scenarioId: scenarioQuery.data!.id,
-                          versionId: version.id,
-                        })
-                      }
+                      onClick={async () => {
+                        try {
+                          await mutations.restoreVersion.mutateAsync({
+                            scenarioId: scenarioQuery.data!.id,
+                            versionId: version.id,
+                          });
+                          void message.success('Version restored to a new draft.');
+                        } catch (error) {
+                          void message.error(
+                            getUserErrorMessage(error, 'Version could not be restored.'),
+                          );
+                        }
+                      }}
                       size="small"
                     >
                       Restore to draft
@@ -1297,8 +1304,10 @@ export function ScenarioEditorPage() {
                   setTestResult(result);
                   setInspectedExecution(undefined);
                   setTestOpen(true);
-                } catch {
-                  void message.error('Execution could not be replayed safely.');
+                } catch (error) {
+                  void message.error(
+                    getUserErrorMessage(error, 'Execution could not be replayed safely.'),
+                  );
                 }
               }}
             >

@@ -10,9 +10,85 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly status: number,
+    public readonly correlationId?: string,
+    public readonly details?: unknown,
   ) {
     super(message);
   }
+}
+
+const statusReasons: Record<number, string> = {
+  400: 'Review the entered values and try again.',
+  401: 'Your session has expired. Sign in again.',
+  403: 'You do not have permission to perform this action.',
+  404: 'The requested record is no longer available.',
+  409: 'The data changed in another session. Refresh and try again.',
+  413: 'The selected file is too large.',
+  429: 'Too many requests. Wait a moment and try again.',
+  500: 'The server could not complete the action.',
+  502: 'A required service is temporarily unavailable.',
+  503: 'A required service is temporarily unavailable.',
+};
+
+const codeReasons: Record<string, string> = {
+  AUTOMATION_SECRET_IN_USE: 'This secret is still used by a published scenario.',
+  BROADCAST_CANNOT_CANCEL: 'This broadcast can no longer be cancelled.',
+  BROADCAST_CANNOT_LAUNCH: 'This broadcast is not ready to launch.',
+  BROADCAST_CANNOT_PAUSE: 'Only a running broadcast can be paused.',
+  BROADCAST_CANNOT_RESUME: 'Only a paused broadcast can be resumed.',
+  BROADCAST_NAME_EXISTS: 'A broadcast with this name already exists.',
+  BROADCAST_SCHEDULE_MUST_BE_FUTURE: 'Choose a future delivery time.',
+  CHANNEL_NOT_ACTIVE: 'Activate the Telegram channel before continuing.',
+  CRM_CONNECTION_NOT_PAIRED: 'Pair this CRM project before continuing.',
+  CUSTOM_FIELD_KEY_EXISTS: 'A custom field with this key already exists.',
+  MEDIA_USED_BY_PUBLISHED_TEMPLATE: 'This file is used by a published template.',
+  MESSAGE_TEMPLATE_NAME_EXISTS: 'A template with this name already exists.',
+  OPERATION_NOT_FAILED: 'Only a failed operation can be retried.',
+  SCENARIO_DRAFT_CONFLICT: 'This draft changed in another session. Reload it before saving.',
+  SEGMENT_NAME_EXISTS: 'A segment with this name already exists.',
+  TAG_NAME_EXISTS: 'A tag with this name already exists.',
+  TELEGRAM_CONNECTION_TEST_FAILED: 'Telegram did not confirm this connection.',
+  TELEGRAM_TOKEN_INVALID: 'Telegram rejected this bot token.',
+  TELEGRAM_WEBHOOK_CONNECT_FAILED: 'Telegram could not connect the webhook.',
+  USER_EMAIL_EXISTS: 'A user with this email already exists.',
+};
+
+function validationReason(details: unknown): string | undefined {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined;
+  const violations = (details as { violations?: unknown }).violations;
+  if (!Array.isArray(violations)) return undefined;
+  const fields = violations
+    .filter((violation): violation is string => typeof violation === 'string')
+    .map((violation) => violation.match(/^([A-Za-z][A-Za-z0-9_.]*)\s/)?.[1])
+    .filter((field): field is string => Boolean(field))
+    .map((field) => field.split('.').at(-1)!)
+    .map((field) => field.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
+  const unique = [...new Set(fields)];
+  if (!unique.length) return undefined;
+  return `Review ${unique.slice(0, 3).join(', ')}${unique.length > 3 ? ' and the other fields' : ''}.`;
+}
+
+export function getUserErrorMessage(
+  error: unknown,
+  fallback = 'The action could not be completed.',
+): string {
+  if (!(error instanceof ApiError)) {
+    if (error instanceof TypeError && /fetch|network|load/i.test(error.message))
+      return `${fallback} The server is not reachable right now.`;
+    return fallback;
+  }
+  const reason =
+    codeReasons[error.code] ??
+    (error.code === 'VALIDATION_ERROR' ? validationReason(error.details) : undefined) ??
+    statusReasons[error.status] ??
+    (error.status < 500 && !['Request failed', 'Request validation failed'].includes(error.message)
+      ? error.message
+      : undefined);
+  const reference =
+    error.status >= 500 && error.correlationId && error.correlationId !== 'unavailable'
+      ? ` Reference: ${error.correlationId}.`
+      : '';
+  return `${fallback}${reason ? ` ${reason}` : ''}${reference}`;
 }
 
 type UnauthorizedHandler = () => void;
@@ -47,13 +123,23 @@ export async function apiRequest<T>(
     return undefined as T;
   }
   const body = (await response.json()) as
-    ApiEnvelope<T> | { error?: { code?: string; message?: string } };
+    | ApiEnvelope<T>
+    | {
+        error?: {
+          code?: string;
+          correlationId?: string;
+          details?: unknown;
+          message?: string;
+        };
+      };
   if (!response.ok) {
     const error = 'error' in body ? body.error : undefined;
     throw new ApiError(
       error?.code ?? 'REQUEST_FAILED',
       error?.message ?? 'Request failed',
       response.status,
+      error?.correlationId,
+      error?.details,
     );
   }
   return (body as ApiEnvelope<T>).data;

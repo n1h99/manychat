@@ -24,6 +24,7 @@ import {
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import {
   type ChannelInboundEvent,
   type ChannelOutboundEvent,
@@ -114,18 +115,28 @@ export function ChannelDetailPage() {
   }, [connectionId, inbound.data, outbound.data, projectId]);
 
   if (channel.isLoading) return <Spin className="route-loading" />;
-  if (!channel.data) {
-    return <Alert message="Channel was not found." showIcon type="error" />;
+  if (channel.isError || !channel.data) {
+    return (
+      <Alert
+        message={getUserErrorMessage(channel.error, 'Telegram connection could not be loaded.')}
+        showIcon
+        type="error"
+      />
+    );
   }
 
   const connection = channel.data;
   const canRotateSecrets = hasProjectPermission(access.data, 'channels:rotate_secrets');
-  const action = async (operation: () => Promise<unknown>, successMessage: string) => {
+  const action = async (
+    operation: () => Promise<unknown>,
+    successMessage: string,
+    fallback = 'The Telegram action could not be completed.',
+  ) => {
     try {
       await operation();
       void message.success(successMessage);
-    } catch {
-      void message.error('The operation failed. Check the connection status and try again.');
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, fallback));
     }
   };
 

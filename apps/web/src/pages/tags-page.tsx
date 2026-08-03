@@ -1,10 +1,10 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Drawer, Form, Input, Space, Table, Typography } from 'antd';
+import { Alert, Button, Drawer, Form, Input, Space, Table, Typography, message } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 
 interface TagItem {
@@ -48,6 +48,13 @@ export function TagsPage() {
           Create tag
         </Button>
       </div>
+      {tags.isError ? (
+        <Alert
+          message={getUserErrorMessage(tags.error, 'Tags could not be loaded.')}
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Table<TagItem>
         columns={[
           {
@@ -89,13 +96,19 @@ export function TagsPage() {
                 <Button
                   danger
                   icon={<DeleteOutlined />}
-                  onClick={() =>
-                    void apiRequest(
-                      `/api/v1/projects/${projectId}/tags/${row.id}`,
-                      { method: 'DELETE' },
-                      accessToken,
-                    ).then(reload)
-                  }
+                  onClick={async () => {
+                    try {
+                      await apiRequest(
+                        `/api/v1/projects/${projectId}/tags/${row.id}`,
+                        { method: 'DELETE' },
+                        accessToken,
+                      );
+                      await reload();
+                      void message.success('Tag deleted.');
+                    } catch (error) {
+                      void message.error(getUserErrorMessage(error, 'Tag could not be deleted.'));
+                    }
+                  }}
                   size="small"
                 >
                   Delete
@@ -122,14 +135,19 @@ export function TagsPage() {
           form={form}
           layout="vertical"
           onFinish={async (values) => {
-            await apiRequest(
-              `/api/v1/projects/${projectId}/tags${editing ? `/${editing.id}` : ''}`,
-              { body: JSON.stringify(values), method: editing ? 'PATCH' : 'POST' },
-              accessToken,
-            );
-            form.resetFields();
-            setOpen(false);
-            await reload();
+            try {
+              await apiRequest(
+                `/api/v1/projects/${projectId}/tags${editing ? `/${editing.id}` : ''}`,
+                { body: JSON.stringify(values), method: editing ? 'PATCH' : 'POST' },
+                accessToken,
+              );
+              form.resetFields();
+              setOpen(false);
+              await reload();
+              void message.success(editing ? 'Tag updated.' : 'Tag created.');
+            } catch (error) {
+              void message.error(getUserErrorMessage(error, 'Tag could not be saved.'));
+            }
           }}
         >
           <Form.Item label="Name" name="name" rules={[{ required: true }]}>

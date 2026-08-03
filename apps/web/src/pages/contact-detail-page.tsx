@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -11,11 +12,12 @@ import {
   Spin,
   Tag,
   Typography,
+  message,
 } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 
@@ -64,7 +66,15 @@ export function ContactDetailPage() {
     queryKey: ['tags', projectId, accessToken],
   });
 
-  if (!contact.data) return <Spin className="route-loading" />;
+  if (contact.isLoading) return <Spin className="route-loading" />;
+  if (contact.isError || !contact.data)
+    return (
+      <Alert
+        message={getUserErrorMessage(contact.error, 'Contact could not be loaded.')}
+        showIcon
+        type="error"
+      />
+    );
 
   const reload = async () =>
     cache.invalidateQueries({ queryKey: ['contact', projectId, contactId] });
@@ -121,11 +131,24 @@ export function ContactDetailPage() {
                         key={item.tag.id}
                         onClose={(event) => {
                           event.preventDefault();
-                          void apiRequest(
-                            `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
-                            { method: 'DELETE' },
-                            accessToken,
-                          ).then(reload);
+                          void (async () => {
+                            try {
+                              await apiRequest(
+                                `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
+                                { method: 'DELETE' },
+                                accessToken,
+                              );
+                              await reload();
+                              void message.success('Tag removed from contact.');
+                            } catch (error) {
+                              void message.error(
+                                getUserErrorMessage(
+                                  error,
+                                  'Tag could not be removed from contact.',
+                                ),
+                              );
+                            }
+                          })();
                         }}
                       >
                         {item.tag.name}
@@ -138,12 +161,19 @@ export function ContactDetailPage() {
               className="contact-tag-form"
               layout="vertical"
               onFinish={async (values) => {
-                await apiRequest(
-                  `/api/v1/projects/${projectId}/contacts/${contactId}/tags`,
-                  { body: JSON.stringify(values), method: 'POST' },
-                  accessToken,
-                );
-                await reload();
+                try {
+                  await apiRequest(
+                    `/api/v1/projects/${projectId}/contacts/${contactId}/tags`,
+                    { body: JSON.stringify(values), method: 'POST' },
+                    accessToken,
+                  );
+                  await reload();
+                  void message.success('Tag added to contact.');
+                } catch (error) {
+                  void message.error(
+                    getUserErrorMessage(error, 'Tag could not be added to contact.'),
+                  );
+                }
               }}
             >
               <Form.Item label="Add tag" name="tagId">
@@ -164,12 +194,17 @@ export function ContactDetailPage() {
               initialValues={value}
               layout="vertical"
               onFinish={async (values) => {
-                await apiRequest(
-                  `/api/v1/projects/${projectId}/contacts/${contactId}`,
-                  { body: JSON.stringify(values), method: 'PATCH' },
-                  accessToken,
-                );
-                await reload();
+                try {
+                  await apiRequest(
+                    `/api/v1/projects/${projectId}/contacts/${contactId}`,
+                    { body: JSON.stringify(values), method: 'PATCH' },
+                    accessToken,
+                  );
+                  await reload();
+                  void message.success('Contact saved.');
+                } catch (error) {
+                  void message.error(getUserErrorMessage(error, 'Contact could not be saved.'));
+                }
               }}
             >
               <Row gutter={14}>
@@ -236,15 +271,31 @@ export function ContactDetailPage() {
               initialValues={{ values: JSON.stringify(value.customFields, null, 2) }}
               layout="vertical"
               onFinish={async (values) => {
-                await apiRequest(
-                  `/api/v1/projects/${projectId}/contacts/${contactId}`,
-                  {
-                    body: JSON.stringify({ customFields: JSON.parse(values.values) }),
-                    method: 'PATCH',
-                  },
-                  accessToken,
-                );
-                await reload();
+                let customFields: Record<string, unknown>;
+                try {
+                  customFields = JSON.parse(values.values) as Record<string, unknown>;
+                } catch {
+                  void message.error(
+                    'Custom fields could not be saved. Values are not valid JSON.',
+                  );
+                  return;
+                }
+                try {
+                  await apiRequest(
+                    `/api/v1/projects/${projectId}/contacts/${contactId}`,
+                    {
+                      body: JSON.stringify({ customFields }),
+                      method: 'PATCH',
+                    },
+                    accessToken,
+                  );
+                  await reload();
+                  void message.success('Custom fields saved.');
+                } catch (error) {
+                  void message.error(
+                    getUserErrorMessage(error, 'Custom fields could not be saved.'),
+                  );
+                }
               }}
             >
               <Form.Item
@@ -268,20 +319,24 @@ export function ContactDetailPage() {
               <Form
                 layout="vertical"
                 onFinish={async (values: { primaryContactId: string }) => {
-                  await apiRequest(
-                    `/api/v1/projects/${projectId}/contacts/merge`,
-                    {
-                      body: JSON.stringify({
-                        primaryContactId: values.primaryContactId,
-                        secondaryContactId: contactId,
-                      }),
-                      method: 'POST',
-                    },
-                    accessToken,
-                  );
-                  window.location.assign(
-                    `/projects/${projectId}/contacts/${values.primaryContactId}`,
-                  );
+                  try {
+                    await apiRequest(
+                      `/api/v1/projects/${projectId}/contacts/merge`,
+                      {
+                        body: JSON.stringify({
+                          primaryContactId: values.primaryContactId,
+                          secondaryContactId: contactId,
+                        }),
+                        method: 'POST',
+                      },
+                      accessToken,
+                    );
+                    window.location.assign(
+                      `/projects/${projectId}/contacts/${values.primaryContactId}`,
+                    );
+                  } catch (error) {
+                    void message.error(getUserErrorMessage(error, 'Contacts could not be merged.'));
+                  }
                 }}
               >
                 <Form.Item

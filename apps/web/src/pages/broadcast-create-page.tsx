@@ -1,6 +1,7 @@
 import { Button, Form, Input, Select, Space, Spin, Typography, message } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import { useBroadcastMutations } from '../broadcasts-api';
 import { useChannels } from '../channels-api';
 import { useTemplates } from '../templates-api';
@@ -53,8 +54,8 @@ export function BroadcastCreatePage() {
             });
             void message.success('Broadcast draft created.');
             void navigate(`/projects/${projectId}/broadcasts/${broadcast.id}`);
-          } catch {
-            void message.error('Broadcast could not be created.');
+          } catch (error) {
+            void message.error(getUserErrorMessage(error, 'Broadcast could not be created.'));
           }
         }}
       >

@@ -1,9 +1,9 @@
 import { EnvironmentOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Modal, Typography, message } from 'antd';
-import { useEffect } from 'react';
+import { Alert, Button, Form, Input, Modal, Typography, message } from 'antd';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
-import { apiRequest } from './api';
+import { apiRequest, getUserErrorMessage } from './api';
 import { useAuth } from './auth';
 
 interface AccountProfile {
@@ -22,6 +22,7 @@ interface ProfileFormValues extends AccountProfile {
 export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open: boolean }) {
   const { accessToken, refresh } = useAuth();
   const [form] = Form.useForm<ProfileFormValues>();
+  const [saving, setSaving] = useState(false);
   const profile = useQuery({
     enabled: open,
     queryFn: () => apiRequest<AccountProfile>('/api/v1/users/me', {}, accessToken),
@@ -59,6 +60,14 @@ export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open:
           </Typography.Text>
         </div>
       </div>
+      {profile.isError ? (
+        <Alert
+          className="form-alert"
+          message={getUserErrorMessage(profile.error, 'Profile settings could not be loaded.')}
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Form<ProfileFormValues>
         form={form}
         layout="vertical"
@@ -72,6 +81,7 @@ export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open:
             ...(values.newPassword ? { newPassword: values.newPassword } : {}),
             region: values.region ?? '',
           };
+          setSaving(true);
           try {
             await apiRequest(
               '/api/v1/users/me',
@@ -81,8 +91,10 @@ export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open:
             await refresh();
             void message.success('Profile settings saved.');
             close();
-          } catch {
-            void message.error('Profile settings could not be saved.');
+          } catch (error) {
+            void message.error(getUserErrorMessage(error, 'Profile settings could not be saved.'));
+          } finally {
+            setSaving(false);
           }
         }}
       >
@@ -135,7 +147,7 @@ export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open:
 
         <div className="modal-form-actions">
           <Button onClick={close}>Cancel</Button>
-          <Button htmlType="submit" loading={profile.isLoading} type="primary">
+          <Button disabled={profile.isError} htmlType="submit" loading={saving} type="primary">
             Save changes
           </Button>
         </div>

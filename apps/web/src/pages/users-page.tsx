@@ -8,6 +8,7 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Empty,
   Form,
@@ -24,7 +25,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 
 interface GlobalRole {
@@ -155,6 +156,17 @@ export function UsersPage() {
       </div>
 
       <div className="users-table-card surface">
+        {users.isError || globalRoles.isError ? (
+          <Alert
+            className="form-alert"
+            message={getUserErrorMessage(
+              users.error ?? globalRoles.error,
+              'User accounts could not be loaded.',
+            )}
+            showIcon
+            type="error"
+          />
+        ) : null}
         <Table<UserRow>
           columns={[
             {
@@ -240,12 +252,18 @@ export function UsersPage() {
                         aria-label={`Revoke sessions for ${fullName(row)}`}
                         icon={<SafetyCertificateOutlined />}
                         onClick={async () => {
-                          await apiRequest(
-                            `/api/v1/users/${row.id}/revoke-sessions`,
-                            { method: 'POST' },
-                            accessToken,
-                          );
-                          void message.success('User sessions revoked.');
+                          try {
+                            await apiRequest(
+                              `/api/v1/users/${row.id}/revoke-sessions`,
+                              { method: 'POST' },
+                              accessToken,
+                            );
+                            void message.success('User sessions revoked.');
+                          } catch (error) {
+                            void message.error(
+                              getUserErrorMessage(error, 'User sessions could not be revoked.'),
+                            );
+                          }
                         }}
                       />
                     </Tooltip>
@@ -335,8 +353,10 @@ export function UsersPage() {
               void message.success(editing ? 'User account updated.' : 'User account created.');
               closeEditor();
               await refresh();
-            } catch {
-              void message.error('The user account could not be saved.');
+            } catch (error) {
+              void message.error(
+                getUserErrorMessage(error, 'The user account could not be saved.'),
+              );
             }
           }}
         >
@@ -428,14 +448,20 @@ export function UsersPage() {
             danger
             onClick={async () => {
               if (!disableTarget) return;
-              await apiRequest(
-                `/api/v1/users/${disableTarget.id}/disable`,
-                { method: 'POST' },
-                accessToken,
-              );
-              setDisableTarget(undefined);
-              void message.success('User account disabled.');
-              await refresh();
+              try {
+                await apiRequest(
+                  `/api/v1/users/${disableTarget.id}/disable`,
+                  { method: 'POST' },
+                  accessToken,
+                );
+                setDisableTarget(undefined);
+                void message.success('User account disabled.');
+                await refresh();
+              } catch (error) {
+                void message.error(
+                  getUserErrorMessage(error, 'User account could not be disabled.'),
+                );
+              }
             }}
           >
             Disable account

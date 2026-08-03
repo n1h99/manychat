@@ -17,6 +17,7 @@ import {
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import {
   type CrmOperation,
   type CrmPairing,
@@ -56,7 +57,11 @@ export function CrmConfigPage() {
       void message.error('Save the CRM project ID first.');
       return;
     }
-    setPairing(await connectionMutations.pairing.mutateAsync(crmProjectId));
+    try {
+      setPairing(await connectionMutations.pairing.mutateAsync(crmProjectId));
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, 'A CRM pairing code could not be created.'));
+    }
   };
 
   return (
@@ -99,9 +104,15 @@ export function CrmConfigPage() {
             <Button
               loading={connectionMutations.test.isPending}
               onClick={async () => {
-                const result = await connectionMutations.test.mutateAsync();
-                if (result.ok) void message.success('CRM connection verified.');
-                else void message.error('CRM connection test failed.');
+                try {
+                  const result = await connectionMutations.test.mutateAsync();
+                  if (result.ok) void message.success('CRM connection verified.');
+                  else void message.error('CRM connection test failed. Check the CRM endpoint.');
+                } catch (error) {
+                  void message.error(
+                    getUserErrorMessage(error, 'CRM connection test could not be completed.'),
+                  );
+                }
               }}
             >
               Test connection
@@ -110,8 +121,13 @@ export function CrmConfigPage() {
               description="Configuration values will remain available for a future reconnection."
               title="Disconnect this CRM?"
               onConfirm={async () => {
-                await connectionMutations.disable.mutateAsync();
-                setPairing(undefined);
+                try {
+                  await connectionMutations.disable.mutateAsync();
+                  setPairing(undefined);
+                  void message.success('CRM disconnected.');
+                } catch (error) {
+                  void message.error(getUserErrorMessage(error, 'CRM could not be disconnected.'));
+                }
               }}
             >
               <Button danger>Disconnect</Button>
@@ -131,10 +147,18 @@ export function CrmConfigPage() {
           enabled: boolean;
           fieldMapping: string;
         }) => {
+          let fieldMapping: Record<string, unknown>;
           try {
-            const fieldMapping = values.fieldMapping
+            fieldMapping = values.fieldMapping
               ? (JSON.parse(values.fieldMapping) as Record<string, unknown>)
               : {};
+          } catch {
+            void message.error(
+              'CRM configuration could not be saved. Field mapping is not valid JSON.',
+            );
+            return;
+          }
+          try {
             await save.mutateAsync({
               crmProjectId: values.crmProjectId,
               defaultPipeline: values.defaultPipeline || null,
@@ -143,8 +167,8 @@ export function CrmConfigPage() {
               fieldMapping,
             });
             void message.success('CRM configuration saved.');
-          } catch {
-            void message.error('The configuration could not be saved. Check the JSON mapping.');
+          } catch (error) {
+            void message.error(getUserErrorMessage(error, 'CRM configuration could not be saved.'));
           }
         }}
       >
@@ -235,8 +259,10 @@ export function CrmConfigPage() {
                         operationId: record.id,
                       });
                       void message.success('CRM operation queued for retry.');
-                    } catch {
-                      void message.error('Unable to retry the CRM operation.');
+                    } catch (error) {
+                      void message.error(
+                        getUserErrorMessage(error, 'The CRM operation could not be retried.'),
+                      );
                     }
                   }}
                   title="Retry CRM operation?"

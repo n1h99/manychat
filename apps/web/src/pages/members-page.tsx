@@ -1,8 +1,8 @@
-import { Button, Form, Select, Space, Table, Typography } from 'antd';
+import { Alert, Button, Form, Select, Space, Table, Typography, message } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 
 interface Membership {
@@ -47,16 +47,31 @@ export function MembersPage() {
           </Typography.Text>
         </div>
       </div>
+      {members.isError || users.isError || roles.isError ? (
+        <Alert
+          message={getUserErrorMessage(
+            members.error ?? users.error ?? roles.error,
+            'Project members could not be loaded.',
+          )}
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Form
         className="member-create-form surface"
         layout="inline"
         onFinish={async (values) => {
-          await apiRequest(
-            `/api/v1/projects/${projectId}/members`,
-            { body: JSON.stringify(values), method: 'POST' },
-            accessToken,
-          );
-          await refresh();
+          try {
+            await apiRequest(
+              `/api/v1/projects/${projectId}/members`,
+              { body: JSON.stringify(values), method: 'POST' },
+              accessToken,
+            );
+            await refresh();
+            void message.success('Project member added.');
+          } catch (error) {
+            void message.error(getUserErrorMessage(error, 'Project member could not be added.'));
+          }
         }}
       >
         <Form.Item name="userId" rules={[{ required: true }]}>
@@ -90,14 +105,21 @@ export function MembersPage() {
             render: (_, row) => (
               <Space>
                 <Select
-                  defaultValue={row.projectRole.id}
+                  value={row.projectRole.id}
                   onChange={async (projectRoleId) => {
-                    await apiRequest(
-                      `/api/v1/projects/${projectId}/members/${row.id}`,
-                      { body: JSON.stringify({ projectRoleId }), method: 'PATCH' },
-                      accessToken,
-                    );
-                    await refresh();
+                    try {
+                      await apiRequest(
+                        `/api/v1/projects/${projectId}/members/${row.id}`,
+                        { body: JSON.stringify({ projectRoleId }), method: 'PATCH' },
+                        accessToken,
+                      );
+                      await refresh();
+                      void message.success('Member role updated.');
+                    } catch (error) {
+                      void message.error(
+                        getUserErrorMessage(error, 'Member role could not be updated.'),
+                      );
+                    }
                   }}
                   options={(roles.data ?? []).map((role) => ({ label: role.name, value: role.id }))}
                   style={{ minWidth: 180 }}
@@ -105,12 +127,19 @@ export function MembersPage() {
                 <Button
                   danger
                   onClick={async () => {
-                    await apiRequest(
-                      `/api/v1/projects/${projectId}/members/${row.id}`,
-                      { method: 'DELETE' },
-                      accessToken,
-                    );
-                    await refresh();
+                    try {
+                      await apiRequest(
+                        `/api/v1/projects/${projectId}/members/${row.id}`,
+                        { method: 'DELETE' },
+                        accessToken,
+                      );
+                      await refresh();
+                      void message.success('Project member removed.');
+                    } catch (error) {
+                      void message.error(
+                        getUserErrorMessage(error, 'Project member could not be removed.'),
+                      );
+                    }
                   }}
                 >
                   Remove

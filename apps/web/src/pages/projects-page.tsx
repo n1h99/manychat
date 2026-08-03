@@ -1,10 +1,22 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { Button, Drawer, Empty, Form, Input, Select, Table, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  Select,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 
 export interface Project {
@@ -45,6 +57,13 @@ export function ProjectsPage() {
           </Button>
         ) : null}
       </div>
+      {projects.isError ? (
+        <Alert
+          message={getUserErrorMessage(projects.error, 'Projects could not be loaded.')}
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Table<Project>
         dataSource={projects.data ?? []}
         loading={projects.isLoading}
@@ -99,14 +118,19 @@ export function ProjectsPage() {
           layout="vertical"
           initialValues={{ locale: 'en', timezone: 'UTC' }}
           onFinish={async (values) => {
-            await apiRequest(
-              '/api/v1/projects',
-              { body: JSON.stringify(values), method: 'POST' },
-              accessToken,
-            );
-            form.resetFields();
-            setOpen(false);
-            await refresh();
+            try {
+              await apiRequest(
+                '/api/v1/projects',
+                { body: JSON.stringify(values), method: 'POST' },
+                accessToken,
+              );
+              form.resetFields();
+              setOpen(false);
+              await refresh();
+              void message.success('Project created.');
+            } catch (error) {
+              void message.error(getUserErrorMessage(error, 'Project could not be created.'));
+            }
           }}
         >
           <Form.Item label="Name" name="name" rules={[{ required: true }]}>

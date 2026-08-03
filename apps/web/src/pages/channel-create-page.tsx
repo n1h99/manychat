@@ -2,6 +2,7 @@ import { ArrowLeftOutlined, SendOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Form, Input, Space, Typography, message } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import { useChannelMutations } from '../channels-api';
 
 export function ChannelCreatePage() {
@@ -36,8 +37,10 @@ export function ChannelCreatePage() {
               const channel = await mutations.create.mutateAsync(values);
               form.resetFields();
               void navigate(`/projects/${projectId}/channels/${channel.id}`);
-            } catch {
-              void message.error('Telegram could not be connected. Check the bot token.');
+            } catch (error) {
+              void message.error(
+                getUserErrorMessage(error, 'Telegram connection could not be created.'),
+              );
             }
           }}
         >

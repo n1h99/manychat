@@ -1,5 +1,6 @@
 import { UndoOutlined } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Form,
   Input,
@@ -15,6 +16,7 @@ import {
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
+import { getUserErrorMessage } from '../api';
 import { useMediaAssets } from '../media-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import {
@@ -88,8 +90,8 @@ export function TemplatesPage() {
       setEditing(undefined);
       form.resetFields();
       void message.success('Template draft saved.');
-    } catch {
-      void message.error('Template could not be saved.');
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, 'Template could not be saved.'));
     }
   };
 
@@ -117,6 +119,13 @@ export function TemplatesPage() {
         ]}
         value={view}
       />
+      {templates.isError ? (
+        <Alert
+          message={getUserErrorMessage(templates.error, 'Templates could not be loaded.')}
+          showIcon
+          type="error"
+        />
+      ) : null}
       <Table<MessageTemplate>
         className="archive-state-table"
         dataSource={templates.data ?? []}
@@ -158,7 +167,16 @@ export function TemplatesPage() {
                 {canManage && view === 'active' && template.draftVersion ? (
                   <Button
                     loading={mutations.publish.isPending}
-                    onClick={() => void mutations.publish.mutateAsync(template.id)}
+                    onClick={async () => {
+                      try {
+                        await mutations.publish.mutateAsync(template.id);
+                        void message.success('Template published.');
+                      } catch (error) {
+                        void message.error(
+                          getUserErrorMessage(error, 'Template could not be published.'),
+                        );
+                      }
+                    }}
                     size="small"
                     type="primary"
                   >
@@ -174,7 +192,16 @@ export function TemplatesPage() {
                   <Button
                     icon={<UndoOutlined />}
                     loading={mutations.restore.isPending}
-                    onClick={() => void mutations.restore.mutateAsync(template.id)}
+                    onClick={async () => {
+                      try {
+                        await mutations.restore.mutateAsync(template.id);
+                        void message.success('Template restored.');
+                      } catch (error) {
+                        void message.error(
+                          getUserErrorMessage(error, 'Template could not be restored.'),
+                        );
+                      }
+                    }}
                     size="small"
                     type="primary"
                   >
@@ -197,9 +224,13 @@ export function TemplatesPage() {
         onCancel={() => setArchiving(undefined)}
         onOk={async () => {
           if (!archiving) return;
-          await mutations.archive.mutateAsync(archiving.id);
-          setArchiving(undefined);
-          void message.success('Template archived.');
+          try {
+            await mutations.archive.mutateAsync(archiving.id);
+            setArchiving(undefined);
+            void message.success('Template archived.');
+          } catch (error) {
+            void message.error(getUserErrorMessage(error, 'Template could not be archived.'));
+          }
         }}
         open={Boolean(archiving)}
         title="Archive this template?"
@@ -358,18 +389,25 @@ export function TemplatesPage() {
           loading={mutations.preview.isPending}
           onClick={async () => {
             if (!previewing) return;
+            let variables: Record<string, unknown>;
             try {
-              const variables = JSON.parse(previewVariables) as unknown;
-              if (!variables || typeof variables !== 'object' || Array.isArray(variables))
-                throw new Error('Variables must be an object');
-              const result = await mutations.preview.mutateAsync({
-                id: previewing.id,
-                variables: variables as Record<string, unknown>,
-              });
-              setPreviewResult(result);
+              const parsed = JSON.parse(previewVariables) as unknown;
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+              variables = parsed as Record<string, unknown>;
             } catch {
               setPreviewResult(undefined);
-              void message.error('Preview variables must be valid JSON.');
+              void message.error('Preview could not be rendered. Variables must be a JSON object.');
+              return;
+            }
+            try {
+              const result = await mutations.preview.mutateAsync({
+                id: previewing.id,
+                variables,
+              });
+              setPreviewResult(result);
+            } catch (error) {
+              setPreviewResult(undefined);
+              void message.error(getUserErrorMessage(error, 'Preview could not be rendered.'));
             }
           }}
           style={{ marginTop: 12 }}

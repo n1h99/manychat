@@ -13,6 +13,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -33,7 +34,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
-import { apiRequest } from '../api';
+import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import type { Project } from './projects-page';
@@ -65,7 +66,15 @@ export function ProjectDetailPage() {
     queryKey: ['project', projectId, accessToken],
   });
 
-  if (query.isLoading || !query.data) return <Spin className="route-loading" />;
+  if (query.isLoading) return <Spin className="route-loading" />;
+  if (query.isError || !query.data)
+    return (
+      <Alert
+        message={getUserErrorMessage(query.error, 'Project could not be loaded.')}
+        showIcon
+        type="error"
+      />
+    );
 
   const project = query.data;
   const canManage = hasProjectPermission(access.data, 'project:manage');
@@ -161,12 +170,21 @@ export function ProjectDetailPage() {
               danger={project.status === 'ACTIVE'}
               icon={project.status === 'ACTIVE' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
               onClick={async () => {
-                await apiRequest(
-                  `/api/v1/projects/${project.id}/${project.status === 'ACTIVE' ? 'pause' : 'activate'}`,
-                  { method: 'POST' },
-                  accessToken,
-                );
-                await reload();
+                try {
+                  await apiRequest(
+                    `/api/v1/projects/${project.id}/${project.status === 'ACTIVE' ? 'pause' : 'activate'}`,
+                    { method: 'POST' },
+                    accessToken,
+                  );
+                  await reload();
+                  void message.success(
+                    project.status === 'ACTIVE' ? 'Project paused.' : 'Project activated.',
+                  );
+                } catch (error) {
+                  void message.error(
+                    getUserErrorMessage(error, 'Project status could not be changed.'),
+                  );
+                }
               }}
             >
               {project.status === 'ACTIVE' ? 'Pause project' : 'Activate project'}
@@ -227,14 +245,18 @@ export function ProjectDetailPage() {
           form={form}
           layout="vertical"
           onFinish={async (values) => {
-            await apiRequest(
-              `/api/v1/projects/${project.id}`,
-              { body: JSON.stringify(values), method: 'PATCH' },
-              accessToken,
-            );
-            setEditing(false);
-            await reload();
-            void message.success('Project updated.');
+            try {
+              await apiRequest(
+                `/api/v1/projects/${project.id}`,
+                { body: JSON.stringify(values), method: 'PATCH' },
+                accessToken,
+              );
+              setEditing(false);
+              await reload();
+              void message.success('Project updated.');
+            } catch (error) {
+              void message.error(getUserErrorMessage(error, 'Project could not be saved.'));
+            }
           }}
         >
           <Form.Item label="Name" name="name" rules={[{ required: true }]}>
@@ -271,10 +293,14 @@ export function ProjectDetailPage() {
         okText="Delete project"
         onCancel={() => setDeleting(false)}
         onOk={async () => {
-          await apiRequest(`/api/v1/projects/${project.id}`, { method: 'DELETE' }, accessToken);
-          setDeleting(false);
-          await queryClient.invalidateQueries({ queryKey: ['projects'] });
-          void navigate('/projects', { replace: true });
+          try {
+            await apiRequest(`/api/v1/projects/${project.id}`, { method: 'DELETE' }, accessToken);
+            setDeleting(false);
+            await queryClient.invalidateQueries({ queryKey: ['projects'] });
+            void navigate('/projects', { replace: true });
+          } catch (error) {
+            void message.error(getUserErrorMessage(error, 'Project could not be deleted.'));
+          }
         }}
         open={deleting}
         title="Delete this project?"
