@@ -582,14 +582,16 @@ export function ChannelDetailPage() {
             <Typography.Text type="secondary">{channelAccountLabel(connection)}</Typography.Text>
           </div>
         </div>
-        <div className="entity-hero-statuses">
-          <StatusText label={channelProviderLabel(connection.type)} status="AVAILABLE" />
-          <StatusText status={connection.status} />
-          <StatusText
-            label={`Webhook: ${humanizeStatus(connection.webhookStatus)}`}
-            status={connection.webhookStatus}
-          />
-        </div>
+        {isWhatsAppChannel(connection) ? (
+          <div className="entity-hero-statuses">
+            <StatusText label={channelProviderLabel(connection.type)} status="AVAILABLE" />
+            <StatusText status={connection.status} />
+            <StatusText
+              label={`Webhook: ${humanizeStatus(connection.webhookStatus)}`}
+              status={connection.webhookStatus}
+            />
+          </div>
+        ) : null}
       </div>
 
       {isWhatsAppChannel(connection) && !connection.setupReady ? (
