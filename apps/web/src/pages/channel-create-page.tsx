@@ -166,7 +166,7 @@ export function ChannelCreatePage() {
 
       <Segmented<ChannelType>
         block
-        className="channel-provider-switch"
+        className="channel-provider-switch segmented-switcher"
         disabled={embeddedSignupPending || mutations.completeWhatsAppSetup.isPending}
         onChange={chooseProvider}
         options={[

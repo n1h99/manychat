@@ -109,11 +109,11 @@ export function TemplatesPage() {
           </div>
         </div>
         <Segmented
-          className="channel-template-provider-switch"
+          className="channel-template-provider-switch segmented-switcher"
           onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
           options={[
-            { label: 'Omnicus · Telegram', value: 'OMNICUS' },
-            { label: 'Meta · WhatsApp', value: 'WHATSAPP' },
+            { label: 'Telegram', value: 'OMNICUS' },
+            { label: 'WhatsApp', value: 'WHATSAPP' },
           ]}
           value={providerView}
         />
@@ -131,30 +131,32 @@ export function TemplatesPage() {
             Reusable content for Telegram and Meta-approved WhatsApp conversations.
           </Typography.Text>
         </div>
+      </div>
+      <div className="templates-header-actions">
+        <Segmented
+          className="channel-template-provider-switch segmented-switcher"
+          onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
+          options={[
+            { label: 'Telegram', value: 'OMNICUS' },
+            { label: 'WhatsApp', value: 'WHATSAPP' },
+          ]}
+          value={providerView}
+        />
+        <Segmented
+          className="archive-view-switch segmented-switcher"
+          onChange={(value) => setView(value as 'active' | 'archived')}
+          options={[
+            { label: 'Active templates', value: 'active' },
+            { label: 'Archived', value: 'archived' },
+          ]}
+          value={view}
+        />
         {canManage ? (
           <Button onClick={() => open()} type="primary">
-            New template
+            New Template
           </Button>
         ) : null}
       </div>
-      <Segmented
-        className="channel-template-provider-switch"
-        onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
-        options={[
-          { label: 'Omnicus · Telegram', value: 'OMNICUS' },
-          { label: 'Meta · WhatsApp', value: 'WHATSAPP' },
-        ]}
-        value={providerView}
-      />
-      <Segmented
-        className="archive-view-switch"
-        onChange={(value) => setView(value as 'active' | 'archived')}
-        options={[
-          { label: 'Active templates', value: 'active' },
-          { label: 'Archived', value: 'archived' },
-        ]}
-        value={view}
-      />
       {templates.isError ? (
         <Alert
           message={getUserErrorMessage(templates.error, 'Templates could not be loaded.')}

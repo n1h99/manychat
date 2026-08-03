@@ -4,6 +4,7 @@ import {
   Card,
   Col,
   Descriptions,
+  Modal,
   Form,
   Input,
   Row,
@@ -15,6 +16,7 @@ import {
   message,
 } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
@@ -55,6 +57,8 @@ export function ContactDetailPage() {
   const { accessToken } = useAuth();
   const cache = useQueryClient();
   const access = useProjectAccess(projectId);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletingContact, setDeletingContact] = useState(false);
   const contact = useQuery({
     enabled: Boolean(projectId && contactId),
     queryFn: () =>
@@ -81,6 +85,19 @@ export function ContactDetailPage() {
     cache.invalidateQueries({ queryKey: ['contact', projectId, contactId] });
   const value = contact.data;
   const canUpdate = hasProjectPermission(access.data, 'contacts:update');
+  const deleteContact = async () => {
+    try {
+      await apiRequest(
+        `/api/v1/projects/${projectId}/contacts/${contactId}`,
+        { body: JSON.stringify({ status: 'ARCHIVED' }), method: 'PATCH' },
+        accessToken,
+      );
+      void message.success('Contact deleted.');
+      window.location.assign(`/projects/${projectId}/contacts`);
+    } catch (error) {
+      void message.error(getUserErrorMessage(error, 'Contact could not be deleted.'));
+    }
+  };
 
   return (
     <section>
@@ -104,7 +121,7 @@ export function ContactDetailPage() {
 
       <Row className="balanced-card-row" gutter={[18, 18]}>
         <Col lg={9} xs={24}>
-          <Card title="Contact summary">
+          <Card className="contact-summary-card" title="Contact summary">
             <Descriptions column={1} size="small">
               <Descriptions.Item label="CRM lead">{value.crmLeadId ?? '—'}</Descriptions.Item>
               <Descriptions.Item label="Channel identities">
@@ -263,7 +280,7 @@ export function ContactDetailPage() {
 
       <Row className="balanced-card-row contact-secondary-row" gutter={[18, 18]}>
         <Col lg={hasProjectPermission(access.data, 'contacts:merge') ? 15 : 24} xs={24}>
-          <Card title="Custom field values">
+            <Card title="Custom field values">
             <Form
               initialValues={{ values: JSON.stringify(value.customFields, null, 2) }}
               layout="vertical"
@@ -296,6 +313,7 @@ export function ContactDetailPage() {
               }}
             >
               <Form.Item
+                className="contact-custom-fields-note"
                 extra="Keys and values are validated against active definitions."
                 label="Values (JSON)"
                 name="values"
@@ -309,7 +327,7 @@ export function ContactDetailPage() {
         </Col>
         {hasProjectPermission(access.data, 'contacts:merge') ? (
           <Col lg={9} xs={24}>
-            <Card className="danger-card" title="Merge contact">
+            <Card className="danger-card" title="Contact Settings">
               <Typography.Paragraph type="secondary">
                 Move this record into another contact. This action cannot be undone from the UI.
               </Typography.Paragraph>
@@ -343,14 +361,50 @@ export function ContactDetailPage() {
                 >
                   <Input />
                 </Form.Item>
-                <Button block danger htmlType="submit">
-                  Merge contacts
-                </Button>
-              </Form>
-            </Card>
-          </Col>
-        ) : null}
-      </Row>
+                  <div className="contact-settings-actions">
+                    <Button block danger htmlType="submit">
+                      Merge contacts
+                    </Button>
+                    <Button block danger onClick={() => setDeleteOpen(true)}>
+                      Delete Contact
+                    </Button>
+                  </div>
+                </Form>
+              </Card>
+            </Col>
+          ) : null}
+        </Row>
+
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDeleteOpen(false)}
+        open={deleteOpen}
+        title="Delete this contact?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          This contact will be archived and removed from active contact lists.
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDeleteOpen(false)}>Cancel</Button>
+          <Button
+            danger
+            loading={deletingContact}
+            onClick={async () => {
+              setDeletingContact(true);
+              try {
+                await deleteContact();
+                setDeleteOpen(false);
+              } finally {
+                setDeletingContact(false);
+              }
+            }}
+          >
+            Delete contact
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -655,6 +655,7 @@ export function UsersPage() {
         <div className="modal-form-actions">
           <Button onClick={() => setActivateTarget(undefined)}>Cancel</Button>
           <Button
+            type="primary"
             onClick={async () => {
               if (!activateTarget) return;
               try {

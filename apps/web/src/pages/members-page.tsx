@@ -73,11 +73,6 @@ export function MembersPage() {
             Assign users to project roles and manage workspace access.
           </Typography.Text>
         </div>
-        {canManage ? (
-          <Button icon={<MailOutlined />} onClick={() => setInviteOpen(true)}>
-            Invite by email
-          </Button>
-        ) : null}
       </div>
       {members.isError || users.isError || roles.isError || invitations.isError ? (
         <Alert
@@ -121,9 +116,16 @@ export function MembersPage() {
               style={{ minWidth: 220 }}
             />
           </Form.Item>
-          <Button htmlType="submit" type="primary">
-            Add member
-          </Button>
+          <Form.Item>
+            <div className="member-action-group">
+              <Button htmlType="submit" type="primary">
+                Add member
+              </Button>
+              <Button icon={<MailOutlined />} onClick={() => setInviteOpen(true)}>
+                Invite by email
+              </Button>
+            </div>
+          </Form.Item>
         </Form>
       ) : null}
       <Table<Membership>

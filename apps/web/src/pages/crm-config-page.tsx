@@ -5,7 +5,7 @@ import {
   Descriptions,
   Form,
   Input,
-  Popconfirm,
+  Modal,
   Result,
   Spin,
   Switch,
@@ -38,6 +38,10 @@ export function CrmConfigPage() {
   const retry = useRetryCrmOperation(projectId);
   const save = useSaveCrmProjectConfig(projectId);
   const connectionMutations = useCrmConnectionMutations(projectId);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [retryOperation, setRetryOperation] = useState<CrmOperation>();
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [pairing, setPairing] = useState<CrmPairing>();
   if (access.isLoading || config.isLoading) return <Spin className="route-loading" size="large" />;
   if (!hasProjectPermission(access.data, 'integrations:manage'))
@@ -118,21 +122,9 @@ export function CrmConfigPage() {
             >
               Test connection
             </Button>
-            <Popconfirm
-              description="Configuration values will remain available for a future reconnection."
-              title="Disconnect this CRM?"
-              onConfirm={async () => {
-                try {
-                  await connectionMutations.disable.mutateAsync();
-                  setPairing(undefined);
-                  void message.success('CRM disconnected.');
-                } catch (error) {
-                  void message.error(getUserErrorMessage(error, 'CRM could not be disconnected.'));
-                }
-              }}
-            >
-              <Button danger>Disconnect</Button>
-            </Popconfirm>
+            <Button danger onClick={() => setDisconnectOpen(true)}>
+              Disconnect
+            </Button>
           </div>
         </Card>
       ) : null}
@@ -251,38 +243,94 @@ export function CrmConfigPage() {
             key: 'retry',
             render: (_value: unknown, record: CrmOperation) =>
               record.status === 'FAILED' || record.status === 'UNKNOWN' ? (
-                <Popconfirm
-                  cancelText="Cancel"
-                  description={
-                    record.status === 'UNKNOWN'
-                      ? 'Check the CRM first. Retrying an operation that already completed can create a duplicate.'
-                      : 'Requeue this failed CRM operation?'
-                  }
-                  okText="Retry"
-                  onConfirm={async () => {
-                    try {
-                      await retry.mutateAsync({
-                        confirmUnknownDelivery: record.status === 'UNKNOWN',
-                        operationId: record.id,
-                      });
-                      void message.success('CRM operation queued for retry.');
-                    } catch (error) {
-                      void message.error(
-                        getUserErrorMessage(error, 'The CRM operation could not be retried.'),
-                      );
-                    }
-                  }}
-                  title="Retry CRM operation?"
+                <Button
+                  loading={retry.isPending && retryOperation?.id === record.id}
+                  onClick={() => setRetryOperation(record)}
+                  size="small"
                 >
-                  <Button loading={retry.isPending} size="small">
-                    Retry
-                  </Button>
-                </Popconfirm>
+                  Retry
+                </Button>
               ) : null,
             title: 'Action',
           },
         ]}
       />
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDisconnectOpen(false)}
+        open={disconnectOpen}
+        title="Disconnect this CRM?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          Configuration values will remain available for a future reconnection.
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDisconnectOpen(false)}>Cancel</Button>
+          <Button
+            danger
+            loading={disconnecting}
+            onClick={async () => {
+              setDisconnecting(true);
+              try {
+                await connectionMutations.disable.mutateAsync();
+                setPairing(undefined);
+                void message.success('CRM disconnected.');
+                setDisconnectOpen(false);
+              } catch (error) {
+                void message.error(getUserErrorMessage(error, 'CRM could not be disconnected.'));
+              } finally {
+                setDisconnecting(false);
+              }
+            }}
+          >
+            Disconnect
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setRetryOperation(undefined)}
+        open={Boolean(retryOperation)}
+        title="Retry CRM operation?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {retryOperation
+            ? retryOperation.status === 'UNKNOWN'
+              ? 'Check the CRM first. Retrying an operation that already completed can create a duplicate.'
+              : 'Requeue this failed CRM operation?'
+            : ''}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setRetryOperation(undefined)}>Cancel</Button>
+          <Button
+            loading={retrying}
+            onClick={async () => {
+              if (!retryOperation) return;
+              setRetrying(true);
+              try {
+                await retry.mutateAsync({
+                  confirmUnknownDelivery: retryOperation.status === 'UNKNOWN',
+                  operationId: retryOperation.id,
+                });
+                void message.success('CRM operation queued for retry.');
+                setRetryOperation(undefined);
+              } catch (error) {
+                void message.error(
+                  getUserErrorMessage(error, 'The CRM operation could not be retried.'),
+                );
+              } finally {
+                setRetrying(false);
+              }
+            }}
+          >
+            Retry operation
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

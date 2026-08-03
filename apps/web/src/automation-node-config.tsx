@@ -227,6 +227,7 @@ export function AutomationNodeConfig({
           type="info"
         />
         <Segmented
+          className="segmented-switcher"
           block
           onChange={(value) =>
             value === 'WHATSAPP'

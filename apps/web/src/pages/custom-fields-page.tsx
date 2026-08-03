@@ -1,11 +1,10 @@
-import { EditOutlined, InboxOutlined, PlusOutlined, UndoOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
   Drawer,
   Form,
   Input,
-  Segmented,
   Select,
   Space,
   Table,
@@ -56,21 +55,16 @@ export function CustomFieldsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Field>();
   const [type, setType] = useState('TEXT');
-  const [view, setView] = useState<'active' | 'archived'>('active');
   const [form] = Form.useForm();
   const fields = useQuery({
     enabled: Boolean(projectId),
-    placeholderData: (previousData, previousQuery) =>
-      previousQuery?.queryKey[1] === projectId && previousQuery?.queryKey[2] === accessToken
-        ? previousData
-        : undefined,
     queryFn: () =>
       apiRequest<Field[]>(
-        `/api/v1/projects/${projectId}/custom-fields?archived=${view === 'archived'}`,
+        `/api/v1/projects/${projectId}/custom-fields?archived=false`,
         {},
         accessToken,
       ),
-    queryKey: ['custom-fields', projectId, accessToken, view],
+    queryKey: ['custom-fields', projectId, accessToken],
   });
   const reload = () => cache.invalidateQueries({ queryKey: ['custom-fields', projectId] });
   return (
@@ -95,15 +89,6 @@ export function CustomFieldsPage() {
           Create field
         </Button>
       </div>
-      <Segmented
-        className="archive-view-switch"
-        onChange={(value) => setView(value as 'active' | 'archived')}
-        options={[
-          { label: 'Active fields', value: 'active' },
-          { label: 'Archived', value: 'archived' },
-        ]}
-        value={view}
-      />
       {fields.isError ? (
         <Alert
           message={getUserErrorMessage(fields.error, 'Custom fields could not be loaded.')}
@@ -158,67 +143,40 @@ export function CustomFieldsPage() {
             render: (_, row) =>
               fields.isPlaceholderData ? null : (
                 <Space size={8}>
-                  {row.archivedAt === null ? (
-                    <>
-                      <Button
-                        icon={<EditOutlined />}
-                        onClick={() => {
-                          form.setFieldsValue({ ...row, options: row.options?.join(', ') });
-                          setEditing(row);
-                          setType(row.type);
-                          setOpen(true);
-                        }}
-                        size="small"
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        danger
-                        icon={<InboxOutlined />}
-                        onClick={async () => {
-                          try {
-                            await apiRequest(
-                              `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
-                              { method: 'DELETE' },
-                              accessToken,
-                            );
-                            await reload();
-                            void message.success('Custom field archived.');
-                          } catch (error) {
-                            void message.error(
-                              getUserErrorMessage(error, 'Custom field could not be archived.'),
-                            );
-                          }
-                        }}
-                        size="small"
-                      >
-                        Archive
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      icon={<UndoOutlined />}
-                      onClick={async () => {
-                        try {
-                          await apiRequest(
-                            `/api/v1/projects/${projectId}/custom-fields/${row.id}/restore`,
-                            { method: 'POST' },
-                            accessToken,
-                          );
-                          await reload();
-                          void message.success('Custom field restored.');
-                        } catch (error) {
-                          void message.error(
-                            getUserErrorMessage(error, 'Custom field could not be restored.'),
-                          );
-                        }
-                      }}
-                      size="small"
-                      type="primary"
-                    >
-                      Restore
-                    </Button>
-                  )}
+                  <Button
+                    icon={<EditOutlined />}
+                    onClick={() => {
+                      form.setFieldsValue({ ...row, options: row.options?.join(', ') });
+                      setEditing(row);
+                      setType(row.type);
+                      setOpen(true);
+                    }}
+                    size="small"
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={async () => {
+                      try {
+                        await apiRequest(
+                          `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
+                          { method: 'DELETE' },
+                          accessToken,
+                        );
+                        await reload();
+                        void message.success('Custom field deleted.');
+                      } catch (error) {
+                        void message.error(
+                          getUserErrorMessage(error, 'Custom field could not be deleted.'),
+                        );
+                      }
+                    }}
+                    size="small"
+                  >
+                    Delete
+                  </Button>
                 </Space>
               ),
             title: 'Actions',

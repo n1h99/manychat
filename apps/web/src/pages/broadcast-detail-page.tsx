@@ -14,6 +14,7 @@ export function BroadcastDetailPage() {
   const { projectId, broadcastId } = useParams();
   const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const query = useBroadcast(projectId, broadcastId);
   const channels = useChannels(projectId);
@@ -153,14 +154,7 @@ export function BroadcastDetailPage() {
         ['DRAFT', 'SCHEDULED', 'PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status) ? (
           <Button
             danger
-            onClick={() =>
-              Modal.confirm({
-                centered: true,
-                title: 'Cancel this broadcast?',
-                onOk: () =>
-                  action(() => mutations.cancel.mutateAsync(broadcast.id), 'Broadcast cancelled.'),
-              })
-            }
+            onClick={() => setCancelling(true)}
           >
             Cancel
           </Button>
@@ -192,6 +186,34 @@ export function BroadcastDetailPage() {
           { title: 'Error code', dataIndex: 'lastError', render: (value) => value ?? '—' },
         ]}
       />
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setCancelling(false)}
+        open={cancelling}
+        title="Cancel this broadcast?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          This broadcast will be cancelled and can no longer send new recipients.
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setCancelling(false)}>Keep broadcast</Button>
+          <Button
+            danger
+            loading={mutations.cancel.isPending}
+            onClick={async () => {
+              const succeeded = await action(
+                () => mutations.cancel.mutateAsync(broadcast.id),
+                'Broadcast cancelled.',
+              );
+              if (succeeded) setCancelling(false);
+            }}
+          >
+            Cancel broadcast
+          </Button>
+        </div>
+      </Modal>
       <Modal
         cancelText="Keep broadcast"
         centered

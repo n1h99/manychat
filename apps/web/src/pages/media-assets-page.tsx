@@ -20,6 +20,8 @@ export function MediaAssetsPage() {
   const mutations = useMediaMutations(projectId);
   const access = useProjectAccess(projectId);
   const canManage = hasProjectPermission(access.data, 'media:manage');
+  const [deleteAsset, setDeleteAsset] = useState<MediaAsset>();
+  const [deletingAsset, setDeletingAsset] = useState(false);
   const [file, setFile] = useState<File>();
   const [kind, setKind] = useState<MediaKind>('PHOTO');
   const [channel, setChannel] = useState<MediaValidationChannel>('TELEGRAM');
@@ -88,7 +90,6 @@ export function MediaAssetsPage() {
             }
             value={kind}
           />
-          <Typography.Text type="secondary">Up to 20 MB per upload</Typography.Text>
           <Upload
             accept={
               kind === 'PHOTO'
@@ -148,6 +149,9 @@ export function MediaAssetsPage() {
           >
             Upload
           </Button>
+          <Typography.Text className="media-upload-limit-note" type="secondary">
+            Up to 20 MB per upload
+          </Typography.Text>
         </Space>
       ) : null}
       {assets.isError ? (
@@ -233,22 +237,7 @@ export function MediaAssetsPage() {
                 {canManage ? (
                   <Button
                     danger
-                    onClick={() =>
-                      Modal.confirm({
-                        onOk: async () => {
-                          try {
-                            await mutations.remove.mutateAsync(asset.id);
-                            void message.success('Media asset deleted.');
-                          } catch (error) {
-                            void message.error(
-                              getUserErrorMessage(error, 'Media asset could not be deleted.'),
-                            );
-                            throw error;
-                          }
-                        },
-                        title: 'Delete this media asset?',
-                      })
-                    }
+                    onClick={() => setDeleteAsset(asset)}
                     size="small"
                   >
                     Delete
@@ -260,6 +249,42 @@ export function MediaAssetsPage() {
           },
         ]}
       />
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDeleteAsset(undefined)}
+        open={Boolean(deleteAsset)}
+        title="Delete this media asset?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {deleteAsset
+            ? `The selected ${deleteAsset.kind.toLowerCase()} file will be permanently removed.`
+            : ''}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDeleteAsset(undefined)}>Cancel</Button>
+          <Button
+            danger
+            loading={deletingAsset}
+            onClick={async () => {
+              if (!deleteAsset) return;
+              setDeletingAsset(true);
+              try {
+                await mutations.remove.mutateAsync(deleteAsset.id);
+                void message.success('Media asset deleted.');
+                setDeleteAsset(undefined);
+              } catch (error) {
+                void message.error(getUserErrorMessage(error, 'Media asset could not be deleted.'));
+              } finally {
+                setDeletingAsset(false);
+              }
+            }}
+          >
+            Delete media asset
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

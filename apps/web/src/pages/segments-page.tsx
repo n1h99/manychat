@@ -1,5 +1,6 @@
-import { Alert, Button, Form, Input, Popconfirm, Table, Typography, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Table, Typography, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
@@ -26,6 +27,8 @@ export function SegmentsPage() {
     queryKey: ['segments', projectId],
   });
   const invalidate = () => cache.invalidateQueries({ queryKey: ['segments', projectId] });
+  const [deletingSegment, setDeletingSegment] = useState<Segment>();
+  const [archiving, setArchiving] = useState(false);
   const create = useMutation({
     mutationFn: (input: { filter: Record<string, unknown>; name: string }) =>
       apiRequest<Segment>(
@@ -120,23 +123,9 @@ export function SegmentsPage() {
             key: 'actions',
             render: (_, row) =>
               canEdit ? (
-                <Popconfirm
-                  title="Archive this segment?"
-                  onConfirm={async () => {
-                    try {
-                      await archive.mutateAsync(row.id);
-                      void message.success('Segment archived.');
-                    } catch (error) {
-                      void message.error(
-                        getUserErrorMessage(error, 'Segment could not be archived.'),
-                      );
-                    }
-                  }}
-                >
-                  <Button danger size="small">
-                    Archive
-                  </Button>
-                </Popconfirm>
+                <Button danger size="small" onClick={() => setDeletingSegment(row)}>
+                  Archive
+                </Button>
               ) : (
                 '—'
               ),
@@ -147,6 +136,42 @@ export function SegmentsPage() {
         loading={segments.isLoading}
         rowKey="id"
       />
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDeletingSegment(undefined)}
+        open={Boolean(deletingSegment)}
+        title="Archive this segment?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {deletingSegment
+            ? `${deletingSegment.name} will be archived and removed from active filter lists.`
+            : ''}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDeletingSegment(undefined)}>Cancel</Button>
+          <Button
+            danger
+            loading={archiving}
+            onClick={async () => {
+              if (!deletingSegment) return;
+              setArchiving(true);
+              try {
+                await archive.mutateAsync(deletingSegment.id);
+                void message.success('Segment archived.');
+                setDeletingSegment(undefined);
+              } catch (error) {
+                void message.error(getUserErrorMessage(error, 'Segment could not be archived.'));
+              } finally {
+                setArchiving(false);
+              }
+            }}
+          >
+            Archive segment
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

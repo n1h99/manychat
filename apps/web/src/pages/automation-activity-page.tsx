@@ -159,6 +159,7 @@ export function AutomationActivityPage() {
 
       <Card className="activity-table-card" title="Contact journeys">
         <Table<ActivityItem>
+          className="automation-activity-table"
           columns={[
             {
               render: (_, row) => (

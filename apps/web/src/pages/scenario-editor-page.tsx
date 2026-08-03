@@ -273,6 +273,9 @@ export function ScenarioEditorPage() {
   const [historyFuture, setHistoryFuture] = useState<AutomationEditorSnapshot[]>([]);
   const copiedNode = useRef<AutomationEditorSnapshot['nodes'][number] | undefined>(undefined);
   const copiedConfig = useRef<Record<string, unknown> | undefined>(undefined);
+  const skipBeforeUnloadRef = useRef(false);
+  const [unsavedLeaveUrl, setUnsavedLeaveUrl] = useState<string>();
+  const [unsavedLeaveModalOpen, setUnsavedLeaveModalOpen] = useState(false);
   const [lastSavedSignature, setLastSavedSignature] = useState<string>();
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState<string>();
   const [manualSavePending, setManualSavePending] = useState(false);
@@ -470,12 +473,33 @@ export function ScenarioEditorPage() {
 
   useEffect(() => {
     if (!draftDirty) return;
-    const beforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (skipBeforeUnloadRef.current) return;
+      event.preventDefault();
+    };
     const guardLink = (event: MouseEvent) => {
       const anchor = (event.target as HTMLElement | null)?.closest('a[href]');
-      if (!anchor || !window.confirm('This scenario has unsaved changes. Leave the editor?')) {
-        if (anchor) event.preventDefault();
+      if (!anchor || skipBeforeUnloadRef.current) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      const target = anchor.getAttribute('target');
+      if (target && target !== '_self') return;
+      let targetUrl: URL;
+      try {
+        targetUrl = new URL(href, window.location.href);
+      } catch {
+        return;
       }
+      if (
+        targetUrl.origin !== window.location.origin ||
+        (targetUrl.pathname === window.location.pathname &&
+          targetUrl.search === window.location.search)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setUnsavedLeaveUrl(targetUrl.toString());
+      setUnsavedLeaveModalOpen(true);
     };
     window.addEventListener('beforeunload', beforeUnload);
     document.addEventListener('click', guardLink, true);
@@ -687,23 +711,28 @@ export function ScenarioEditorPage() {
           </div>
           <Space wrap>
             <Button
+              className="automation-editor-action-button"
               disabled={hasBlockingValidation}
               icon={<ExperimentOutlined />}
+              type="default"
               onClick={() => setTestOpen(true)}
             >
               Test run
             </Button>
             <Button
+              className="automation-editor-action-button"
               htmlType="submit"
               loading={mutations.create.isPending || manualSavePending}
-              type="primary"
+              type="default"
             >
               Save draft
             </Button>
             {scenarioQuery.data ? (
               <Button
+                className="automation-editor-action-button"
                 disabled={hasBlockingValidation}
                 loading={mutations.publish.isPending}
+                type="primary"
                 onClick={() => void publish()}
               >
                 Publish
@@ -741,7 +770,7 @@ export function ScenarioEditorPage() {
           </Col>
         </Row>
         <Row className="automation-workspace" gutter={[16, 16]}>
-          <Col lg={6} xl={4} xs={24}>
+          <Col className="scenario-editor-add-step-column" lg={6} xl={5} xs={24}>
             <Card className="automation-panel-card" size="small" title="Add a step">
               <Typography.Paragraph className="automation-panel-hint" type="secondary">
                 Choose a step and place it on the canvas.
@@ -894,7 +923,7 @@ export function ScenarioEditorPage() {
               </ReactFlow>
             </div>
           </Col>
-          <Col lg={24} xl={7} xs={24}>
+          <Col className="scenario-editor-settings-column" lg={24} xl={6} xs={24}>
             <Card
               className="automation-panel-card"
               size="small"
@@ -1032,23 +1061,28 @@ export function ScenarioEditorPage() {
         </Row>
         <Space className="automation-actions" wrap>
           <Button
+            className="automation-editor-action-button"
             disabled={hasBlockingValidation}
             icon={<ExperimentOutlined />}
+            type="default"
             onClick={() => setTestOpen(true)}
           >
             Test run
           </Button>
           <Button
+            className="automation-editor-action-button"
             htmlType="submit"
             loading={mutations.create.isPending || manualSavePending}
-            type="primary"
+            type="default"
           >
             Save draft
           </Button>
           {scenarioQuery.data ? (
             <Button
+              className="automation-editor-action-button"
               disabled={hasBlockingValidation}
               loading={mutations.publish.isPending}
+              type="primary"
               onClick={() => void publish()}
             >
               Publish
@@ -1133,12 +1167,16 @@ export function ScenarioEditorPage() {
                   </button>
                 ),
               },
-              { dataIndex: 'version', title: 'Version' },
+              {
+                className: 'automation-version-table-version-column',
+                dataIndex: 'version',
+                title: 'Version',
+              },
               {
                 dataIndex: 'status',
                 title: 'Status',
                 render: (value, version) => (
-                  <Space size={6}>
+                  <Space size={11}>
                     <StatusText label={automationVersionStatus(value)} status={value} />
                     {version.id === scenarioQuery.data?.draftVersion?.id ||
                     (!scenarioQuery.data?.draftVersion &&
@@ -1184,7 +1222,7 @@ export function ScenarioEditorPage() {
             pagination={false}
             rowKey="id"
           />
-          <div className="automation-section-heading">
+          <div className="automation-section-heading automation-section-heading--with-space">
             <Typography.Title className="automation-section-title" level={4}>
               Execution inspector
             </Typography.Title>
@@ -1339,6 +1377,39 @@ export function ScenarioEditorPage() {
         width={780}
       >
         {previewVersion ? <AutomationGraphPreview graph={previewVersion.graph} /> : null}
+      </Modal>
+      <Modal
+        footer={null}
+        onCancel={() => {
+          setUnsavedLeaveModalOpen(false);
+          setUnsavedLeaveUrl(undefined);
+        }}
+        open={unsavedLeaveModalOpen}
+        title="Leave without saving?"
+      >
+        <Typography.Paragraph type="secondary">
+          This scenario has unsaved changes. If you leave now, all unsaved edits will be lost.
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setUnsavedLeaveModalOpen(false)}>Cancel</Button>
+          <Button
+            type="primary"
+            onClick={() => {
+              if (!unsavedLeaveUrl) return;
+              skipBeforeUnloadRef.current = true;
+              const targetUrl = new URL(unsavedLeaveUrl, window.location.origin);
+              setUnsavedLeaveModalOpen(false);
+              setUnsavedLeaveUrl(undefined);
+              if (targetUrl.origin !== window.location.origin) {
+                window.location.href = targetUrl.href;
+              } else {
+                navigate(`${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`);
+              }
+            }}
+          >
+            Leave anyway
+          </Button>
+        </div>
       </Modal>
       <Drawer onClose={() => setTestOpen(false)} open={testOpen} title="Safe test run" width={560}>
         <AutomationTestPanel

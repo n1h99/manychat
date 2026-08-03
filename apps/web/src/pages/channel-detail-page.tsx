@@ -412,6 +412,8 @@ export function ChannelDetailPage() {
   const canManage = hasProjectPermission(access.data, 'channels:manage');
   const identities = useChannelIdentities(projectId, canManage ? connectionId : undefined);
   const [setupOpen, setSetupOpen] = useState(searchParams.get('setup') === '1');
+  const [rotatingOpen, setRotatingOpen] = useState(false);
+  const [disablingOpen, setDisablingOpen] = useState(false);
   const whatsappSettingsRef = useRef<HTMLDivElement | null>(null);
   const retryKey = useRef<string | undefined>(undefined);
   const pipelineNotificationState = useRef<{
@@ -893,18 +895,7 @@ export function ChannelDetailPage() {
                   <Button
                     block
                     icon={<KeyOutlined />}
-                    onClick={() =>
-                      Modal.confirm({
-                        centered: true,
-                        content: 'The previous webhook secret will stop working after rotation.',
-                        onOk: () =>
-                          action(
-                            () => mutations.rotate.mutateAsync(connection.id),
-                            'Webhook secret rotated.',
-                          ),
-                        title: 'Rotate webhook secret?',
-                      })
-                    }
+                    onClick={() => setRotatingOpen(true)}
                   >
                     Rotate webhook secret
                   </Button>
@@ -916,21 +907,7 @@ export function ChannelDetailPage() {
                   disabled={connection.status === 'DISABLED'}
                   icon={<DeleteOutlined />}
                   loading={mutations.disable.isPending}
-                  onClick={() =>
-                    Modal.confirm({
-                      centered: true,
-                      content:
-                        connection.type === 'WHATSAPP'
-                          ? 'Omnicus will stop processing this number. Existing contacts and message history remain available, and the shared Meta app webhook is not removed.'
-                          : 'Existing contacts and message history will not be deleted.',
-                      onOk: () =>
-                        action(
-                          () => mutations.disable.mutateAsync(connection.id),
-                          `${provider.channelLabel} channel disabled.`,
-                        ),
-                      title: `Disable this ${provider.connectionNoun}?`,
-                    })
-                  }
+                  onClick={() => setDisablingOpen(true)}
                 >
                   Disable channel
                 </Button>
@@ -1023,9 +1000,68 @@ export function ChannelDetailPage() {
                 Queue test message
               </Button>
             </Form>
-          </Card>
+      </Card>
         </div>
       ) : null}
+
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setRotatingOpen(false)}
+        open={rotatingOpen}
+        title="Rotate webhook secret?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          The previous webhook secret will stop working after rotation.
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setRotatingOpen(false)}>Cancel</Button>
+          <Button
+            danger
+            loading={mutations.rotate.isPending}
+            onClick={async () => {
+              const succeeded = await action(
+                () => mutations.rotate.mutateAsync(connection.id),
+                'Webhook secret rotated.',
+              );
+              if (succeeded) setRotatingOpen(false);
+            }}
+          >
+            Rotate webhook secret
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDisablingOpen(false)}
+        open={disablingOpen}
+        title={`Disable this ${provider.connectionNoun}?`}
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {connection.type === 'WHATSAPP'
+            ? 'Omnicus will stop processing this number. Existing contacts and message history remain available, and the shared Meta app webhook is not removed.'
+            : 'Existing contacts and message history will not be deleted.'}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDisablingOpen(false)}>Cancel</Button>
+          <Button
+            danger
+            loading={mutations.disable.isPending}
+            onClick={async () => {
+              const succeeded = await action(
+                () => mutations.disable.mutateAsync(connection.id),
+                `${provider.channelLabel} channel disabled.`,
+              );
+              if (succeeded) setDisablingOpen(false);
+            }}
+          >
+            Disable channel
+          </Button>
+        </div>
+      </Modal>
 
       <Card className="pipeline-card" title="Inbound pipeline">
         <Typography.Paragraph type="secondary">

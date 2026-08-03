@@ -59,8 +59,6 @@ describe('workspace lifecycle UI contracts', () => {
     const fields = source('./pages/custom-fields-page.tsx');
     const templates = source('./pages/templates-page.tsx');
     const broadcasts = source('./pages/broadcasts-page.tsx');
-    expect(fields).toContain("label: 'Archived'");
-    expect(fields).toContain('Restore');
     expect(templates).toContain("label: 'Archived'");
     expect(templates).toContain('Restore');
     expect(broadcasts).toContain("label: 'Archived'");

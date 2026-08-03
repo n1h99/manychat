@@ -5,7 +5,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Space,
   Table,
   Tag,
@@ -52,6 +51,8 @@ export function RoleManager({
 }) {
   const { accessToken } = useAuth();
   const client = useQueryClient();
+  const [deleteRole, setDeleteRole] = useState<RoleRow>();
+  const [deletingRole, setDeletingRole] = useState(false);
   const [editing, setEditing] = useState<RoleRow | null>();
   const [form] = Form.useForm();
   const roles = useQuery({
@@ -154,27 +155,9 @@ export function RoleManager({
                   >
                     Edit
                   </Button>
-                  <Popconfirm
-                    description="Assigned roles must be removed from users first."
-                    onConfirm={async () => {
-                      try {
-                        await apiRequest(
-                          `${rolesPath}/${row.id}`,
-                          { method: 'DELETE' },
-                          accessToken,
-                        );
-                        await refresh();
-                        void message.success('Role deleted.');
-                      } catch (cause) {
-                        void message.error(
-                          getUserErrorMessage(cause, 'The role could not be deleted.'),
-                        );
-                      }
-                    }}
-                    title="Delete this custom role?"
-                  >
-                    <Button danger>Delete</Button>
-                  </Popconfirm>
+                  <Button danger onClick={() => setDeleteRole(row)}>
+                    Delete
+                  </Button>
                 </Space>
               ),
             title: 'Actions',
@@ -186,6 +169,43 @@ export function RoleManager({
         pagination={false}
         rowKey="id"
       />
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDeleteRole(undefined)}
+        open={Boolean(deleteRole)}
+        title="Delete this custom role?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {deleteRole
+            ? `This role will be permanently removed. Assigned roles must be removed from users first.`
+            : ''}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDeleteRole(undefined)}>Cancel</Button>
+          <Button
+            danger
+            loading={deletingRole}
+            onClick={async () => {
+              if (!deleteRole) return;
+              setDeletingRole(true);
+              try {
+                await apiRequest(`${rolesPath}/${deleteRole.id}`, { method: 'DELETE' }, accessToken);
+                await refresh();
+                void message.success('Role deleted.');
+                setDeleteRole(undefined);
+              } catch (cause) {
+                void message.error(getUserErrorMessage(cause, 'The role could not be deleted.'));
+              } finally {
+                setDeletingRole(false);
+              }
+            }}
+          >
+            Delete role
+          </Button>
+        </div>
+      </Modal>
       <Modal
         destroyOnHidden
         footer={null}

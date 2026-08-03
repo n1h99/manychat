@@ -61,25 +61,27 @@ export function BroadcastsPage() {
             Telegram and WhatsApp broadcasts with an immutable recipient snapshot.
           </Typography.Text>
         </div>
-        {canCreate ? (
-          <Button
-            icon={<PlusOutlined />}
-            onClick={() => navigate(`/projects/${projectId}/broadcasts/new`)}
-            type="primary"
-          >
-            Create broadcast
-          </Button>
-        ) : null}
+        <div className="broadcasts-header-actions">
+          <Segmented
+            className="archive-view-switch segmented-switcher"
+            onChange={(value) => setView(value as 'active' | 'archived')}
+            options={[
+              { label: 'Active broadcasts', value: 'active' },
+              { label: 'Archived', value: 'archived' },
+            ]}
+            value={view}
+          />
+          {canCreate ? (
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() => navigate(`/projects/${projectId}/broadcasts/new`)}
+              type="primary"
+            >
+              Create broadcast
+            </Button>
+          ) : null}
+        </div>
       </div>
-      <Segmented
-        className="archive-view-switch"
-        onChange={(value) => setView(value as 'active' | 'archived')}
-        options={[
-          { label: 'Active broadcasts', value: 'active' },
-          { label: 'Archived', value: 'archived' },
-        ]}
-        value={view}
-      />
       {query.isError ? (
         <Alert
           className="form-alert"

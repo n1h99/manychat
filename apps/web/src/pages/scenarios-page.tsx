@@ -117,7 +117,7 @@ export function ScenariosPage() {
                         onClick={() => setRemoving(scenario)}
                         size="small"
                       >
-                        Archive
+                        Delete
                       </Button>
                     </Space>
                   ),
@@ -144,23 +144,23 @@ export function ScenariosPage() {
         cancelText="Keep automation"
         centered
         okButtonProps={{ danger: true, loading: mutations.remove.isPending }}
-        okText="Archive automation"
+        okText="Delete automation"
         onCancel={() => setRemoving(undefined)}
         onOk={async () => {
           if (!removing) return;
           const succeeded = await action(
             () => mutations.remove.mutateAsync(removing.id),
-            'Automation archived.',
-            'Automation could not be archived.',
+            'Automation deleted.',
+            'Automation could not be deleted.',
           );
           if (!succeeded) return;
           setRemoving(undefined);
         }}
         open={Boolean(removing)}
-        title="Archive this automation?"
+        title="Delete this automation?"
       >
-        The automation will be archived and removed from this list. Its version and execution
-        history will remain available for audit.
+        The automation will be deleted and removed from this list. Its version and execution history will
+        remain available for audit.
       </Modal>
     </section>
   );
