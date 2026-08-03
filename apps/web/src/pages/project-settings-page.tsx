@@ -45,7 +45,7 @@ export function ProjectSettingsPage() {
   const data = project.data;
   return (
     <section className="project-settings-page">
-      <div className="page-heading-row">
+      <div className="page-heading-row project-settings-heading">
         <div>
           <Typography.Title level={2}>Project settings</Typography.Title>
           <Typography.Text type="secondary">

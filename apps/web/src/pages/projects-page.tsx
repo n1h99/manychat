@@ -20,6 +20,7 @@ import { ApiError, apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 
 export interface Project {
+  createdAt: string;
   description: string | null;
   id: string;
   locale: string;
@@ -28,6 +29,7 @@ export interface Project {
   slug: string;
   status: 'ACTIVE' | 'ARCHIVED' | 'DRAFT' | 'PAUSED';
   timezone: string;
+  updatedAt: string;
 }
 
 export function ProjectsPage() {

@@ -34,9 +34,9 @@ v3.3, platform operations completion and Automation Activity.
   totals and bounded trend/scenario/drop-off charts from existing execution
   journals. It never selects contact variables, event payloads or raw provider
   errors.
-- Project overview uses live project-scoped counts for members, contacts, channels,
-  published automations, active broadcasts and operations needing attention, next
-  to the project metadata. It does not render sample metrics.
+- Project overview shows project identity, status, locale, timezone and lifecycle
+  information only. Tool navigation stays in the dedicated Project sections grid
+  and is not duplicated in the overview.
 - Permission, audit, health, operation and status codes are translated into
   plain-language UI labels. Action buttons keep accessible names without
   rendering intrusive hover tooltips.

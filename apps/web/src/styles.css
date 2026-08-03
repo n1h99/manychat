@@ -564,6 +564,12 @@
   justify-content: center;
 }
 
+.project-settings-heading {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+}
+
 .settings-card {
   width: 100%;
   height: 100%;
@@ -1830,6 +1836,11 @@ button:disabled,
   border-start-end-radius: 0 !important;
   border-end-start-radius: 12px !important;
   border-end-end-radius: 0 !important;
+}
+
+.ant-input-search .ant-input-affix-wrapper.ant-input-compact-item.ant-input-compact-first-item {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
 }
 
 .ant-input-search .ant-input-search-button {
@@ -3485,136 +3496,51 @@ button:disabled,
   box-shadow: var(--shadow-sm);
 }
 
-.project-overview-layout {
+.project-information-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.78fr) minmax(520px, 1.22fr);
-  gap: 20px;
-}
-
-.project-overview-details {
-  display: grid;
-  gap: 17px;
-  align-content: start;
-  padding: 18px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 15px;
-}
-
-.project-overview-details .ant-typography {
-  margin: 0 !important;
-  color: var(--text-soft);
-}
-
-.project-overview-status-row {
-  display: flex;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
 }
 
-.project-overview-status-row > div {
+.project-information-item {
   display: grid;
-  gap: 7px;
+  gap: 6px;
+  align-content: center;
+  min-width: 0;
+  min-height: 76px;
+  padding: 14px 16px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 13px;
 }
 
-.project-overview-status-row span,
-.project-overview-status-row small,
-.project-overview-facts span {
+.project-information-item > span {
   color: var(--text-muted);
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
-.project-overview-status-row .ant-tag {
+.project-information-item .ant-tag {
   width: max-content;
   margin: 0;
 }
 
-.project-overview-facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.project-overview-facts > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 11px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-}
-
-.project-overview-facts strong {
+.project-information-item strong {
   overflow: hidden;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
 }
 
-.project-overview-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.project-information-description {
+  grid-column: 1 / -1;
 }
 
-.project-overview-metric {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  min-height: 104px;
-  padding: 15px;
+.project-information-description p {
+  margin: 0;
   color: var(--text-soft);
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  transition:
-    border-color 150ms ease,
-    transform 150ms ease;
-}
-
-.project-overview-metric:hover {
-  color: var(--primary);
-  border-color: rgba(15, 118, 110, 0.28);
-  transform: translateY(-1px);
-}
-
-.project-overview-metric-icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  color: var(--primary);
-  font-size: 17px;
-  background: var(--primary-soft);
-  border-radius: 12px;
-  place-items: center;
-}
-
-.project-overview-metric > span:last-child,
-.project-overview-metric strong,
-.project-overview-metric b,
-.project-overview-metric small {
-  display: block;
-}
-
-.project-overview-metric strong {
-  margin-bottom: 2px;
-  color: var(--text);
-  font-size: 22px;
-  line-height: 1;
-}
-
-.project-overview-metric b {
-  font-size: 12px;
-}
-
-.project-overview-metric small {
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1.35;
+  line-height: 1.5;
 }
 
 .project-sections-heading {
@@ -3686,9 +3612,12 @@ button:disabled,
 }
 
 @media (max-width: 1024px) {
-  .project-overview-layout,
   .project-settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .project-information-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .activity-summary-grid {
@@ -3715,8 +3644,7 @@ button:disabled,
 }
 
 @media (max-width: 768px) {
-  .project-overview-facts,
-  .project-overview-metrics {
+  .project-information-grid {
     grid-template-columns: 1fr;
   }
 

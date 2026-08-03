@@ -153,7 +153,11 @@ describe('workspace lifecycle UI contracts', () => {
     expect(styles).toContain('.ant-picker:not(.ant-picker-disabled) input');
     expect(styles).toContain('cursor: pointer !important');
     expect(styles).toContain('.ant-input-affix-wrapper > input.ant-input');
-    expect(styles).toContain('.ant-input-search .ant-input-search-button');
+    expect(styles).toContain(
+      '.ant-input-affix-wrapper.ant-input-compact-item.ant-input-compact-first-item',
+    );
+    expect(styles).toContain('border-top-right-radius: 0 !important');
+    expect(styles).toContain('border-bottom-right-radius: 0 !important');
     expect(styles).toContain('.ant-tag.ant-tag-success');
     expect(styles).toContain('background: #edf9f2 !important');
   });

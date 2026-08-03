@@ -662,9 +662,9 @@ managers cannot enumerate another lead's schedule.
   a contained alerts/background-work/audit workspace with operator-facing service
   names and recovery guidance. Current alerts use a 24-hour operation window;
   older unresolved records are separated by project and link to filtered journals.
-- Project detail fills its overview with live project-scoped metadata and counts,
-  while Project Settings balances General and safe cloning side by side on wide
-  screens and stacks them responsively.
+- Project detail keeps its overview informational and leaves all tool navigation
+  in Project sections. Project Settings aligns its heading with the centered
+  General and safe-cloning workspace, then stacks those cards responsively.
 
 ## Platform operations completion — implemented
 
