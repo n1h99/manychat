@@ -139,7 +139,10 @@ describe('workspace lifecycle UI contracts', () => {
     expect(operations).toContain('Audit log');
     expect(settings).toContain('Contacts, channels, credentials');
     expect(settings).toContain('canClone');
-    expect(settings).toContain('project-settings-heading-actions');
+    expect(settings).not.toContain('project-settings-heading-actions');
+    expect(settings).toContain('project-lifecycle-actions');
+    expect(settings).toContain('Pause without losing data');
+    expect(settings).toContain('Remove it from the workspace list');
     expect(settings).toContain('Pause project');
     expect(settings).toContain('Delete this project?');
     expect(settings).not.toContain('EditOutlined');
@@ -168,6 +171,8 @@ describe('workspace lifecycle UI contracts', () => {
     expect(styles).toContain('border-bottom-right-radius: 0 !important');
     expect(styles).toContain('.ant-tag.ant-tag-success');
     expect(styles).toContain('background: #edf9f2 !important');
+    expect(styles).toContain('.health-workspace-card .ant-tabs-body-holder');
+    expect(styles).toContain('padding: 18px 20px 20px');
   });
 
   it('keeps automation activity and action controls human-facing', () => {

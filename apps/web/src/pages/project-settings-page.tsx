@@ -47,40 +47,8 @@ export function ProjectSettingsPage() {
             Workspace identity, locale and safe project cloning.
           </Typography.Text>
         </div>
-        {data ? (
-          <div className="project-settings-heading-actions">
-            <Space wrap>
-              <Button
-                danger={data.status === 'ACTIVE'}
-                icon={data.status === 'ACTIVE' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-                onClick={async () => {
-                  try {
-                    await apiRequest(
-                      `/api/v1/projects/${projectId}/${data.status === 'ACTIVE' ? 'pause' : 'activate'}`,
-                      { method: 'POST' },
-                      accessToken,
-                    );
-                    await client.invalidateQueries({ queryKey: ['project', projectId] });
-                    void message.success(
-                      data.status === 'ACTIVE' ? 'Project paused.' : 'Project activated.',
-                    );
-                  } catch (cause) {
-                    void message.error(
-                      getUserErrorMessage(cause, 'Project status could not be changed.'),
-                    );
-                  }
-                }}
-              >
-                {data.status === 'ACTIVE' ? 'Pause project' : 'Activate project'}
-              </Button>
-              <Button danger icon={<DeleteOutlined />} onClick={() => setDeleteOpen(true)}>
-                Delete
-              </Button>
-            </Space>
-          </div>
-        ) : null}
       </div>
-      <div className={`project-settings-grid${canClone ? '' : ' is-single'}`}>
+      <div className={`project-settings-grid${canClone || data ? '' : ' is-single'}`}>
         <Card className="settings-card settings-card--general" title="General">
           {data ? (
             <Form
@@ -131,25 +99,100 @@ export function ProjectSettingsPage() {
             </Form>
           ) : null}
         </Card>
-        {canClone ? (
-          <Card className="settings-card settings-card--soft" title="Clone project">
+        {canClone || data ? (
+          <Card
+            className="settings-card settings-card--soft"
+            title={canClone ? 'Clone project' : 'Project actions'}
+          >
             <div className="clone-project-card-content">
-              <div>
-                <Typography.Title level={4}>Start from this workspace</Typography.Title>
-                <Typography.Paragraph type="secondary">
-                  Copy the project settings and custom roles into a clean draft workspace.
-                </Typography.Paragraph>
-              </div>
-              <div className="clone-project-boundary">
-                <strong>Customer data stays separate</strong>
-                <span>
-                  Contacts, channels, credentials, messages, automation secrets and history are
-                  never copied.
-                </span>
-              </div>
-              <Button icon={<CopyOutlined />} onClick={() => setCloneOpen(true)} type="primary">
-                Create safe clone
-              </Button>
+              {canClone ? (
+                <>
+                  <div>
+                    <Typography.Title level={4}>Start from this workspace</Typography.Title>
+                    <Typography.Paragraph type="secondary">
+                      Copy the project settings and custom roles into a clean draft workspace.
+                    </Typography.Paragraph>
+                  </div>
+                  <div className="clone-project-boundary">
+                    <strong>Customer data stays separate</strong>
+                    <span>
+                      Contacts, channels, credentials, messages, automation secrets and history are
+                      never copied.
+                    </span>
+                  </div>
+                  <Button
+                    block
+                    icon={<CopyOutlined />}
+                    onClick={() => setCloneOpen(true)}
+                    type="primary"
+                  >
+                    Create safe clone
+                  </Button>
+                </>
+              ) : null}
+              {data ? (
+                <div className="project-lifecycle-actions">
+                  <div className="project-lifecycle-action">
+                    <div className="clone-project-boundary">
+                      <strong>
+                        {data.status === 'ACTIVE'
+                          ? 'Pause without losing data'
+                          : 'Activate this workspace'}
+                      </strong>
+                      <span>
+                        {data.status === 'ACTIVE'
+                          ? 'New automation work waits until you activate the project again. Settings, contacts and history stay in place.'
+                          : 'New automation work can continue after activation. Existing settings, contacts and history stay in place.'}
+                      </span>
+                    </div>
+                    <Button
+                      block
+                      danger={data.status === 'ACTIVE'}
+                      icon={
+                        data.status === 'ACTIVE' ? <PauseCircleOutlined /> : <PlayCircleOutlined />
+                      }
+                      onClick={async () => {
+                        try {
+                          await apiRequest(
+                            `/api/v1/projects/${projectId}/${data.status === 'ACTIVE' ? 'pause' : 'activate'}`,
+                            { method: 'POST' },
+                            accessToken,
+                          );
+                          await client.invalidateQueries({
+                            queryKey: ['project', projectId],
+                          });
+                          void message.success(
+                            data.status === 'ACTIVE' ? 'Project paused.' : 'Project activated.',
+                          );
+                        } catch (cause) {
+                          void message.error(
+                            getUserErrorMessage(cause, 'Project status could not be changed.'),
+                          );
+                        }
+                      }}
+                    >
+                      {data.status === 'ACTIVE' ? 'Pause project' : 'Activate project'}
+                    </Button>
+                  </div>
+                  <div className="project-lifecycle-action">
+                    <div className="clone-project-boundary">
+                      <strong>Remove it from the workspace list</strong>
+                      <span>
+                        Deleting archives the project and keeps its protected audit history. It will
+                        no longer appear in the workspace list.
+                      </span>
+                    </div>
+                    <Button
+                      block
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </Card>
         ) : null}
