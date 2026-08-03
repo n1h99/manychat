@@ -32,7 +32,7 @@ interface ProjectDestination {
 }
 
 function localeLabel(locale: string) {
-  return locale === 'ru' ? 'Русский' : locale === 'en' ? 'English' : locale;
+  return locale === 'ru' ? 'Russian' : locale === 'en' ? 'English' : locale;
 }
 
 export function ProjectDetailPage() {

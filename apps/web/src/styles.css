@@ -3367,23 +3367,6 @@ button:disabled,
   white-space: nowrap;
 }
 
-.broadcasts-header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  width: 100%;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.broadcasts-header-left-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .segment-create-form {
   display: flex;
   align-items: flex-end;
@@ -3445,11 +3428,7 @@ button:disabled,
   gap: 5px;
 }
 
-.broadcasts-header-actions .archive-view-switch {
-  margin-bottom: 0;
-}
-
-.templates-header-actions {
+.list-page-action-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3459,21 +3438,24 @@ button:disabled,
   margin-bottom: 10px;
 }
 
-.templates-header-left-group {
+.list-page-action-left-group {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.templates-header-actions .archive-view-switch {
+.list-page-action-row .archive-view-switch,
+.list-page-action-row .segmented-switcher {
   margin-bottom: 0;
 }
 
-@media (max-width: 1200px) {
-  .broadcasts-header-actions .ant-btn {
-    width: auto;
-  }
+.list-page-action-button {
+  height: 42px;
+}
+
+.list-page-action-row .ant-btn {
+  align-items: center;
 }
 
 .channel-create-card .ant-card-body {
@@ -4085,14 +4067,34 @@ button:disabled,
   box-shadow: none;
 }
 
-.contact-tag-form,
+.contact-summary-main,
 .contact-secondary-row {
   margin-top: 18px;
 }
 
-.contact-summary-card .contact-tag-form {
-  margin-top: 14px;
-  margin-bottom: 0;
+.contact-summary-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-summary-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.contact-summary-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-summary-actions {
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+.contact-summary-actions .contact-tag-form {
+  margin: 0;
 }
 
 .contact-summary-grid {

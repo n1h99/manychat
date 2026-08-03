@@ -3,7 +3,6 @@ import {
   Button,
   Card,
   Col,
-  Descriptions,
   Modal,
   Form,
   Input,
@@ -157,108 +156,112 @@ export function ContactDetailPage() {
       <Row className="balanced-card-row" gutter={[18, 18]}>
         <Col lg={9} xs={24}>
           <Card className="contact-summary-card" title="Contact summary">
-            <div className="contact-summary-grid">
-              <div className="contact-summary-row">
-                <div className="contact-summary-label">CRM lead:</div>
-                <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
-              </div>
-              <div className="contact-summary-row">
-                <div className="contact-summary-label">Channel identities:</div>
-                <div className="contact-summary-value">
-                  <div className="identity-list">
-                    {value.channelIdentities.length
-                      ? value.channelIdentities.map((identity) => (
-                          <div className="identity-row" key={identity.id}>
-                            <span className="identity-channel">{identity.channel}</span>
-                            <span className="identity-name">
-                              {identity.username
-                                ? `@${identity.username}`
-                                : identity.externalUserId}
-                            </span>
-                          </div>
-                        ))
-                      : 'No identities'}
-                  </div>
-                  <div className="identity-metadata">
-                    <span className="identity-metadata-item">
-                      <span className="summary-status-label">Status:</span>
-                      <span className="summary-value">{statusLabel}</span>
-                    </span>
-                    <span className="identity-metadata-item">
-                      <span className="summary-status-label">Automation:</span>
-                      <span className="summary-value">{automationLabel}</span>
-                    </span>
+            <div className="contact-summary-main">
+              <div className="contact-summary-grid">
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">CRM lead:</div>
+                  <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
+                </div>
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">Channel identities:</div>
+                  <div className="contact-summary-value">
+                    <div className="identity-list">
+                      {value.channelIdentities.length
+                        ? value.channelIdentities.map((identity) => (
+                            <div className="identity-row" key={identity.id}>
+                              <span className="identity-channel">{identity.channel}</span>
+                              <span className="identity-name">
+                                {identity.username
+                                  ? `@${identity.username}`
+                                  : identity.externalUserId}
+                              </span>
+                            </div>
+                          ))
+                        : 'No identities'}
+                    </div>
+                    <div className="identity-metadata">
+                      <span className="identity-metadata-item">
+                        <span className="summary-status-label">Status:</span>
+                        <span className="summary-value">{statusLabel}</span>
+                      </span>
+                      <span className="identity-metadata-item">
+                        <span className="summary-status-label">Automation:</span>
+                        <span className="summary-value">{automationLabel}</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="contact-summary-row">
-                <div className="contact-summary-label">Tags:</div>
-                <div className="contact-summary-value contact-summary-tags">
-                  {value.tags.length
-                    ? value.tags.map((item) => (
-                        <Tag
-                          closable={canUpdate}
-                          {...(item.tag.color ? { color: item.tag.color } : {})}
-                          key={item.tag.id}
-                          onClose={(event) => {
-                            event.preventDefault();
-                            void (async () => {
-                              try {
-                                await apiRequest(
-                                  `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
-                                  { method: 'DELETE' },
-                                  accessToken,
-                                );
-                                await reload();
-                                void message.success('Tag removed from contact.');
-                              } catch (error) {
-                                void message.error(
-                                  getUserErrorMessage(
-                                    error,
-                                    'Tag could not be removed from contact.',
-                                  ),
-                                );
-                              }
-                            })();
-                          }}
-                        >
-                          {item.tag.name}
-                        </Tag>
-                      ))
-                    : 'No tags'}
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">Tags:</div>
+                  <div className="contact-summary-value contact-summary-tags">
+                    {value.tags.length
+                      ? value.tags.map((item) => (
+                          <Tag
+                            closable={canUpdate}
+                            {...(item.tag.color ? { color: item.tag.color } : {})}
+                            key={item.tag.id}
+                            onClose={(event) => {
+                              event.preventDefault();
+                              void (async () => {
+                                try {
+                                  await apiRequest(
+                                    `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
+                                    { method: 'DELETE' },
+                                    accessToken,
+                                  );
+                                  await reload();
+                                  void message.success('Tag removed from contact.');
+                                } catch (error) {
+                                  void message.error(
+                                    getUserErrorMessage(
+                                      error,
+                                      'Tag could not be removed from contact.',
+                                    ),
+                                  );
+                                }
+                              })();
+                            }}
+                          >
+                            {item.tag.name}
+                          </Tag>
+                        ))
+                      : 'No tags'}
+                  </div>
                 </div>
               </div>
             </div>
-            <Form
-              className="contact-tag-form"
-              layout="vertical"
-              onFinish={async (values) => {
-                try {
-                  await apiRequest(
-                    `/api/v1/projects/${projectId}/contacts/${contactId}/tags`,
-                    { body: JSON.stringify(values), method: 'POST' },
-                    accessToken,
-                  );
-                  await reload();
-                  void message.success('Tag added to contact.');
-                } catch (error) {
-                  void message.error(
-                    getUserErrorMessage(error, 'Tag could not be added to contact.'),
-                  );
-                }
-              }}
-            >
-              <Form.Item label="Add tag" name="tagId">
-                <Select
-                  className="contact-tag-select"
-                  options={(tags.data ?? []).map((tag) => ({ label: tag.name, value: tag.id }))}
-                  placeholder="Choose a tag"
-                />
-              </Form.Item>
-              <Button block className="contact-tag-button" htmlType="submit">
-                Add tag
-              </Button>
-            </Form>
+            <div className="contact-summary-actions">
+              <Form
+                className="contact-tag-form"
+                layout="vertical"
+                onFinish={async (values) => {
+                  try {
+                    await apiRequest(
+                      `/api/v1/projects/${projectId}/contacts/${contactId}/tags`,
+                      { body: JSON.stringify(values), method: 'POST' },
+                      accessToken,
+                    );
+                    await reload();
+                    void message.success('Tag added to contact.');
+                  } catch (error) {
+                    void message.error(
+                      getUserErrorMessage(error, 'Tag could not be added to contact.'),
+                    );
+                  }
+                }}
+              >
+                <Form.Item label="Add tag" name="tagId">
+                  <Select
+                    className="contact-tag-select"
+                    options={(tags.data ?? []).map((tag) => ({ label: tag.name, value: tag.id }))}
+                    placeholder="Choose a tag"
+                  />
+                </Form.Item>
+                <Button block className="contact-tag-button" htmlType="submit">
+                  Add tag
+                </Button>
+              </Form>
+            </div>
           </Card>
         </Col>
         <Col lg={15} xs={24}>

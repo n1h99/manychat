@@ -132,8 +132,8 @@ export function TemplatesPage() {
           </Typography.Text>
         </div>
       </div>
-      <div className="templates-header-actions">
-        <div className="templates-header-left-group">
+      <div className="list-page-action-row">
+        <div className="list-page-action-left-group">
           <Segmented
             className="channel-template-provider-switch segmented-switcher"
             onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
@@ -154,7 +154,7 @@ export function TemplatesPage() {
           />
         </div>
         {canManage ? (
-          <Button onClick={() => open()} type="primary">
+          <Button className="list-page-action-button" onClick={() => open()} type="primary">
             New Template
           </Button>
         ) : null}

@@ -157,7 +157,7 @@ export function ProjectsPage() {
             <Select
               options={[
                 { label: 'English', value: 'en' },
-                { label: 'Русский', value: 'ru' },
+                { label: 'Russian', value: 'ru' },
               ]}
             />
           </Form.Item>

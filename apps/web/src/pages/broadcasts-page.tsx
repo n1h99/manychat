@@ -62,8 +62,8 @@ export function BroadcastsPage() {
           </Typography.Text>
         </div>
       </div>
-      <div className="broadcasts-header-actions">
-        <div className="broadcasts-header-left-group">
+      <div className="list-page-action-row">
+        <div className="list-page-action-left-group">
           <Segmented
             className="archive-view-switch segmented-switcher"
             onChange={(value) => setView(value as 'active' | 'archived')}
@@ -76,6 +76,7 @@ export function BroadcastsPage() {
         </div>
         {canCreate ? (
           <Button
+            className="list-page-action-button"
             icon={<PlusOutlined />}
             onClick={() => navigate(`/projects/${projectId}/broadcasts/new`)}
             type="primary"
