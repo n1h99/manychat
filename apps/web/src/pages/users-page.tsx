@@ -317,14 +317,15 @@ export function UsersPage() {
                     <Button
                       aria-label={`Disable ${fullName(row)}`}
                       danger
-                      hidden={row.status === 'DISABLED'}
+                      hidden={row.status !== 'ACTIVE'}
                       icon={<StopOutlined />}
                       onClick={() => setDisableTarget(row)}
                     />
                     <Button
                       aria-label={`Activate ${fullName(row)}`}
+                      className="user-activate-action-btn"
                       hidden={row.status !== 'DISABLED'}
-                      icon={<CheckCircleOutlined />}
+                      icon={<CheckCircleOutlined style={{ color: 'var(--success)' }} />}
                       onClick={() => setActivateTarget(row)}
                     />
                     <Button
