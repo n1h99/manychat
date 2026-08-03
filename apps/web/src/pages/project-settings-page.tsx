@@ -134,9 +134,6 @@ export function ProjectSettingsPage() {
         {canClone ? (
           <Card className="settings-card settings-card--soft" title="Clone project">
             <div className="clone-project-card-content">
-              <span className="clone-project-icon">
-                <CopyOutlined />
-              </span>
               <div>
                 <Typography.Title level={4}>Start from this workspace</Typography.Title>
                 <Typography.Paragraph type="secondary">

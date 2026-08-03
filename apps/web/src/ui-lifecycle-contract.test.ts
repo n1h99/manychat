@@ -144,6 +144,7 @@ describe('workspace lifecycle UI contracts', () => {
     expect(settings).toContain('Delete this project?');
     expect(settings).not.toContain('EditOutlined');
     expect(settings).not.toContain('<Tag');
+    expect(settings).not.toContain('clone-project-icon');
     expect(source('./pages/project-detail-page.tsx')).not.toContain('Pause project');
     expect(source('./pages/project-detail-page.tsx')).not.toContain('Delete this project?');
     expect(users).toContain('Create invitation');

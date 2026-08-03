@@ -596,17 +596,6 @@
   margin: 0 !important;
 }
 
-.clone-project-icon {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  color: var(--primary);
-  font-size: 18px;
-  background: var(--primary-soft);
-  border-radius: 13px;
-  place-items: center;
-}
-
 .clone-project-boundary {
   display: grid;
   gap: 4px;
