@@ -169,6 +169,7 @@ export class SystemHealthService implements OnApplicationShutdown {
       dependencies: { database, redis, worker },
       generatedAt: new Date().toISOString(),
       operationCounts: aggregates,
+      operationHistory: aggregates?.operationHistory ?? null,
       overallStatus: alerts.some((alert) => alert.severity === 'CRITICAL')
         ? 'DEGRADED'
         : alerts.length
@@ -290,19 +291,35 @@ export class SystemHealthService implements OnApplicationShutdown {
     try {
       const since = new Date(Date.now() - 24 * 60 * 60 * 1_000);
       const [
-        inboxTerminal,
-        outboxFailed,
-        outboxUnknown,
+        inboxTerminalAllByProject,
+        inboxTerminalRecentByProject,
+        outboxTerminalAllByProject,
+        outboxTerminalRecentByProject,
         channelErrors,
         crmErrors,
         passwordResetRequests,
         passwordResetLinks,
       ] = await Promise.all([
-        this.database.client.inboxRecord.count({
+        this.database.client.inboxRecord.groupBy({
+          _count: { _all: true },
+          by: ['projectId', 'status'],
           where: { status: { in: ['DEAD_LETTER', 'FAILED'] } },
         }),
-        this.database.client.outboxRecord.count({ where: { status: 'FAILED' } }),
-        this.database.client.outboxRecord.count({ where: { status: 'UNKNOWN' } }),
+        this.database.client.inboxRecord.groupBy({
+          _count: { _all: true },
+          by: ['projectId', 'status'],
+          where: { status: { in: ['DEAD_LETTER', 'FAILED'] }, updatedAt: { gte: since } },
+        }),
+        this.database.client.outboxRecord.groupBy({
+          _count: { _all: true },
+          by: ['projectId', 'status'],
+          where: { status: { in: ['FAILED', 'UNKNOWN'] } },
+        }),
+        this.database.client.outboxRecord.groupBy({
+          _count: { _all: true },
+          by: ['projectId', 'status'],
+          where: { status: { in: ['FAILED', 'UNKNOWN'] }, updatedAt: { gte: since } },
+        }),
         this.database.client.channelConnection.count({ where: { status: 'ERROR' } }),
         this.database.client.crmProjectConfig.count({ where: { status: 'ERROR' } }),
         this.database.client.auditLog.findMany({
@@ -322,10 +339,73 @@ export class SystemHealthService implements OnApplicationShutdown {
               link.createdAt.getTime() >= request.createdAt.getTime(),
           ),
       ).length;
+      const terminalRows = [...inboxTerminalAllByProject, ...outboxTerminalAllByProject];
+      const projectIds = [...new Set(terminalRows.map((row) => row.projectId))];
+      const projects = projectIds.length
+        ? await this.database.client.project.findMany({
+            select: { id: true, name: true },
+            where: { id: { in: projectIds } },
+          })
+        : [];
+      const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+      const count = (
+        rows: ReadonlyArray<{ _count: { _all: number }; projectId: string; status: string }>,
+        status?: string,
+        projectId?: string,
+      ) =>
+        rows.reduce(
+          (total, row) =>
+            total +
+            (status && row.status !== status
+              ? 0
+              : projectId && row.projectId !== projectId
+                ? 0
+                : row._count._all),
+          0,
+        );
+      const inboxTerminal = count(inboxTerminalRecentByProject);
+      const outboxFailed = count(outboxTerminalRecentByProject, 'FAILED');
+      const outboxUnknown = count(outboxTerminalRecentByProject, 'UNKNOWN');
+      const operationHistory = {
+        older: {
+          inboxTerminal: Math.max(0, count(inboxTerminalAllByProject) - inboxTerminal),
+          outboxFailed: Math.max(0, count(outboxTerminalAllByProject, 'FAILED') - outboxFailed),
+          outboxUnknown: Math.max(0, count(outboxTerminalAllByProject, 'UNKNOWN') - outboxUnknown),
+        },
+        projects: projectIds
+          .map((projectId) => {
+            const recentInbox = count(inboxTerminalRecentByProject, undefined, projectId);
+            const recentFailed = count(outboxTerminalRecentByProject, 'FAILED', projectId);
+            const recentUnknown = count(outboxTerminalRecentByProject, 'UNKNOWN', projectId);
+            return {
+              olderFailed: Math.max(
+                0,
+                count(outboxTerminalAllByProject, 'FAILED', projectId) - recentFailed,
+              ),
+              olderInbox: Math.max(
+                0,
+                count(inboxTerminalAllByProject, undefined, projectId) - recentInbox,
+              ),
+              olderUnknown: Math.max(
+                0,
+                count(outboxTerminalAllByProject, 'UNKNOWN', projectId) - recentUnknown,
+              ),
+              projectId,
+              projectName: projectNames.get(projectId) ?? 'Unavailable project',
+              recentFailed,
+              recentInbox,
+              recentUnknown,
+            };
+          })
+          .sort((left, right) => left.projectName.localeCompare(right.projectName)),
+        recent: { inboxTerminal, outboxFailed, outboxUnknown },
+        windowHours: 24,
+      };
       return {
         channelErrors,
         crmErrors,
         inboxTerminal,
+        operationHistory,
         outboxFailed,
         outboxUnknown,
         passwordResetRequests24h,

@@ -6,39 +6,21 @@ import {
   RightOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import {
-  Breadcrumb,
-  Button,
-  Drawer,
-  Empty,
-  Grid,
-  Layout,
-  Menu,
-  Modal,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Breadcrumb, Button, Drawer, Grid, Layout, Menu, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 
 import { useAuth } from './auth';
-import { ApiError, apiRequest } from './api';
+import { apiRequest } from './api';
 import { breadcrumbsFor } from './breadcrumbs';
 import { navigationItems } from './navigation';
 import { ProfileSettingsModal } from './profile-settings-modal';
-import { hasProjectPermission, type ProjectAccess, useProjectAccess } from './project-access';
 import { shellActions, type AppDispatch, type RootState } from './store';
 
 const { Content, Header, Sider } = Layout;
 const { useBreakpoint } = Grid;
-
-interface NavigationProject {
-  id: string;
-  name: string;
-}
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -66,9 +48,7 @@ export function AppShell() {
   const isMobile = screens.lg === false;
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [activityProjectPickerOpen, setActivityProjectPickerOpen] = useState(false);
   const projectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
-  const projectAccess = useProjectAccess(projectId);
   const availableNavigation = useMemo(() => {
     return navigationItems.filter(
       (item) =>
@@ -77,14 +57,13 @@ export function AppShell() {
         identity?.globalPermissions.includes(item.permission),
     );
   }, [identity]);
-  const selectedKey = useMemo(() => {
-    if (location.pathname.includes('/automation-activity')) return 'automation-activity';
-    return (
+  const selectedKey = useMemo(
+    () =>
       [...availableNavigation]
         .sort((left, right) => right.path.length - left.path.length)
-        .find((item) => location.pathname.startsWith(item.path))?.key ?? 'projects'
-    );
-  }, [availableNavigation, location.pathname]);
+        .find((item) => location.pathname.startsWith(item.path))?.key ?? 'projects',
+    [availableNavigation, location.pathname],
+  );
   const selectedItem = availableNavigation.find((item) => item.key === selectedKey);
   const accountName =
     [identity?.firstName, identity?.lastName].filter(Boolean).join(' ') || 'Account';
@@ -98,62 +77,7 @@ export function AppShell() {
     queryFn: () => apiRequest<{ name: string }>(`/api/v1/projects/${projectId}`, {}, accessToken),
     queryKey: ['project', projectId, accessToken],
   });
-  const activityProjects = useQuery({
-    enabled: false,
-    queryFn: async () => {
-      const projects = await apiRequest<NavigationProject[]>('/api/v1/projects', {}, accessToken);
-      const availableProjects = await Promise.all(
-        projects.map(async (candidate) => {
-          try {
-            const access = await apiRequest<ProjectAccess>(
-              `/api/v1/projects/${candidate.id}/access`,
-              {},
-              accessToken,
-            );
-            return hasProjectPermission(access, 'automation:read') ? candidate : undefined;
-          } catch (error) {
-            if (error instanceof ApiError && [403, 404].includes(error.status)) return undefined;
-            throw error;
-          }
-        }),
-      );
-      return availableProjects.filter(
-        (candidate): candidate is NavigationProject => candidate !== undefined,
-      );
-    },
-    queryKey: ['automation-activity-projects', identity?.userId, accessToken],
-  });
   const breadcrumbs = breadcrumbsFor(location.pathname, project.data?.name);
-
-  const goToAutomationActivity = (targetProjectId: string) => {
-    setActivityProjectPickerOpen(false);
-    setMobileNavigationOpen(false);
-    void navigate(`/projects/${targetProjectId}/automation-activity`);
-  };
-
-  const openAutomationActivity = async () => {
-    if (projectId && hasProjectPermission(projectAccess.data, 'automation:read')) {
-      goToAutomationActivity(projectId);
-      return;
-    }
-    const result = await activityProjects.refetch();
-    if (result.isError) {
-      void message.error('Automation activity could not be opened. Please try again.');
-      return;
-    }
-    const projects = result.data ?? [];
-    if (projects.length === 0) {
-      void message.info('You do not have access to automation activity in any project.');
-      return;
-    }
-    if (projects.length === 1) {
-      const onlyProject = projects[0];
-      if (onlyProject) goToAutomationActivity(onlyProject.id);
-      return;
-    }
-    setMobileNavigationOpen(false);
-    setActivityProjectPickerOpen(true);
-  };
 
   const navigation = (
     <>
@@ -163,10 +87,6 @@ export function AppShell() {
         items={menuItems}
         mode="inline"
         onClick={({ key }) => {
-          if (key === 'automation-activity') {
-            void openAutomationActivity();
-            return;
-          }
           const item = availableNavigation.find((candidate) => candidate.key === key);
           if (item) {
             void navigate(item.path);
@@ -282,33 +202,6 @@ export function AppShell() {
           </div>
         </Content>
         <ProfileSettingsModal onClose={() => setProfileOpen(false)} open={profileOpen} />
-        <Modal
-          className="activity-project-picker-modal"
-          footer={null}
-          onCancel={() => setActivityProjectPickerOpen(false)}
-          open={activityProjectPickerOpen}
-          title="Choose a project"
-        >
-          <Typography.Paragraph type="secondary">
-            Select the workspace whose automation journeys you want to review.
-          </Typography.Paragraph>
-          <div className="activity-project-picker">
-            {activityProjects.data?.length ? (
-              activityProjects.data.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  onClick={() => goToAutomationActivity(candidate.id)}
-                  type="button"
-                >
-                  <span>{candidate.name}</span>
-                  <RightOutlined />
-                </button>
-              ))
-            ) : (
-              <Empty description="No projects with automation access" />
-            )}
-          </div>
-        </Modal>
       </Layout>
     </Layout>
   );

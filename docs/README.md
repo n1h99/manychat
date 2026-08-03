@@ -23,16 +23,20 @@ v3.3, platform operations completion and Automation Activity.
   update general metadata and make a safe draft clone containing only general
   settings and custom role definitions.
 - Permission-guarded System Health combines PostgreSQL, Redis and worker probes with
-  queue pressure, durable terminal-operation counts and global audit history.
-  Alerts are derived from authoritative state. Sentry is not used and Railway
-  backup configuration remains operator-owned.
-- Automation Activity is a permanent sidebar destination immediately below
-  Projects. It opens the current authorized project directly, opens the only
-  available project directly, or asks the operator to choose among authorized
-  projects. The board provides paginated contact journeys, current steps, safe
-  reasons, per-step timelines, exact status totals and bounded
-  trend/scenario/drop-off charts from existing execution journals. It never
-  selects contact variables, event payloads or raw provider errors.
+  queue pressure, global audit history and current terminal operations from the
+  last 24 hours. Older unresolved journal records remain visible separately by
+  project and do not make the live platform status look degraded. Each operation
+  count links to the matching filtered project journal. Sentry is not used and
+  Railway backup configuration remains operator-owned.
+- Automation Activity is available only inside each authorized project workspace,
+  not as a duplicate global sidebar destination. The board provides paginated
+  contact journeys, current steps, safe reasons, per-step timelines, exact status
+  totals and bounded trend/scenario/drop-off charts from existing execution
+  journals. It never selects contact variables, event payloads or raw provider
+  errors.
+- Project overview uses live project-scoped counts for members, contacts, channels,
+  published automations, active broadcasts and operations needing attention, next
+  to the project metadata. It does not render sample metrics.
 - Permission, audit, health, operation and status codes are translated into
   plain-language UI labels. Action buttons keep accessible names without
   rendering intrusive hover tooltips.

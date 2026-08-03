@@ -654,12 +654,17 @@ managers cannot enumerate another lead's schedule.
   affected node or connection and server race errors remain human-readable.
 - `CLEAR_CUSTOM_FIELD` clears one contact value transactionally from JSON and
   typed projections without deleting the field definition.
-- Automation Activity remains visible directly below Projects outside a project
-  workspace, resolves only projects with `automation:read`, and avoids a desktop
-  table scrollbar while retaining bounded horizontal scrolling on small screens.
+- Automation Activity remains an explicit project tool guarded by
+  `automation:read`, but the duplicate global sidebar destination is removed. The
+  board avoids a desktop table scrollbar while retaining bounded horizontal
+  scrolling on small screens.
 - System Health uses a responsive status summary, distinct dependency cards and
   a contained alerts/background-work/audit workspace with operator-facing service
-  names and recovery guidance.
+  names and recovery guidance. Current alerts use a 24-hour operation window;
+  older unresolved records are separated by project and link to filtered journals.
+- Project detail fills its overview with live project-scoped metadata and counts,
+  while Project Settings balances General and safe cloning side by side on wide
+  screens and stacks them responsively.
 
 ## Platform operations completion — implemented
 
@@ -683,9 +688,9 @@ areas:
    definitions—never contacts, channels, credentials, messages, media,
    automations, executions or history.
 4. **System Health.** A `roles:manage`-guarded page combines live PostgreSQL/Redis/worker
-   checks, BullMQ counts, durable failure/unknown aggregates, derived alerts and
-   global audit history. PostgreSQL remains authoritative and Redis remains an
-   execution signal.
+   checks, BullMQ counts, recent durable failure/unknown aggregates, historical
+   terminal-record context, derived alerts and global audit history. PostgreSQL
+   remains authoritative and Redis remains an execution signal.
 
 This slice adds no Prisma migration. Sentry and in-product backup management
 are deliberately excluded; Railway backups remain an operator configuration.

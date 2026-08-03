@@ -1266,10 +1266,13 @@ contacts, identities, messages, executions, channels, CRM credentials, media,
 automation secrets or history.
 
 System Health is a `roles:manage`-guarded projection over dependency probes, a bounded
-BullMQ worker round-trip, queue counts and safe database aggregates. Alerts are
-derived from current state rather than becoming another source of truth. Sentry
-and backup management are explicitly outside this slice; Railway backup policy
-remains operator-owned.
+BullMQ worker round-trip, queue counts and safe database aggregates. Active terminal
+operation alerts use records updated within the last 24 hours. Older terminal
+records remain visible as historical attention items grouped by project, with
+links to scoped Operations filters, but do not degrade current platform status.
+Alerts are derived from authoritative state rather than becoming another source
+of truth. Sentry and backup management are explicitly outside this slice;
+Railway backup policy remains operator-owned.
 
 **Consequences:** PostgreSQL journals remain authoritative and Redis remains an
 execution/health signal only. Operations UI cannot leak stored payloads or turn
@@ -1306,3 +1309,7 @@ tooltips are not part of the operator UI.
 schema migration is required. The Board can refresh safely without touching
 runtime state. Exact totals remain reliable even when a high-volume chart is
 sampled, and a sampled chart is labelled as such in the UI.
+
+Automation Activity is presented as a project workspace tool only. The global
+sidebar does not duplicate it or require a project-selection detour; the protected
+project route and its permission boundary remain unchanged.

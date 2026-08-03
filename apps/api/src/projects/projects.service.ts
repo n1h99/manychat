@@ -8,7 +8,7 @@ import {
 import type { Prisma } from '@omnicus/database';
 
 import { AccessService } from '../access/access.service';
-import { SUPER_ADMIN_ROLE } from '../access/permissions';
+import { projectPermissions, SUPER_ADMIN_ROLE } from '../access/permissions';
 import { AuditService } from '../audit/audit.service';
 import { DatabaseService } from '../database/database.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -61,6 +61,76 @@ export class ProjectsService {
       throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', message: 'Project was not found' });
     }
     return project;
+  }
+
+  async overview(projectId: string, auth: AuthenticatedUser) {
+    const project = await this.get(projectId, auth);
+    const permissions = new Set(
+      auth.globalRoleNames.includes(SUPER_ADMIN_ROLE)
+        ? projectPermissions
+        : (await this.access.getProjectAccess(auth.userId, projectId)).permissions,
+    );
+    const [members, contacts, channelGroups, publishedAutomations, activeBroadcasts, outboxGroups] =
+      await Promise.all([
+        permissions.has('members:manage')
+          ? this.database.client.projectMembership.count({
+              where: { projectId, status: 'ACTIVE' },
+            })
+          : null,
+        permissions.has('contacts:read')
+          ? this.database.client.contact.count({
+              where: { projectId, status: { notIn: ['ARCHIVED', 'MERGED'] } },
+            })
+          : null,
+        permissions.has('channels:read')
+          ? this.database.client.channelConnection.groupBy({
+              _count: { _all: true },
+              by: ['status'],
+              where: { projectId },
+            })
+          : null,
+        permissions.has('automation:read')
+          ? this.database.client.scenario.count({
+              where: { projectId, status: 'PUBLISHED' },
+            })
+          : null,
+        permissions.has('broadcasts:read')
+          ? this.database.client.broadcast.count({
+              where: { projectId, status: { in: ['SCHEDULED', 'PREPARING', 'RUNNING', 'PAUSED'] } },
+            })
+          : null,
+        this.database.client.outboxRecord.groupBy({
+          _count: { _all: true },
+          by: ['status'],
+          where: { projectId, status: { in: ['FAILED', 'UNKNOWN'] } },
+        }),
+      ]);
+    const channelCount = (status: string) =>
+      channelGroups?.find((group) => group.status === status)?._count._all ?? 0;
+    const outboxCount = (status: string) =>
+      outboxGroups.find((group) => group.status === status)?._count._all ?? 0;
+    const failedOperations = outboxCount('FAILED');
+    const unknownOperations = outboxCount('UNKNOWN');
+    return {
+      activeBroadcasts,
+      channels: {
+        active: channelGroups ? channelCount('ACTIVE') : null,
+        errors: channelGroups ? channelCount('ERROR') : null,
+        total: channelGroups
+          ? channelGroups.reduce((total, group) => total + group._count._all, 0)
+          : null,
+      },
+      contacts,
+      createdAt: project.createdAt,
+      members,
+      operationsNeedingAttention: {
+        failed: failedOperations,
+        total: failedOperations + unknownOperations,
+        unknown: unknownOperations,
+      },
+      publishedAutomations,
+      updatedAt: project.updatedAt,
+    };
   }
 
   async getAccess(projectId: string, auth: AuthenticatedUser) {

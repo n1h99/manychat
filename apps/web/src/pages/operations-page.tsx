@@ -19,7 +19,7 @@ import {
 import { ReloadOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
@@ -78,6 +78,19 @@ interface Summary {
   outbox: SummaryGroup;
 }
 
+const operationSources = ['INBOX', 'OUTBOX', 'AUTOMATION', 'BROADCAST'] as const;
+const operationStatuses = [
+  'PENDING',
+  'PROCESSING',
+  'RETRY',
+  'COMPLETED',
+  'SUCCEEDED',
+  'FAILED',
+  'DEAD_LETTER',
+  'UNKNOWN',
+  'PAUSED',
+] as const;
+
 function statusColor(status: string) {
   if (['COMPLETED', 'SENT', 'SUCCEEDED'].includes(status)) return 'success';
   if (['FAILED', 'DEAD_LETTER', 'UNKNOWN'].includes(status)) return 'error';
@@ -94,11 +107,20 @@ function terminalCount(groups: SummaryGroup | undefined, statuses: string[]) {
 
 export function OperationsPage() {
   const { projectId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { accessToken } = useAuth();
   const access = useProjectAccess(projectId);
   const client = useQueryClient();
-  const [source, setSource] = useState<string>();
-  const [status, setStatus] = useState<string>();
+  const sourceParam = searchParams.get('source');
+  const statusParam = searchParams.get('status');
+  const source =
+    sourceParam && operationSources.includes(sourceParam as (typeof operationSources)[number])
+      ? sourceParam
+      : undefined;
+  const status =
+    statusParam && operationStatuses.includes(statusParam as (typeof operationStatuses)[number])
+      ? statusParam
+      : undefined;
   const [correlationId, setCorrelationId] = useState('');
   const [page, setPage] = useState(1);
   const [auditPage, setAuditPage] = useState(1);
@@ -109,6 +131,13 @@ export function OperationsPage() {
   }>();
   const [auditDetails, setAuditDetails] = useState<AuditRow>();
   const [form] = Form.useForm();
+  const updateUrlFilter = (key: 'source' | 'status', value?: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setPage(1);
+    setSearchParams(next, { replace: true });
+  };
   const queryString = useMemo(() => {
     const query = new URLSearchParams({ page: String(page), pageSize: '50' });
     if (source) query.set('source', source);
@@ -206,11 +235,8 @@ export function OperationsPage() {
                 <div className="operations-filters surface">
                   <Select
                     allowClear
-                    onChange={(value) => {
-                      setPage(1);
-                      setSource(value);
-                    }}
-                    options={['INBOX', 'OUTBOX', 'AUTOMATION', 'BROADCAST'].map((value) => ({
+                    onChange={(value) => updateUrlFilter('source', value)}
+                    options={operationSources.map((value) => ({
                       label: humanizeOperationSource(value),
                       value,
                     }))}
@@ -219,21 +245,11 @@ export function OperationsPage() {
                   />
                   <Select
                     allowClear
-                    onChange={(value) => {
-                      setPage(1);
-                      setStatus(value);
-                    }}
-                    options={[
-                      'PENDING',
-                      'PROCESSING',
-                      'RETRY',
-                      'COMPLETED',
-                      'SUCCEEDED',
-                      'FAILED',
-                      'DEAD_LETTER',
-                      'UNKNOWN',
-                      'PAUSED',
-                    ].map((value) => ({ label: humanizeStatus(value), value }))}
+                    onChange={(value) => updateUrlFilter('status', value)}
+                    options={operationStatuses.map((value) => ({
+                      label: humanizeStatus(value),
+                      value,
+                    }))}
                     placeholder="Status"
                     value={status}
                   />

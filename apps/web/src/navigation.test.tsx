@@ -8,10 +8,7 @@ describe('application shell navigation', () => {
 
     expect(new Set(paths).size).toBe(paths.length);
     expect(paths).toContain('/projects');
-    expect(paths).toContain('/automation-activity');
     expect(paths).toContain('/users');
-    expect(navigationItems.findIndex((item) => item.key === 'automation-activity')).toBe(
-      navigationItems.findIndex((item) => item.key === 'projects') + 1,
-    );
+    expect(paths).not.toContain('/automation-activity');
   });
 });

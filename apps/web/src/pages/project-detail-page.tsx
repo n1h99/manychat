@@ -21,7 +21,6 @@ import {
   Button,
   Card,
   Col,
-  Descriptions,
   Form,
   Input,
   Modal,
@@ -51,6 +50,17 @@ interface ProjectDestination {
   visible?: boolean;
 }
 
+interface ProjectOverview {
+  activeBroadcasts: number | null;
+  channels: { active: number | null; errors: number | null; total: number | null };
+  contacts: number | null;
+  createdAt: string;
+  members: number | null;
+  operationsNeedingAttention: { failed: number; total: number; unknown: number };
+  publishedAutomations: number | null;
+  updatedAt: string;
+}
+
 function localeLabel(locale: string) {
   return locale === 'ru' ? 'Русский' : locale === 'en' ? 'English' : locale;
 }
@@ -68,6 +78,12 @@ export function ProjectDetailPage() {
     enabled: Boolean(projectId),
     queryFn: () => apiRequest<Project>(`/api/v1/projects/${projectId}`, {}, accessToken),
     queryKey: ['project', projectId, accessToken],
+  });
+  const overview = useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () =>
+      apiRequest<ProjectOverview>(`/api/v1/projects/${projectId}/overview`, {}, accessToken),
+    queryKey: ['project-overview', projectId, accessToken],
   });
 
   if (query.isLoading) return <Spin className="route-loading" />;
@@ -177,6 +193,60 @@ export function ProjectDetailPage() {
       visible: canManage,
     },
   ];
+  const overviewMetrics = [
+    {
+      detail: 'Active project members',
+      icon: <TeamOutlined />,
+      label: 'Members',
+      path: `/projects/${project.id}/members`,
+      value: overview.data?.members ?? 0,
+      visible: hasProjectPermission(access.data, 'members:manage'),
+    },
+    {
+      detail: 'Current contact records',
+      icon: <ContactsOutlined />,
+      label: 'Contacts',
+      path: `/projects/${project.id}/contacts`,
+      value: overview.data?.contacts ?? 0,
+      visible: hasProjectPermission(access.data, 'contacts:read'),
+    },
+    {
+      detail: overview.data
+        ? `${overview.data.channels.active ?? 0} connected · ${overview.data.channels.errors ?? 0} need attention`
+        : 'Connection status',
+      icon: <SendOutlined />,
+      label: 'Channels',
+      path: `/projects/${project.id}/channels`,
+      value: overview.data?.channels.total ?? 0,
+      visible: hasProjectPermission(access.data, 'channels:read'),
+    },
+    {
+      detail: 'Published and ready to run',
+      icon: <RobotOutlined />,
+      label: 'Automations',
+      path: `/projects/${project.id}/scenarios`,
+      value: overview.data?.publishedAutomations ?? 0,
+      visible: hasProjectPermission(access.data, 'automation:read'),
+    },
+    {
+      detail: 'Scheduled, running or paused',
+      icon: <SendOutlined />,
+      label: 'Active broadcasts',
+      path: `/projects/${project.id}/broadcasts`,
+      value: overview.data?.activeBroadcasts ?? 0,
+      visible: hasProjectPermission(access.data, 'broadcasts:read'),
+    },
+    {
+      detail: overview.data
+        ? `${overview.data.operationsNeedingAttention.failed} failed · ${overview.data.operationsNeedingAttention.unknown} need confirmation`
+        : 'Failed or unconfirmed work',
+      icon: <ToolOutlined />,
+      label: 'Need attention',
+      path: `/projects/${project.id}/operations`,
+      value: overview.data?.operationsNeedingAttention.total ?? 0,
+      visible: true,
+    },
+  ];
 
   return (
     <section>
@@ -226,22 +296,68 @@ export function ProjectDetailPage() {
         ) : null}
       </div>
 
-      <Row className="balanced-card-row" gutter={[18, 18]}>
-        <Col xs={24}>
-          <Card title="Project details">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="Status">
-                <Tag color={project.status === 'ACTIVE' ? 'green' : 'orange'}>{project.status}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Timezone">{project.timezone}</Descriptions.Item>
-              <Descriptions.Item label="Locale">{localeLabel(project.locale)}</Descriptions.Item>
-              <Descriptions.Item label="Description">
-                {project.description || 'No description'}
-              </Descriptions.Item>
-            </Descriptions>
-          </Card>
-        </Col>
-      </Row>
+      <Card className="project-overview-card" title="Project overview">
+        {overview.isError ? (
+          <Alert
+            message={getUserErrorMessage(overview.error, 'Project overview could not be loaded.')}
+            showIcon
+            type="error"
+          />
+        ) : (
+          <div className="project-overview-layout">
+            <div className="project-overview-details">
+              <div className="project-overview-status-row">
+                <div>
+                  <span>Workspace status</span>
+                  <Tag color={project.status === 'ACTIVE' ? 'green' : 'orange'}>
+                    {project.status}
+                  </Tag>
+                </div>
+                <small>{project.slug}</small>
+              </div>
+              <Typography.Paragraph>
+                {project.description || 'No project description has been added yet.'}
+              </Typography.Paragraph>
+              <div className="project-overview-facts">
+                <div>
+                  <span>Timezone</span>
+                  <strong>{project.timezone}</strong>
+                </div>
+                <div>
+                  <span>Language</span>
+                  <strong>{localeLabel(project.locale)}</strong>
+                </div>
+                <div>
+                  <span>Created</span>
+                  <strong>
+                    {overview.data ? new Date(overview.data.createdAt).toLocaleDateString() : '—'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Last updated</span>
+                  <strong>
+                    {overview.data ? new Date(overview.data.updatedAt).toLocaleString() : '—'}
+                  </strong>
+                </div>
+              </div>
+            </div>
+            <div className="project-overview-metrics">
+              {overviewMetrics
+                .filter((metric) => metric.visible)
+                .map((metric) => (
+                  <Link className="project-overview-metric" key={metric.label} to={metric.path}>
+                    <span className="project-overview-metric-icon">{metric.icon}</span>
+                    <span>
+                      <strong>{overview.isLoading ? '—' : metric.value}</strong>
+                      <b>{metric.label}</b>
+                      <small>{metric.detail}</small>
+                    </span>
+                  </Link>
+                ))}
+            </div>
+          </div>
+        )}
+      </Card>
 
       <div className="page-heading project-sections-heading">
         <div>

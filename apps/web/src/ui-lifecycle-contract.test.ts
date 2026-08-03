@@ -143,18 +143,30 @@ describe('workspace lifecycle UI contracts', () => {
     expect(users).toContain('password-reset-link');
     expect(health).toContain('System health');
     expect(health).toContain('Everything is working normally');
+    expect(health).toContain('Older operation records');
+    expect(health).toContain('operations?${query}');
     expect(health).not.toContain('No Sentry dependency');
+  });
+
+  it('keeps shared controls and status colors visually consistent', () => {
+    const styles = source('./styles.css');
+    expect(styles).toContain('.ant-picker:not(.ant-picker-disabled) input');
+    expect(styles).toContain('cursor: pointer !important');
+    expect(styles).toContain('.ant-input-affix-wrapper > input.ant-input');
+    expect(styles).toContain('.ant-input-search .ant-input-search-button');
+    expect(styles).toContain('.ant-tag.ant-tag-success');
+    expect(styles).toContain('background: #edf9f2 !important');
   });
 
   it('keeps automation activity and action controls human-facing', () => {
     const activity = source('./pages/automation-activity-page.tsx');
-    const navigation = source('./navigation.tsx');
     const roles = source('./role-manager.tsx');
     const users = source('./pages/users-page.tsx');
     expect(activity).toContain('Contact journeys');
     expect(activity).toContain('Why runs stopped or paused');
     expect(activity).toContain('screens.lg === false ? { scroll: { x: 1_050 } } : {}');
-    expect(navigation).toContain("key: 'automation-activity'");
+    expect(source('./pages/project-detail-page.tsx')).toContain("label: 'Automation activity'");
+    expect(source('./navigation.tsx')).not.toContain("key: 'automation-activity'");
     expect(roles).toContain('humanizePermission');
     expect(users).not.toContain('<Tooltip');
   });

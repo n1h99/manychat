@@ -10,6 +10,7 @@ import {
 import { Alert, Button, Card, Col, Row, Table, Tabs, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
@@ -27,8 +28,29 @@ interface Snapshot {
   dependencies: Record<string, { latencyMs?: number; status: 'down' | 'up' }>;
   generatedAt: string;
   operationCounts: null | Record<string, number>;
+  operationHistory: null | {
+    older: OperationTotals;
+    projects: ProjectOperationHistory[];
+    recent: OperationTotals;
+    windowHours: number;
+  };
   overallStatus: 'ATTENTION' | 'DEGRADED' | 'HEALTHY';
   queues: Record<string, { active: number; delayed: number; failed: number; waiting: number }>;
+}
+interface OperationTotals {
+  inboxTerminal: number;
+  outboxFailed: number;
+  outboxUnknown: number;
+}
+interface ProjectOperationHistory {
+  olderFailed: number;
+  olderInbox: number;
+  olderUnknown: number;
+  projectId: string;
+  projectName: string;
+  recentFailed: number;
+  recentInbox: number;
+  recentUnknown: number;
 }
 interface GlobalAudit {
   action: string;
@@ -66,6 +88,10 @@ export function SystemHealthPage() {
     queryKey: ['system-audit', auditPage, accessToken],
   });
   const snapshot = health.data;
+  const history = snapshot?.operationHistory;
+  const olderOperationCount = history
+    ? history.older.inboxTerminal + history.older.outboxFailed + history.older.outboxUnknown
+    : 0;
   return (
     <section className="system-health-page">
       <div className="page-heading-row">
@@ -148,7 +174,7 @@ export function SystemHealthPage() {
           items={[
             {
               key: 'alerts',
-              label: `Alerts (${snapshot?.alerts.length ?? 0})`,
+              label: `Current alerts (${snapshot?.alerts.length ?? 0})`,
               children: (
                 <div className="system-alert-list">
                   {snapshot?.alerts.length ? (
@@ -164,11 +190,18 @@ export function SystemHealthPage() {
                             <WarningOutlined />
                           )}
                         </span>
-                        <div>
+                        <div className="health-alert-copy">
                           <strong>{humanizeHealthAlert(item.code, item.title)}</strong>
                           <p>{humanizeHealthDescription(item.code, item.description)}</p>
+                          <OperationProjectLinks
+                            alertCode={item.code}
+                            projects={history?.projects ?? []}
+                            window="recent"
+                          />
                         </div>
-                        {item.count === undefined ? null : <Tag>{item.count} affected</Tag>}
+                        {item.count === undefined ? null : (
+                          <Tag>{healthCountLabel(item.code, item.count)}</Tag>
+                        )}
                       </div>
                     ))
                   ) : (
@@ -180,6 +213,22 @@ export function SystemHealthPage() {
                       </div>
                     </div>
                   )}
+                  {olderOperationCount > 0 ? (
+                    <div className="health-history-card">
+                      <div className="health-history-heading">
+                        <div>
+                          <strong>Older operation records</strong>
+                          <p>
+                            {olderOperationCount} failed or unconfirmed operations are older than{' '}
+                            {history?.windowHours ?? 24} hours. They remain available for review but
+                            do not change the current platform status.
+                          </p>
+                        </div>
+                        <Tag>{olderOperationCount} operations</Tag>
+                      </div>
+                      <OperationProjectLinks projects={history?.projects ?? []} window="older" />
+                    </div>
+                  ) : null}
                 </div>
               ),
             },
@@ -273,11 +322,77 @@ export function SystemHealthPage() {
   );
 }
 
+function OperationProjectLinks({
+  alertCode,
+  projects,
+  window,
+}: {
+  alertCode?: string;
+  projects: ProjectOperationHistory[];
+  window: 'older' | 'recent';
+}) {
+  const links = projects.flatMap((project) => {
+    const failed = window === 'recent' ? project.recentFailed : project.olderFailed;
+    const inbox = window === 'recent' ? project.recentInbox : project.olderInbox;
+    const unknown = window === 'recent' ? project.recentUnknown : project.olderUnknown;
+    const candidates = [
+      {
+        count: failed,
+        key: 'failed',
+        label: 'failed',
+        query: 'source=OUTBOX&status=FAILED',
+        visible: !alertCode || alertCode === 'OUTBOX_FAILED',
+      },
+      {
+        count: unknown,
+        key: 'unknown',
+        label: 'unconfirmed',
+        query: 'source=OUTBOX&status=UNKNOWN',
+        visible: !alertCode || alertCode === 'OUTBOX_UNKNOWN',
+      },
+      {
+        count: inbox,
+        key: 'inbox',
+        label: 'incoming',
+        query: 'source=INBOX',
+        visible: !alertCode || alertCode === 'INBOX_TERMINAL',
+      },
+    ];
+    return candidates
+      .filter((candidate) => candidate.visible && candidate.count > 0)
+      .map((candidate) => ({ ...candidate, project }));
+  });
+  if (!links.length) return null;
+  return (
+    <div className="health-project-links">
+      {links.map(({ count, key, label, project, query }) => (
+        <Link
+          key={`${project.projectId}-${key}`}
+          to={`/projects/${project.projectId}/operations?${query}`}
+        >
+          <span>{project.projectName}</span>
+          <b>
+            {count} {label}
+          </b>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function overallStatusLabel(status: Snapshot['overallStatus'] | undefined): string {
   if (!status) return 'Checking the platform…';
   if (status === 'HEALTHY') return 'Everything is working normally';
   if (status === 'ATTENTION') return 'A few items need attention';
   return 'Some services need attention';
+}
+
+function healthCountLabel(code: string, count: number): string {
+  if (code === 'CHANNEL_ERROR') return `${count} channels`;
+  if (code === 'CRM_ERROR') return `${count} connections`;
+  if (code === 'PASSWORD_RESET_REQUESTS') return `${count} requests`;
+  if (code.startsWith('QUEUE_')) return `${count} jobs`;
+  return `${count} operations`;
 }
 
 function overallStatusDescription(status: Snapshot['overallStatus'] | undefined): string {

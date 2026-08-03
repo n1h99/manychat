@@ -72,6 +72,12 @@ export class ProjectsController {
     return { data: await this.projects.getAccess(projectId, request.auth!), meta: {} };
   }
 
+  @Get(':projectId/overview')
+  @RequireProjectPermission('project:read')
+  async overview(@Param('projectId') projectId: string, @Req() request: AuthenticatedRequest) {
+    return { data: await this.projects.overview(projectId, request.auth!), meta: {} };
+  }
+
   @Get(':projectId')
   async get(@Param('projectId') projectId: string, @Req() request: AuthenticatedRequest) {
     return { data: await this.projects.get(projectId, request.auth!), meta: {} };

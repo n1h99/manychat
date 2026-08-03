@@ -56,67 +56,83 @@ export function ProjectSettingsPage() {
           <Tag color={data.status === 'ACTIVE' ? 'green' : 'orange'}>{data.status}</Tag>
         ) : null}
       </div>
-      <Card className="settings-card" title="General">
-        {data ? (
-          <Form
-            form={form}
-            initialValues={data}
-            layout="vertical"
-            onFinish={async (values) => {
-              try {
-                await apiRequest(
-                  `/api/v1/projects/${projectId}`,
-                  { body: JSON.stringify(values), method: 'PATCH' },
-                  accessToken,
-                );
-                await client.invalidateQueries({ queryKey: ['project', projectId] });
-                void message.success('Project settings saved.');
-              } catch (cause) {
-                void message.error(
-                  getUserErrorMessage(cause, 'Project settings could not be saved.'),
-                );
-              }
-            }}
-          >
-            <Form.Item label="Project name" name="name" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item label="Project slug">
-              <Input disabled value={data.slug} />
-            </Form.Item>
-            <div className="settings-form-grid">
-              <Form.Item label="Timezone" name="timezone" rules={[{ required: true }]}>
-                <Input placeholder="Europe/Berlin" />
+      <div className={`project-settings-grid${canClone ? '' : ' is-single'}`}>
+        <Card className="settings-card settings-card--general" title="General">
+          {data ? (
+            <Form
+              form={form}
+              initialValues={data}
+              layout="vertical"
+              onFinish={async (values) => {
+                try {
+                  await apiRequest(
+                    `/api/v1/projects/${projectId}`,
+                    { body: JSON.stringify(values), method: 'PATCH' },
+                    accessToken,
+                  );
+                  await client.invalidateQueries({ queryKey: ['project', projectId] });
+                  void message.success('Project settings saved.');
+                } catch (cause) {
+                  void message.error(
+                    getUserErrorMessage(cause, 'Project settings could not be saved.'),
+                  );
+                }
+              }}
+            >
+              <Form.Item label="Project name" name="name" rules={[{ required: true }]}>
+                <Input />
               </Form.Item>
-              <Form.Item label="Locale" name="locale" rules={[{ required: true }]}>
-                <Select
-                  options={[
-                    { label: 'English', value: 'en' },
-                    { label: 'Русский', value: 'ru' },
-                  ]}
-                />
+              <Form.Item label="Project slug">
+                <Input disabled value={data.slug} />
               </Form.Item>
-            </div>
-            <Form.Item label="Description" name="description">
-              <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} />
-            </Form.Item>
-            <Button htmlType="submit" icon={<SaveOutlined />} type="primary">
-              Save settings
-            </Button>
-          </Form>
-        ) : null}
-      </Card>
-      {canClone ? (
-        <Card className="settings-card settings-card--soft" title="Clone project">
-          <Typography.Paragraph type="secondary">
-            The clone receives general settings and custom roles. Contacts, channels, credentials,
-            messages, automation secrets and history are never copied.
-          </Typography.Paragraph>
-          <Button icon={<CopyOutlined />} onClick={() => setCloneOpen(true)}>
-            Create safe clone
-          </Button>
+              <div className="settings-form-grid">
+                <Form.Item label="Timezone" name="timezone" rules={[{ required: true }]}>
+                  <Input placeholder="Europe/Berlin" />
+                </Form.Item>
+                <Form.Item label="Locale" name="locale" rules={[{ required: true }]}>
+                  <Select
+                    options={[
+                      { label: 'English', value: 'en' },
+                      { label: 'Русский', value: 'ru' },
+                    ]}
+                  />
+                </Form.Item>
+              </div>
+              <Form.Item label="Description" name="description">
+                <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} />
+              </Form.Item>
+              <Button htmlType="submit" icon={<SaveOutlined />} type="primary">
+                Save settings
+              </Button>
+            </Form>
+          ) : null}
         </Card>
-      ) : null}
+        {canClone ? (
+          <Card className="settings-card settings-card--soft" title="Clone project">
+            <div className="clone-project-card-content">
+              <span className="clone-project-icon">
+                <CopyOutlined />
+              </span>
+              <div>
+                <Typography.Title level={4}>Start from this workspace</Typography.Title>
+                <Typography.Paragraph type="secondary">
+                  Copy the project settings and custom roles into a clean draft workspace.
+                </Typography.Paragraph>
+              </div>
+              <div className="clone-project-boundary">
+                <strong>Customer data stays separate</strong>
+                <span>
+                  Contacts, channels, credentials, messages, automation secrets and history are
+                  never copied.
+                </span>
+              </div>
+              <Button icon={<CopyOutlined />} onClick={() => setCloneOpen(true)} type="primary">
+                Create safe clone
+              </Button>
+            </div>
+          </Card>
+        ) : null}
+      </div>
       <Modal
         destroyOnHidden
         footer={null}
