@@ -5,6 +5,7 @@ import {
   HttpCode,
   Inject,
   Param,
+  Delete,
   Patch,
   Post,
   Req,
@@ -97,6 +98,16 @@ export class UsersController {
     @Req() request: AuthenticatedRequest,
   ): Promise<void> {
     await this.users.disable(userId, request.auth!, this.context(request));
+  }
+
+  @Delete(':userId')
+  @HttpCode(204)
+  @RequireGlobalPermission('users:manage')
+  async delete(
+    @Param('userId') userId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.users.delete(userId, request.auth!, this.context(request));
   }
 
   @Post(':userId/revoke-sessions')

@@ -220,6 +220,28 @@ export class UsersService {
     });
   }
 
+  async delete(userId: string, actor: AuthenticatedUser, context: RequestSecurityContext) {
+    const user = await this.requireUser(userId);
+    await this.database.client.$transaction(async (transaction) => {
+      await transaction.user.update({ data: { status: 'DISABLED' }, where: { id: userId } });
+      await transaction.session.updateMany({
+        data: { revokedAt: new Date(), status: 'REVOKED' },
+        where: { status: 'ACTIVE', userId },
+      });
+    });
+    await this.audit.record({
+      action: 'user.deleted',
+      actorEmailSnapshot: actor.email,
+      actorUserId: actor.userId,
+      beforeSafeJson: { status: user.status },
+      correlationId: context.correlationId,
+      entityId: userId,
+      entityType: 'User',
+      ip: context.ip,
+      userAgent: context.userAgent,
+    });
+  }
+
   async revokeSessions(userId: string, actor: AuthenticatedUser, context: RequestSecurityContext) {
     await this.requireUser(userId);
     await this.auth.revokeAllSessions(userId);

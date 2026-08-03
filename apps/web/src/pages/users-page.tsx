@@ -5,6 +5,7 @@ import {
   LinkOutlined,
   MailOutlined,
   PlusOutlined,
+  DeleteOutlined,
   SafetyCertificateOutlined,
   StopOutlined,
   UserOutlined,
@@ -75,6 +76,7 @@ export function UsersPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow>();
   const [disableTarget, setDisableTarget] = useState<UserRow>();
+  const [deleteTarget, setDeleteTarget] = useState<UserRow>();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [secureLink, setSecureLink] = useState<{ expiresAt: string; title: string; url: string }>();
   const [form] = Form.useForm<UserFormValues>();
@@ -317,10 +319,17 @@ export function UsersPage() {
                       icon={<StopOutlined />}
                       onClick={() => setDisableTarget(row)}
                     />
+                    <Button
+                      aria-label={`Delete ${fullName(row)}`}
+                      danger
+                      disabled={row.status !== 'ACTIVE'}
+                      icon={<DeleteOutlined />}
+                      onClick={() => setDeleteTarget(row)}
+                    />
                   </Space>
                 ) : null,
               title: 'Actions',
-              width: 208,
+              width: 246,
             },
           ]}
           dataSource={users.data ?? []}
@@ -608,9 +617,47 @@ export function UsersPage() {
                   getUserErrorMessage(error, 'User account could not be disabled.'),
                 );
               }
+              }}
+            >
+              Disable account
+            </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
+        onCancel={() => setDeleteTarget(undefined)}
+        open={Boolean(deleteTarget)}
+        title="Delete user account?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {deleteTarget
+            ? `${fullName(deleteTarget)} will be disabled and all active sessions will be revoked.`
+            : ''}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setDeleteTarget(undefined)}>Cancel</Button>
+          <Button
+            danger
+            onClick={async () => {
+              if (!deleteTarget) return;
+              try {
+                await apiRequest(
+                  `/api/v1/users/${deleteTarget.id}`,
+                  { method: 'DELETE' },
+                  accessToken,
+                );
+                setDeleteTarget(undefined);
+                void message.success('User account deleted.');
+                await refresh();
+              } catch (error) {
+                void message.error(getUserErrorMessage(error, 'User account could not be deleted.'));
+              }
             }}
           >
-            Disable account
+            Delete account
           </Button>
         </div>
       </Modal>
