@@ -565,13 +565,18 @@
 }
 
 .health-overview {
-  align-items: center;
   background: #f5f9f7;
   border-color: #dfece5;
   border-radius: 18px;
-  display: flex;
-  justify-content: space-between;
   margin-bottom: 18px;
+}
+
+.health-overview .ant-card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+  padding: 22px 24px;
 }
 
 .health-overview--attention {
@@ -592,6 +597,13 @@
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
+}
+
+.health-overview-updated {
+  padding-top: 2px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .health-overview-icon {
@@ -616,6 +628,18 @@
   background: rgba(220, 38, 38, 0.08);
 }
 
+.health-dependency-grid {
+  margin-bottom: 18px;
+}
+
+.health-dependency-grid .ant-col {
+  display: flex;
+}
+
+.health-dependency-card {
+  width: 100%;
+}
+
 .health-dependency-card .ant-card-body {
   display: grid;
   gap: 5px;
@@ -630,7 +654,7 @@
   margin-bottom: 7px;
 }
 
-.health-dependency-heading > span {
+.health-dependency-icon {
   display: grid;
   width: 32px;
   height: 32px;
@@ -638,6 +662,13 @@
   background: var(--primary-soft);
   border-radius: 10px;
   place-items: center;
+}
+
+.health-dependency-name {
+  min-width: 0;
+  color: var(--text-soft);
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .health-dependency-heading i {
@@ -660,6 +691,32 @@
 .health-dependency-card small {
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.health-workspace-card {
+  overflow: hidden;
+  border-color: #e5ebf3;
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.health-workspace-card > .ant-card-body {
+  padding: 0;
+}
+
+.health-workspace-card .ant-tabs-nav {
+  margin: 0;
+  padding: 0 20px;
+  background: #fbfcfe;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.health-workspace-card .ant-tabs-nav::before {
+  border-bottom: 0;
+}
+
+.health-workspace-card .ant-tabs-content-holder {
+  padding: 18px 20px 20px;
 }
 
 .system-alert-list {
@@ -740,6 +797,43 @@
 .health-all-clear span {
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.activity-project-picker {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.activity-project-picker button {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  color: var(--text-soft);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.activity-project-picker button:hover,
+.activity-project-picker button:focus-visible {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: rgba(15, 118, 110, 0.25);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .member-invitations {
@@ -3322,6 +3416,38 @@ button:disabled,
 }
 
 @media (max-width: 768px) {
+  .health-overview .ant-card-body {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .health-overview-copy {
+    align-items: flex-start;
+  }
+
+  .health-overview-updated {
+    padding-top: 0;
+    text-align: left;
+  }
+
+  .health-alert-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .health-alert-card .ant-tag {
+    grid-column: 2;
+    width: max-content;
+  }
+
+  .health-workspace-card .ant-tabs-nav {
+    padding: 0 14px;
+  }
+
+  .health-workspace-card .ant-tabs-content-holder {
+    padding: 14px;
+  }
+
   .activity-summary-grid,
   .activity-filter-card .ant-card-body,
   .activity-insights-grid,

@@ -654,6 +654,12 @@ managers cannot enumerate another lead's schedule.
   affected node or connection and server race errors remain human-readable.
 - `CLEAR_CUSTOM_FIELD` clears one contact value transactionally from JSON and
   typed projections without deleting the field definition.
+- Automation Activity remains visible directly below Projects outside a project
+  workspace, resolves only projects with `automation:read`, and avoids a desktop
+  table scrollbar while retaining bounded horizontal scrolling on small screens.
+- System Health uses a responsive status summary, distinct dependency cards and
+  a contained alerts/background-work/audit workspace with operator-facing service
+  names and recovery guidance.
 
 ## Platform operations completion — implemented
 

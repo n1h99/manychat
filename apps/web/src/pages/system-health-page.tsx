@@ -1,5 +1,7 @@
 import {
+  ApartmentOutlined,
   CheckCircleOutlined,
+  CloudServerOutlined,
   CloseCircleOutlined,
   DatabaseOutlined,
   ReloadOutlined,
@@ -111,20 +113,23 @@ export function SystemHealthPage() {
             </Typography.Text>
           </div>
         </div>
-        <Typography.Text type="secondary">
+        <Typography.Text className="health-overview-updated" type="secondary">
           Updated {snapshot ? new Date(snapshot.generatedAt).toLocaleString() : '—'}
         </Typography.Text>
       </Card>
-      <Row gutter={[16, 16]}>
+      <Row className="health-dependency-grid" gutter={[16, 16]}>
         {Object.entries(snapshot?.dependencies ?? {}).map(([name, dependency]) => (
           <Col key={name} lg={8} xs={24}>
             <Card className="health-dependency-card">
               <div className="health-dependency-heading">
-                <span>
-                  <DatabaseOutlined />
-                </span>
-                <Typography.Text>{dependencyLabel(name)}</Typography.Text>
-                <i className={dependency.status === 'up' ? 'is-up' : 'is-down'} />
+                <span className="health-dependency-icon">{dependencyIcon(name)}</span>
+                <Typography.Text className="health-dependency-name">
+                  {dependencyLabel(name)}
+                </Typography.Text>
+                <i
+                  aria-label={dependency.status === 'up' ? 'Working normally' : 'Unavailable'}
+                  className={dependency.status === 'up' ? 'is-up' : 'is-down'}
+                />
               </div>
               <strong>{dependency.status === 'up' ? 'Working normally' : 'Unavailable'}</strong>
               <small>
@@ -138,126 +143,132 @@ export function SystemHealthPage() {
           </Col>
         ))}
       </Row>
-      <Tabs
-        items={[
-          {
-            key: 'alerts',
-            label: `Alerts (${snapshot?.alerts.length ?? 0})`,
-            children: (
-              <div className="system-alert-list">
-                {snapshot?.alerts.length ? (
-                  snapshot.alerts.map((item) => (
-                    <div
-                      className={`health-alert-card ${item.severity === 'CRITICAL' ? 'is-critical' : 'is-warning'}`}
-                      key={item.code}
-                    >
-                      <span className="health-alert-icon">
-                        {item.severity === 'CRITICAL' ? (
-                          <CloseCircleOutlined />
-                        ) : (
-                          <WarningOutlined />
-                        )}
-                      </span>
-                      <div>
-                        <strong>{humanizeHealthAlert(item.code, item.title)}</strong>
-                        <p>{humanizeHealthDescription(item.code, item.description)}</p>
+      <Card className="health-workspace-card">
+        <Tabs
+          items={[
+            {
+              key: 'alerts',
+              label: `Alerts (${snapshot?.alerts.length ?? 0})`,
+              children: (
+                <div className="system-alert-list">
+                  {snapshot?.alerts.length ? (
+                    snapshot.alerts.map((item) => (
+                      <div
+                        className={`health-alert-card ${item.severity === 'CRITICAL' ? 'is-critical' : 'is-warning'}`}
+                        key={item.code}
+                      >
+                        <span className="health-alert-icon">
+                          {item.severity === 'CRITICAL' ? (
+                            <CloseCircleOutlined />
+                          ) : (
+                            <WarningOutlined />
+                          )}
+                        </span>
+                        <div>
+                          <strong>{humanizeHealthAlert(item.code, item.title)}</strong>
+                          <p>{humanizeHealthDescription(item.code, item.description)}</p>
+                        </div>
+                        {item.count === undefined ? null : <Tag>{item.count} affected</Tag>}
                       </div>
-                      {item.count === undefined ? null : <Tag>{item.count} affected</Tag>}
+                    ))
+                  ) : (
+                    <div className="health-all-clear">
+                      <CheckCircleOutlined />
+                      <div>
+                        <strong>No active platform alerts</strong>
+                        <span>All monitored services and operation journals look normal.</span>
+                      </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="health-all-clear">
-                    <CheckCircleOutlined />
-                    <div>
-                      <strong>No active platform alerts</strong>
-                      <span>All monitored services and operation journals look normal.</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ),
-          },
-          {
-            key: 'queues',
-            label: 'Background work',
-            children: (
-              <Table
-                dataSource={Object.entries(snapshot?.queues ?? {}).map(([name, counts]) => ({
-                  name,
-                  ...counts,
-                }))}
-                pagination={false}
-                rowKey="name"
-                columns={[
-                  {
-                    dataIndex: 'name',
-                    render: (value: string) => <strong>{queueLabel(value)}</strong>,
-                    title: 'Work type',
-                  },
-                  { dataIndex: 'active', title: 'Running now' },
-                  { dataIndex: 'waiting', title: 'Waiting' },
-                  { dataIndex: 'delayed', title: 'Scheduled for later' },
-                  {
-                    dataIndex: 'failed',
-                    render: (value: number) => <Tag color={value ? 'red' : 'default'}>{value}</Tag>,
-                    title: 'Need attention',
-                  },
-                ]}
-              />
-            ),
-          },
-          {
-            key: 'audit',
-            label: 'Account activity',
-            children: (
-              <Table<GlobalAudit>
-                dataSource={audit.data?.items ?? []}
-                loading={audit.isLoading}
-                pagination={{
-                  current: auditPage,
-                  onChange: setAuditPage,
-                  pageSize: 50,
-                  showSizeChanger: false,
-                  total: audit.data?.total ?? 0,
-                }}
-                rowKey="id"
-                columns={[
-                  {
-                    dataIndex: 'action',
-                    render: (value) => <strong>{humanizeAuditAction(value)}</strong>,
-                    title: 'What happened',
-                  },
-                  {
-                    dataIndex: 'actorEmailSnapshot',
-                    render: (value, row) => value ?? humanizeEntity(row.actorType),
-                    title: 'Who',
-                  },
-                  {
-                    dataIndex: 'projectNameSnapshot',
-                    render: (value) => value ?? 'Entire system',
-                    title: 'Where',
-                  },
-                  {
-                    dataIndex: 'entityType',
-                    render: (value) => humanizeEntity(value),
-                    title: 'Item',
-                  },
-                  {
-                    dataIndex: 'reason',
-                    render: (value) => humanizeReason(value),
-                    title: 'Why',
-                  },
-                  {
-                    dataIndex: 'createdAt',
-                    render: (value) => new Date(value).toLocaleString(),
-                    title: 'When',
-                  },
-                ]}
-              />
-            ),
-          },
-        ]}
-      />
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: 'queues',
+              label: 'Background work',
+              children: (
+                <Table
+                  dataSource={Object.entries(snapshot?.queues ?? {}).map(([name, counts]) => ({
+                    name,
+                    ...counts,
+                  }))}
+                  pagination={false}
+                  rowKey="name"
+                  scroll={{ x: 720 }}
+                  columns={[
+                    {
+                      dataIndex: 'name',
+                      render: (value: string) => <strong>{queueLabel(value)}</strong>,
+                      title: 'Work type',
+                    },
+                    { dataIndex: 'active', title: 'Running now' },
+                    { dataIndex: 'waiting', title: 'Waiting' },
+                    { dataIndex: 'delayed', title: 'Scheduled for later' },
+                    {
+                      dataIndex: 'failed',
+                      render: (value: number) => (
+                        <Tag color={value ? 'red' : 'default'}>{value}</Tag>
+                      ),
+                      title: 'Need attention',
+                    },
+                  ]}
+                />
+              ),
+            },
+            {
+              key: 'audit',
+              label: 'Account activity',
+              children: (
+                <Table<GlobalAudit>
+                  dataSource={audit.data?.items ?? []}
+                  loading={audit.isLoading}
+                  pagination={{
+                    current: auditPage,
+                    onChange: setAuditPage,
+                    pageSize: 50,
+                    showSizeChanger: false,
+                    total: audit.data?.total ?? 0,
+                  }}
+                  rowKey="id"
+                  scroll={{ x: 980 }}
+                  columns={[
+                    {
+                      dataIndex: 'action',
+                      render: (value) => <strong>{humanizeAuditAction(value)}</strong>,
+                      title: 'What happened',
+                    },
+                    {
+                      dataIndex: 'actorEmailSnapshot',
+                      render: (value, row) => value ?? humanizeEntity(row.actorType),
+                      title: 'Who',
+                    },
+                    {
+                      dataIndex: 'projectNameSnapshot',
+                      render: (value) => value ?? 'Entire system',
+                      title: 'Where',
+                    },
+                    {
+                      dataIndex: 'entityType',
+                      render: (value) => humanizeEntity(value),
+                      title: 'Item',
+                    },
+                    {
+                      dataIndex: 'reason',
+                      render: (value) => humanizeReason(value),
+                      title: 'Why',
+                    },
+                    {
+                      dataIndex: 'createdAt',
+                      render: (value) => new Date(value).toLocaleString(),
+                      title: 'When',
+                    },
+                  ]}
+                />
+              ),
+            },
+          ]}
+        />
+      </Card>
     </section>
   );
 }
@@ -286,6 +297,12 @@ function dependencyLabel(name: string): string {
   return labels[name] ?? 'Platform service';
 }
 
+function dependencyIcon(name: string) {
+  if (name === 'database') return <DatabaseOutlined />;
+  if (name === 'redis') return <ApartmentOutlined />;
+  return <CloudServerOutlined />;
+}
+
 function queueLabel(name: string): string {
   const labels: Record<string, string> = {
     inbound: 'Incoming Telegram updates',
@@ -297,6 +314,9 @@ function queueLabel(name: string): string {
 
 function humanizeHealthAlert(code: string, fallback: string): string {
   const labels: Record<string, string> = {
+    DATABASE_UNAVAILABLE: 'Data storage is unavailable',
+    REDIS_UNAVAILABLE: 'Background queueing is unavailable',
+    WORKER_UNAVAILABLE: 'Background processing is unavailable',
     CHANNEL_ERROR: 'One or more channels need attention',
     CRM_ERROR: 'One or more CRM connections need attention',
     INBOX_TERMINAL: 'Some incoming updates could not be processed',
@@ -304,11 +324,18 @@ function humanizeHealthAlert(code: string, fallback: string): string {
     OUTBOX_UNKNOWN: 'Some outgoing results need confirmation',
     PASSWORD_RESET_REQUESTS: 'Password reset requests are waiting',
   };
+  if (code.startsWith('QUEUE_FAILED_')) return 'Some background work could not be completed';
+  if (code.startsWith('QUEUE_BACKLOG_')) return 'Background work is taking longer than usual';
   return labels[code] ?? fallback.replaceAll('BullMQ', 'background');
 }
 
 function humanizeHealthDescription(code: string, fallback: string): string {
   const descriptions: Record<string, string> = {
+    DATABASE_UNAVAILABLE: 'The platform cannot reach its data storage. Check the database service.',
+    REDIS_UNAVAILABLE:
+      'Scheduled and queued work is temporarily unavailable. Check the queue service.',
+    WORKER_UNAVAILABLE:
+      'Background tasks are not responding. Check the worker service and restart it if needed.',
     CHANNEL_ERROR: 'Open the affected project and review its channel connection.',
     CRM_ERROR: 'Open the affected project and review its CRM connection.',
     INBOX_TERMINAL: 'Open the project Operations page to review the affected updates safely.',
@@ -317,5 +344,9 @@ function humanizeHealthDescription(code: string, fallback: string): string {
     OUTBOX_UNKNOWN: 'Confirm the provider result in Operations before attempting another action.',
     PASSWORD_RESET_REQUESTS: 'Open Users to create the requested one-time reset links.',
   };
+  if (code.startsWith('QUEUE_FAILED_'))
+    return 'Open the relevant project Operations page to review and safely retry failed work.';
+  if (code.startsWith('QUEUE_BACKLOG_'))
+    return 'Check that background processing is online and working through the queue.';
   return descriptions[code] ?? fallback.replaceAll('BullMQ', 'background processing');
 }

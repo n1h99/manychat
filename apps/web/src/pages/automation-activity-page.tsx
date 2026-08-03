@@ -4,6 +4,7 @@ import {
   Card,
   Drawer,
   Empty,
+  Grid,
   Input,
   Select,
   Space,
@@ -56,6 +57,7 @@ const statusColors: Record<AutomationActivityStatus, string> = {
 
 export function AutomationActivityPage() {
   const { projectId } = useParams();
+  const screens = Grid.useBreakpoint();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<ActivityItem>();
   const [filters, setFilters] = useState<AutomationActivityFilters>({
@@ -239,7 +241,7 @@ export function AutomationActivityPage() {
             total: data?.total ?? 0,
           }}
           rowKey="id"
-          scroll={{ x: 1_100 }}
+          {...(screens.lg === false ? { scroll: { x: 1_050 } } : {})}
         />
       </Card>
 

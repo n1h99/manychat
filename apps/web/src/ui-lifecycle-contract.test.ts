@@ -148,10 +148,13 @@ describe('workspace lifecycle UI contracts', () => {
 
   it('keeps automation activity and action controls human-facing', () => {
     const activity = source('./pages/automation-activity-page.tsx');
+    const navigation = source('./navigation.tsx');
     const roles = source('./role-manager.tsx');
     const users = source('./pages/users-page.tsx');
     expect(activity).toContain('Contact journeys');
     expect(activity).toContain('Why runs stopped or paused');
+    expect(activity).toContain('screens.lg === false ? { scroll: { x: 1_050 } } : {}');
+    expect(navigation).toContain("key: 'automation-activity'");
     expect(roles).toContain('humanizePermission');
     expect(users).not.toContain('<Tooltip');
   });

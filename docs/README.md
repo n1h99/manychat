@@ -26,11 +26,13 @@ v3.3, platform operations completion and Automation Activity.
   queue pressure, durable terminal-operation counts and global audit history.
   Alerts are derived from authoritative state. Sentry is not used and Railway
   backup configuration remains operator-owned.
-- Every project with `automation:read` exposes Automation Activity in the
-  sidebar. It provides paginated contact journeys, current steps, safe reasons,
-  per-step timelines, exact status totals and bounded trend/scenario/drop-off
-  charts from existing execution journals. It never selects contact variables,
-  event payloads or raw provider errors.
+- Automation Activity is a permanent sidebar destination immediately below
+  Projects. It opens the current authorized project directly, opens the only
+  available project directly, or asks the operator to choose among authorized
+  projects. The board provides paginated contact journeys, current steps, safe
+  reasons, per-step timelines, exact status totals and bounded
+  trend/scenario/drop-off charts from existing execution journals. It never
+  selects contact variables, event payloads or raw provider errors.
 - Permission, audit, health, operation and status codes are translated into
   plain-language UI labels. Action buttons keep accessible names without
   rendering intrusive hover tooltips.
