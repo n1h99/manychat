@@ -37,6 +37,10 @@ v3.3, platform operations completion and Automation Activity.
 - Project overview shows project identity, status, locale, timezone and lifecycle
   information only. Tool navigation stays in the dedicated Project sections grid
   and is not duplicated in the overview.
+- Project lifecycle controls are kept in Project Settings: editing opens the
+  General settings form, while pause/activate and protected deletion retain their
+  explicit status and confirmation flows. The project landing page stays focused
+  on information and navigation.
 - Permission, audit, health, operation and status codes are translated into
   plain-language UI labels. Action buttons keep accessible names without
   rendering intrusive hover tooltips.

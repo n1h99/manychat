@@ -11,7 +11,14 @@ import {
   Typography,
   message,
 } from 'antd';
-import { CopyOutlined, SaveOutlined } from '@ant-design/icons';
+import {
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  SaveOutlined,
+} from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -26,6 +33,7 @@ export function ProjectSettingsPage() {
   const client = useQueryClient();
   const navigate = useNavigate();
   const [cloneOpen, setCloneOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [form] = Form.useForm();
   const [cloneForm] = Form.useForm();
   const canClone = identity?.globalPermissions.includes('projects:create') ?? false;
@@ -43,6 +51,14 @@ export function ProjectSettingsPage() {
       />
     );
   const data = project.data;
+  const focusGeneralSettings = () => {
+    document.getElementById('project-general-settings')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+    const nameInput = form.getFieldInstance('name') as { focus?: () => void } | undefined;
+    nameInput?.focus?.();
+  };
   return (
     <section className="project-settings-page">
       <div className="page-heading-row project-settings-heading">
@@ -53,11 +69,48 @@ export function ProjectSettingsPage() {
           </Typography.Text>
         </div>
         {data ? (
-          <Tag color={data.status === 'ACTIVE' ? 'green' : 'orange'}>{data.status}</Tag>
+          <div className="project-settings-heading-actions">
+            <Tag color={data.status === 'ACTIVE' ? 'green' : 'orange'}>{data.status}</Tag>
+            <Space wrap>
+              <Button icon={<EditOutlined />} onClick={focusGeneralSettings}>
+                Edit
+              </Button>
+              <Button
+                danger={data.status === 'ACTIVE'}
+                icon={data.status === 'ACTIVE' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={async () => {
+                  try {
+                    await apiRequest(
+                      `/api/v1/projects/${projectId}/${data.status === 'ACTIVE' ? 'pause' : 'activate'}`,
+                      { method: 'POST' },
+                      accessToken,
+                    );
+                    await client.invalidateQueries({ queryKey: ['project', projectId] });
+                    void message.success(
+                      data.status === 'ACTIVE' ? 'Project paused.' : 'Project activated.',
+                    );
+                  } catch (cause) {
+                    void message.error(
+                      getUserErrorMessage(cause, 'Project status could not be changed.'),
+                    );
+                  }
+                }}
+              >
+                {data.status === 'ACTIVE' ? 'Pause project' : 'Activate project'}
+              </Button>
+              <Button danger icon={<DeleteOutlined />} onClick={() => setDeleteOpen(true)}>
+                Delete
+              </Button>
+            </Space>
+          </div>
         ) : null}
       </div>
       <div className={`project-settings-grid${canClone ? '' : ' is-single'}`}>
-        <Card className="settings-card settings-card--general" title="General">
+        <Card
+          className="settings-card settings-card--general"
+          id="project-general-settings"
+          title="General"
+        >
           {data ? (
             <Form
               form={form}
@@ -177,6 +230,27 @@ export function ProjectSettingsPage() {
             </Button>
           </Space>
         </Form>
+      </Modal>
+      <Modal
+        cancelText="Keep project"
+        okButtonProps={{ danger: true }}
+        okText="Delete project"
+        onCancel={() => setDeleteOpen(false)}
+        onOk={async () => {
+          try {
+            await apiRequest(`/api/v1/projects/${projectId}`, { method: 'DELETE' }, accessToken);
+            setDeleteOpen(false);
+            await client.invalidateQueries({ queryKey: ['projects'] });
+            void navigate('/projects', { replace: true });
+          } catch (cause) {
+            void message.error(getUserErrorMessage(cause, 'Project could not be deleted.'));
+          }
+        }}
+        open={deleteOpen}
+        title="Delete this project?"
+      >
+        The project will be archived and removed from the workspace list. Its audit history remains
+        protected.
       </Modal>
     </section>
   );

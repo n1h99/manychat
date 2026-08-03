@@ -570,6 +570,22 @@
   margin-inline: auto;
 }
 
+.project-settings-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.project-settings-heading-actions > .ant-tag {
+  margin: 0;
+}
+
+#project-general-settings {
+  scroll-margin-top: 88px;
+}
+
 .settings-card {
   width: 100%;
   height: 100%;
@@ -3646,6 +3662,11 @@ button:disabled,
 @media (max-width: 768px) {
   .project-information-grid {
     grid-template-columns: 1fr;
+  }
+
+  .project-settings-heading-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .health-overview .ant-card-body {

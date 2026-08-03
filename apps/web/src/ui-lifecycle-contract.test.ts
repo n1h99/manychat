@@ -139,6 +139,11 @@ describe('workspace lifecycle UI contracts', () => {
     expect(operations).toContain('Audit log');
     expect(settings).toContain('Contacts, channels, credentials');
     expect(settings).toContain('canClone');
+    expect(settings).toContain('project-settings-heading-actions');
+    expect(settings).toContain('Pause project');
+    expect(settings).toContain('Delete this project?');
+    expect(source('./pages/project-detail-page.tsx')).not.toContain('Pause project');
+    expect(source('./pages/project-detail-page.tsx')).not.toContain('Delete this project?');
     expect(users).toContain('Create invitation');
     expect(users).toContain('password-reset-link');
     expect(health).toContain('System health');

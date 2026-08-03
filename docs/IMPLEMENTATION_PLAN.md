@@ -664,7 +664,8 @@ managers cannot enumerate another lead's schedule.
   older unresolved records are separated by project and link to filtered journals.
 - Project detail keeps its overview informational and leaves all tool navigation
   in Project sections. Project Settings aligns its heading with the centered
-  General and safe-cloning workspace, then stacks those cards responsively.
+  General and safe-cloning workspace, owns project lifecycle controls, then
+  stacks those cards responsively.
 
 ## Platform operations completion — implemented
 

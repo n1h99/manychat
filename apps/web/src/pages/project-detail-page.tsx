@@ -2,11 +2,7 @@ import {
   ApiOutlined,
   ContactsOutlined,
   DatabaseOutlined,
-  DeleteOutlined,
-  EditOutlined,
   FileImageOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
   RobotOutlined,
   SendOutlined,
   SettingOutlined,
@@ -16,26 +12,10 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Form,
-  Input,
-  Modal,
-  Row,
-  Select,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Alert, Card, Spin, Tag, Typography } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
@@ -58,11 +38,6 @@ export function ProjectDetailPage() {
   const { projectId } = useParams();
   const { accessToken } = useAuth();
   const access = useProjectAccess(projectId);
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [editing, setEditing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [form] = Form.useForm();
   const query = useQuery({
     enabled: Boolean(projectId),
     queryFn: () => apiRequest<Project>(`/api/v1/projects/${projectId}`, {}, accessToken),
@@ -80,7 +55,6 @@ export function ProjectDetailPage() {
 
   const project = query.data;
   const canManage = hasProjectPermission(access.data, 'project:manage');
-  const reload = () => queryClient.invalidateQueries({ queryKey: ['project', projectId] });
   const destinations: ProjectDestination[] = [
     {
       description: 'Roles and project access',
@@ -182,45 +156,6 @@ export function ProjectDetailPage() {
           <Typography.Title level={2}>{project.name}</Typography.Title>
           <Typography.Text type="secondary">{project.slug}</Typography.Text>
         </div>
-        {canManage ? (
-          <Space wrap>
-            <Button
-              icon={<EditOutlined />}
-              onClick={() => {
-                form.setFieldsValue(project);
-                setEditing(true);
-              }}
-            >
-              Edit
-            </Button>
-            <Button
-              danger={project.status === 'ACTIVE'}
-              icon={project.status === 'ACTIVE' ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-              onClick={async () => {
-                try {
-                  await apiRequest(
-                    `/api/v1/projects/${project.id}/${project.status === 'ACTIVE' ? 'pause' : 'activate'}`,
-                    { method: 'POST' },
-                    accessToken,
-                  );
-                  await reload();
-                  void message.success(
-                    project.status === 'ACTIVE' ? 'Project paused.' : 'Project activated.',
-                  );
-                } catch (error) {
-                  void message.error(
-                    getUserErrorMessage(error, 'Project status could not be changed.'),
-                  );
-                }
-              }}
-            >
-              {project.status === 'ACTIVE' ? 'Pause project' : 'Activate project'}
-            </Button>
-            <Button danger icon={<DeleteOutlined />} onClick={() => setDeleting(true)}>
-              Delete
-            </Button>
-          </Space>
-        ) : null}
       </div>
 
       <Card className="project-overview-card" title="Project overview">
@@ -277,80 +212,6 @@ export function ProjectDetailPage() {
             </Link>
           ))}
       </div>
-      <Modal
-        destroyOnHidden
-        footer={null}
-        onCancel={() => setEditing(false)}
-        open={editing}
-        title="Edit project"
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={async (values) => {
-            try {
-              await apiRequest(
-                `/api/v1/projects/${project.id}`,
-                { body: JSON.stringify(values), method: 'PATCH' },
-                accessToken,
-              );
-              setEditing(false);
-              await reload();
-              void message.success('Project updated.');
-            } catch (error) {
-              void message.error(getUserErrorMessage(error, 'Project could not be saved.'));
-            }
-          }}
-        >
-          <Form.Item label="Name" name="name" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Row gutter={14}>
-            <Col sm={12} xs={24}>
-              <Form.Item label="Timezone" name="timezone" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col sm={12} xs={24}>
-              <Form.Item label="Locale" name="locale" rules={[{ required: true }]}>
-                <Select
-                  options={[
-                    { label: 'English', value: 'en' },
-                    { label: 'Русский', value: 'ru' },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item label="Description" name="description">
-            <Input.TextArea autoSize={{ maxRows: 5, minRows: 3 }} />
-          </Form.Item>
-          <Button htmlType="submit" type="primary">
-            Save changes
-          </Button>
-        </Form>
-      </Modal>
-      <Modal
-        cancelText="Keep project"
-        okButtonProps={{ danger: true }}
-        okText="Delete project"
-        onCancel={() => setDeleting(false)}
-        onOk={async () => {
-          try {
-            await apiRequest(`/api/v1/projects/${project.id}`, { method: 'DELETE' }, accessToken);
-            setDeleting(false);
-            await queryClient.invalidateQueries({ queryKey: ['projects'] });
-            void navigate('/projects', { replace: true });
-          } catch (error) {
-            void message.error(getUserErrorMessage(error, 'Project could not be deleted.'));
-          }
-        }}
-        open={deleting}
-        title="Delete this project?"
-      >
-        The project will be archived and removed from the workspace list. Its audit history remains
-        protected.
-      </Modal>
     </section>
   );
 }
