@@ -1630,6 +1630,22 @@ button:disabled,
   background: var(--primary-soft);
 }
 
+.user-activate-action-btn {
+  color: var(--success) !important;
+  border-color: rgba(21, 128, 61, 0.22) !important;
+}
+
+.user-activate-action-btn:hover,
+.user-activate-action-btn:focus,
+.user-activate-action-btn:active {
+  color: var(--success) !important;
+  border-color: rgba(21, 128, 61, 0.4) !important;
+}
+
+.user-activate-action-btn .anticon {
+  color: inherit !important;
+}
+
 .modal-title-block {
   display: flex;
   align-items: center;

@@ -325,7 +325,7 @@ export function UsersPage() {
                       aria-label={`Activate ${fullName(row)}`}
                       className="user-activate-action-btn"
                       hidden={row.status !== 'DISABLED'}
-                      icon={<CheckCircleOutlined style={{ color: 'var(--success)' }} />}
+                      icon={<CheckCircleOutlined />}
                       onClick={() => setActivateTarget(row)}
                     />
                     <Button
