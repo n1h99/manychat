@@ -17,7 +17,6 @@ import {
   Spin,
   Switch,
   Table,
-  Tag,
   Typography,
   message,
 } from 'antd';
@@ -34,17 +33,12 @@ import {
   useChannelMutations,
   useChannelOutboundEvents,
 } from '../channels-api';
+import { humanizeStatus } from '../humanize';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 function idempotencyKey() {
   return crypto.randomUUID();
-}
-
-function connectionStatusColor(status: string) {
-  if (status === 'ACTIVE') return 'green';
-  if (status === 'ERROR') return 'red';
-  if (status === 'DISABLED') return 'default';
-  return 'blue';
 }
 
 export function ChannelDetailPage() {
@@ -152,10 +146,11 @@ export function ChannelDetailPage() {
           </Typography.Text>
         </div>
         <div className="entity-hero-statuses">
-          <Tag className="entity-status-tag" color={connectionStatusColor(connection.status)}>
-            {connection.status}
-          </Tag>
-          <Tag className="entity-status-tag">Webhook: {connection.webhookStatus}</Tag>
+          <StatusText status={connection.status} />
+          <StatusText
+            label={`Webhook: ${humanizeStatus(connection.webhookStatus)}`}
+            status={connection.webhookStatus}
+          />
         </div>
       </div>
 
@@ -165,9 +160,7 @@ export function ChannelDetailPage() {
           items={[
             { children: connection.type, key: 'type', label: 'Type' },
             {
-              children: (
-                <Tag color={connectionStatusColor(connection.status)}>{connection.status}</Tag>
-              ),
+              children: <StatusText status={connection.status} />,
               key: 'status',
               label: 'Status',
             },
@@ -403,7 +396,9 @@ export function ChannelDetailPage() {
             },
             { dataIndex: 'externalUpdateId', title: 'Update ID' },
             {
-              render: (_, event) => <Tag>{event.inboxRecord?.status ?? 'NOT_CREATED'}</Tag>,
+              render: (_, event) => (
+                <StatusText status={event.inboxRecord?.status ?? 'NOT_CREATED'} />
+              ),
               title: 'Inbox',
             },
             {
@@ -454,7 +449,7 @@ export function ChannelDetailPage() {
             },
             {
               dataIndex: 'status',
-              render: (value: string) => <Tag>{value}</Tag>,
+              render: (value: string) => <StatusText status={value} />,
               title: 'Outbox',
             },
             {

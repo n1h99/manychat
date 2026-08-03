@@ -65,12 +65,30 @@ describe('workspace lifecycle UI contracts', () => {
     expect(templates).toContain('Restore');
     expect(broadcasts).toContain("label: 'Archived'");
     expect(broadcasts).toContain('Restore');
-    expect(fields).toContain('className="archive-state-table"');
-    expect(templates).toContain('className="archive-state-table"');
-    expect(broadcasts).toContain('className="archive-state-table"');
+    expect(fields).toContain('archive-state-table');
+    expect(templates).toContain('archive-state-table');
+    expect(broadcasts).toContain('archive-state-table');
     expect(fields).toContain('tableLayout="fixed"');
     expect(templates).toContain('tableLayout="fixed"');
     expect(broadcasts).toContain('tableLayout="fixed"');
+  });
+
+  it('keeps archive switches stable while the next view loads', () => {
+    const broadcastsApi = source('./broadcasts-api.ts');
+    const templatesApi = source('./templates-api.ts');
+    const broadcasts = source('./pages/broadcasts-page.tsx');
+    const templates = source('./pages/templates-page.tsx');
+    const fields = source('./pages/custom-fields-page.tsx');
+    const contacts = source('./pages/contacts-page.tsx');
+
+    expect(broadcastsApi).toContain('placeholderData:');
+    expect(templatesApi).toContain('placeholderData:');
+    expect(broadcasts).toContain('query.isPlaceholderData ? null');
+    expect(broadcasts).toContain("query.isPlaceholderData ? '' : 'clickable-row'");
+    expect(broadcasts).toContain('aria-busy={query.isPlaceholderData}');
+    expect(templates).toContain('templates.isPlaceholderData ? null');
+    expect(fields).toContain('fields.isPlaceholderData ? null');
+    expect(contacts).toContain('contacts.isPlaceholderData');
   });
 
   it('removes campaign labels and keeps stable scenario action widths', () => {

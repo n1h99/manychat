@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router';
 
 import { apiRequest } from '../api';
 import { useAuth } from '../auth';
+import { StatusText } from '../status-text';
 
 interface ContactRow {
   id: string;
@@ -50,6 +51,10 @@ export function ContactsPage() {
   );
   const contacts = useQuery({
     enabled: Boolean(projectId),
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === projectId && previousQuery?.queryKey[2] === accessToken
+        ? previousData
+        : undefined,
     queryFn: () =>
       apiRequest<ContactPage>(
         `/api/v1/projects/${projectId}/contacts?${queryString}`,
@@ -137,6 +142,8 @@ export function ContactsPage() {
         />
       ) : null}
       <Table<ContactRow>
+        aria-busy={contacts.isPlaceholderData}
+        className={`query-transition-table${contacts.isPlaceholderData ? ' is-query-updating' : ''}`}
         columns={[
           {
             dataIndex: 'displayName',
@@ -164,7 +171,7 @@ export function ContactsPage() {
           },
           {
             dataIndex: 'status',
-            render: (value) => <Tag color={value === 'ACTIVE' ? 'green' : 'orange'}>{value}</Tag>,
+            render: (value) => <StatusText status={value} />,
             title: 'Status',
           },
           {
@@ -176,7 +183,9 @@ export function ContactsPage() {
         dataSource={contacts.data?.items ?? []}
         loading={contacts.isLoading}
         locale={{
-          emptyText: (
+          emptyText: contacts.isPlaceholderData ? (
+            <Typography.Text type="secondary">Updating results…</Typography.Text>
+          ) : (
             <Empty
               description="No contacts match the selected filters"
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -189,18 +198,22 @@ export function ContactsPage() {
           pageSize: 25,
           total: contacts.data?.total ?? 0,
         }}
-        onRow={(row) => ({
-          className: 'clickable-row',
-          onClick: () => navigate(`/projects/${projectId}/contacts/${row.id}`),
-          onKeyDown: (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              navigate(`/projects/${projectId}/contacts/${row.id}`);
-            }
-          },
-          role: 'link',
-          tabIndex: 0,
-        })}
+        onRow={(row) =>
+          contacts.isPlaceholderData
+            ? {}
+            : {
+                className: 'clickable-row',
+                onClick: () => navigate(`/projects/${projectId}/contacts/${row.id}`),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    navigate(`/projects/${projectId}/contacts/${row.id}`);
+                  }
+                },
+                role: 'link',
+                tabIndex: 0,
+              }
+        }
         rowKey="id"
       />
     </section>

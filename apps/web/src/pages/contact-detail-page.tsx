@@ -20,6 +20,7 @@ import { useParams } from 'react-router';
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 interface Contact {
   id: string;
@@ -93,15 +94,11 @@ export function ContactDetailPage() {
           </Typography.Text>
         </div>
         <Space className="entity-hero-statuses" wrap>
-          <Tag className="entity-status-tag" color={value.status === 'ACTIVE' ? 'green' : 'orange'}>
-            {value.status}
-          </Tag>
-          <Tag
-            className="entity-status-tag"
-            color={value.automationMode === 'ENABLED' ? 'cyan' : 'default'}
-          >
-            Automation {value.automationMode.toLowerCase()}
-          </Tag>
+          <StatusText status={value.status} />
+          <StatusText
+            label={`Automation ${value.automationMode.toLowerCase()}`}
+            status={value.automationMode}
+          />
         </Space>
       </div>
 

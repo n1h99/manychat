@@ -12,7 +12,7 @@ import {
   TeamOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Alert, Card, Spin, Tag, Typography } from 'antd';
+import { Alert, Card, Spin, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
@@ -20,6 +20,7 @@ import { Link, useParams } from 'react-router';
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 import type { Project } from './projects-page';
 
 interface ProjectDestination {
@@ -162,7 +163,7 @@ export function ProjectDetailPage() {
         <div className="project-information-grid">
           <div className="project-information-item">
             <span>Workspace status</span>
-            <Tag color={project.status === 'ACTIVE' ? 'green' : 'orange'}>{project.status}</Tag>
+            <StatusText status={project.status} />
           </div>
           <div className="project-information-item">
             <span>Project slug</span>

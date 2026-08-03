@@ -10,7 +10,6 @@ import {
   Spin,
   Switch,
   Table,
-  Tag,
   Typography,
   message,
 } from 'antd';
@@ -18,6 +17,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
+import { StatusText } from '../status-text';
 import {
   type CrmOperation,
   type CrmPairing,
@@ -82,7 +82,7 @@ export function CrmConfigPage() {
               {
                 key: 'status',
                 label: 'Status',
-                children: <Tag>{config.data?.status}</Tag>,
+                children: <StatusText status={config.data?.status} />,
               },
               {
                 key: 'provider',
@@ -235,7 +235,7 @@ export function CrmConfigPage() {
           {
             dataIndex: 'status',
             key: 'status',
-            render: (status: CrmOperation['status']) => <Tag>{status}</Tag>,
+            render: (status: CrmOperation['status']) => <StatusText status={status} />,
             title: 'Status',
           },
           { dataIndex: 'attempts', key: 'attempts', title: 'Attempts' },

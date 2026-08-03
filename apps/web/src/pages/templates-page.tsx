@@ -9,7 +9,6 @@ import {
   Select,
   Space,
   Table,
-  Tag,
   Typography,
   message,
 } from 'antd';
@@ -19,6 +18,7 @@ import { useParams } from 'react-router';
 import { getUserErrorMessage } from '../api';
 import { useMediaAssets } from '../media-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 import {
   type MessageTemplate,
   type TelegramInlineKeyboardButton,
@@ -127,7 +127,15 @@ export function TemplatesPage() {
         />
       ) : null}
       <Table<MessageTemplate>
-        className="archive-state-table"
+        {...(templates.isPlaceholderData
+          ? {
+              locale: {
+                emptyText: <Typography.Text type="secondary">Updating view…</Typography.Text>,
+              },
+            }
+          : {})}
+        aria-busy={templates.isPlaceholderData}
+        className={`archive-state-table query-transition-table${templates.isPlaceholderData ? ' is-query-updating' : ''}`}
         dataSource={templates.data ?? []}
         loading={templates.isLoading}
         rowKey="id"
@@ -142,74 +150,75 @@ export function TemplatesPage() {
           },
           {
             dataIndex: 'status',
-            render: (value) => <Tag>{value}</Tag>,
+            render: (value) => <StatusText status={value} />,
             title: 'Status',
             width: 150,
           },
           {
             key: 'actions',
-            render: (_, template) => (
-              <Space className="archive-table-actions" size={8}>
-                <Button
-                  onClick={() => {
-                    setPreviewing(template);
-                    setPreviewResult(undefined);
-                  }}
-                  size="small"
-                >
-                  Preview
-                </Button>
-                {canManage && view === 'active' ? (
-                  <Button onClick={() => open(template)} size="small">
-                    Edit
-                  </Button>
-                ) : null}
-                {canManage && view === 'active' && template.draftVersion ? (
+            render: (_, template) =>
+              templates.isPlaceholderData ? null : (
+                <Space className="archive-table-actions" size={8}>
                   <Button
-                    loading={mutations.publish.isPending}
-                    onClick={async () => {
-                      try {
-                        await mutations.publish.mutateAsync(template.id);
-                        void message.success('Template published.');
-                      } catch (error) {
-                        void message.error(
-                          getUserErrorMessage(error, 'Template could not be published.'),
-                        );
-                      }
+                    onClick={() => {
+                      setPreviewing(template);
+                      setPreviewResult(undefined);
                     }}
                     size="small"
-                    type="primary"
                   >
-                    Publish
+                    Preview
                   </Button>
-                ) : null}
-                {canManage && view === 'active' ? (
-                  <Button danger onClick={() => setArchiving(template)} size="small">
-                    Archive
-                  </Button>
-                ) : null}
-                {canManage && view === 'archived' ? (
-                  <Button
-                    icon={<UndoOutlined />}
-                    loading={mutations.restore.isPending}
-                    onClick={async () => {
-                      try {
-                        await mutations.restore.mutateAsync(template.id);
-                        void message.success('Template restored.');
-                      } catch (error) {
-                        void message.error(
-                          getUserErrorMessage(error, 'Template could not be restored.'),
-                        );
-                      }
-                    }}
-                    size="small"
-                    type="primary"
-                  >
-                    Restore
-                  </Button>
-                ) : null}
-              </Space>
-            ),
+                  {canManage && template.status !== 'ARCHIVED' ? (
+                    <Button onClick={() => open(template)} size="small">
+                      Edit
+                    </Button>
+                  ) : null}
+                  {canManage && template.status !== 'ARCHIVED' && template.draftVersion ? (
+                    <Button
+                      loading={mutations.publish.isPending}
+                      onClick={async () => {
+                        try {
+                          await mutations.publish.mutateAsync(template.id);
+                          void message.success('Template published.');
+                        } catch (error) {
+                          void message.error(
+                            getUserErrorMessage(error, 'Template could not be published.'),
+                          );
+                        }
+                      }}
+                      size="small"
+                      type="primary"
+                    >
+                      Publish
+                    </Button>
+                  ) : null}
+                  {canManage && template.status !== 'ARCHIVED' ? (
+                    <Button danger onClick={() => setArchiving(template)} size="small">
+                      Archive
+                    </Button>
+                  ) : null}
+                  {canManage && template.status === 'ARCHIVED' ? (
+                    <Button
+                      icon={<UndoOutlined />}
+                      loading={mutations.restore.isPending}
+                      onClick={async () => {
+                        try {
+                          await mutations.restore.mutateAsync(template.id);
+                          void message.success('Template restored.');
+                        } catch (error) {
+                          void message.error(
+                            getUserErrorMessage(error, 'Template could not be restored.'),
+                          );
+                        }
+                      }}
+                      size="small"
+                      type="primary"
+                    >
+                      Restore
+                    </Button>
+                  ) : null}
+                </Space>
+              ),
             title: 'Actions',
             width: 320,
           },
@@ -418,9 +427,9 @@ export function TemplatesPage() {
         {previewResult ? (
           <Space direction="vertical" style={{ marginTop: 16, width: '100%' }}>
             {previewResult.missing.length ? (
-              <Tag color="warning">Missing: {previewResult.missing.join(', ')}</Tag>
+              <StatusText label={`Missing: ${previewResult.missing.join(', ')}`} status="PENDING" />
             ) : (
-              <Tag color="success">All variables resolved</Tag>
+              <StatusText label="All variables resolved" status="SUCCEEDED" />
             )}
             <Typography.Paragraph copyable>
               {previewResult.output || '(empty output)'}

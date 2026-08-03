@@ -28,6 +28,7 @@ import { useMemo, useState } from 'react';
 
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
+import { StatusText } from '../status-text';
 
 interface GlobalRole {
   id: string;
@@ -243,11 +244,7 @@ export function UsersPage() {
               title: 'Location',
             },
             {
-              render: (_, row) => (
-                <Tag className={`account-status account-status--${row.status.toLowerCase()}`}>
-                  {row.status === 'ACTIVE' ? 'Active' : 'Disabled'}
-                </Tag>
-              ),
+              render: (_, row) => <StatusText status={row.status} />,
               title: 'Status',
               width: 120,
             },
@@ -364,15 +361,7 @@ export function UsersPage() {
                       : new Date(row.expiresAt) <= new Date()
                         ? 'Expired'
                         : 'Active';
-                  return (
-                    <Tag
-                      color={
-                        label === 'Active' ? 'blue' : label === 'Accepted' ? 'green' : 'default'
-                      }
-                    >
-                      {label}
-                    </Tag>
-                  );
+                  return <StatusText label={label} status={label.toUpperCase()} />;
                 },
                 title: 'Status',
               },

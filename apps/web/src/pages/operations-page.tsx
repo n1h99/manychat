@@ -31,6 +31,7 @@ import {
   humanizeReason,
   humanizeStatus,
 } from '../humanize';
+import { StatusText } from '../status-text';
 
 interface OperationRow {
   attempts?: number;
@@ -90,14 +91,6 @@ const operationStatuses = [
   'UNKNOWN',
   'PAUSED',
 ] as const;
-
-function statusColor(status: string) {
-  if (['COMPLETED', 'SENT', 'SUCCEEDED'].includes(status)) return 'success';
-  if (['FAILED', 'DEAD_LETTER', 'UNKNOWN'].includes(status)) return 'error';
-  if (['PROCESSING', 'RUNNING'].includes(status)) return 'processing';
-  if (['RETRY', 'PAUSED'].includes(status)) return 'warning';
-  return 'default';
-}
 
 function terminalCount(groups: SummaryGroup | undefined, statuses: string[]) {
   return (groups ?? [])
@@ -304,9 +297,7 @@ export function OperationsPage() {
                     },
                     {
                       dataIndex: 'status',
-                      render: (value) => (
-                        <Tag color={statusColor(value)}>{humanizeStatus(value)}</Tag>
-                      ),
+                      render: (value) => <StatusText status={value} />,
                       title: 'Status',
                       width: 135,
                     },

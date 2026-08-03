@@ -9,7 +9,6 @@ import {
   Select,
   Space,
   Table,
-  Tag,
   Timeline,
   Typography,
 } from 'antd';
@@ -32,6 +31,7 @@ import {
   useScenarios,
 } from '../automation-api';
 import { getUserErrorMessage } from '../api';
+import { StatusText } from '../status-text';
 
 type ActivityItem = AutomationActivitySnapshot['items'][number];
 
@@ -44,16 +44,6 @@ const statusOptions: Array<{ label: string; value: AutomationActivityStatus }> =
   { label: 'Needs attention', value: 'FAILED' },
   { label: 'Stopped', value: 'CANCELLED' },
 ];
-
-const statusColors: Record<AutomationActivityStatus, string> = {
-  CANCELLED: 'default',
-  COMPLETED: 'green',
-  FAILED: 'red',
-  PAUSED: 'orange',
-  QUEUED: 'cyan',
-  RUNNING: 'blue',
-  WAITING: 'gold',
-};
 
 export function AutomationActivityPage() {
   const { projectId } = useParams();
@@ -196,7 +186,7 @@ export function AutomationActivityPage() {
               width: 220,
             },
             {
-              render: (_, row) => <Tag color={statusColors[row.status]}>{row.statusLabel}</Tag>,
+              render: (_, row) => <StatusText label={row.statusLabel} status={row.status} />,
               title: 'Status',
               width: 145,
             },
@@ -464,7 +454,7 @@ function ActivityDrawer({
                 {item.scenario.name} · Version {item.scenario.version}
               </Typography.Text>
             </div>
-            <Tag color={statusColors[item.status]}>{item.statusLabel}</Tag>
+            <StatusText label={item.statusLabel} status={item.status} />
           </div>
           <div className="activity-detail-facts">
             <div>

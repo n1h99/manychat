@@ -1,16 +1,4 @@
-import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Button, Form, Input, Modal, Select, Space, Table, Typography, message } from 'antd';
 import { MailOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
@@ -19,6 +7,7 @@ import { useState } from 'react';
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 interface Membership {
   id: string;
@@ -218,15 +207,7 @@ export function MembersPage() {
                       : new Date(row.expiresAt) <= new Date()
                         ? 'Expired'
                         : 'Active';
-                  return (
-                    <Tag
-                      color={
-                        state === 'Active' ? 'blue' : state === 'Accepted' ? 'green' : 'default'
-                      }
-                    >
-                      {state}
-                    </Tag>
-                  );
+                  return <StatusText label={state} status={state.toUpperCase()} />;
                 },
                 title: 'Status',
               },

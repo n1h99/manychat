@@ -1,10 +1,11 @@
-import { Alert, Button, Form, Input, Popconfirm, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Form, Input, Popconfirm, Table, Typography, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 interface Segment {
   filter: Record<string, unknown>;
@@ -105,7 +106,11 @@ export function SegmentsPage() {
             render: (filter) => <code>{JSON.stringify(filter)}</code>,
             title: 'Filter',
           },
-          { dataIndex: 'status', render: (status) => <Tag>{status}</Tag>, title: 'Status' },
+          {
+            dataIndex: 'status',
+            render: (status) => <StatusText status={status} />,
+            title: 'Status',
+          },
           {
             dataIndex: 'updatedAt',
             render: (value) => new Date(value).toLocaleString(),

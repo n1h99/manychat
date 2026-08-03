@@ -56,6 +56,8 @@ export function useBroadcasts(projectId?: string, archived = false) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId),
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === projectId ? previousData : undefined,
     queryKey: ['broadcasts', projectId, archived],
     queryFn: () =>
       apiRequest<Broadcast[]>(

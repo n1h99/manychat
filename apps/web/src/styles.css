@@ -1448,15 +1448,36 @@ button:disabled,
   gap: 12px;
 }
 
-.entity-status-tag {
+.status-text {
   display: inline-flex;
   align-items: center;
-  min-height: 42px;
-  margin: 0;
-  padding-inline: 19px;
-  font-size: 14px;
-  font-weight: 650;
-  border-radius: 999px;
+  width: max-content;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.status-text--success {
+  color: var(--success);
+}
+
+.status-text--warning {
+  color: #a16207;
+}
+
+.status-text--danger {
+  color: var(--danger);
+}
+
+.is-query-updating .ant-table-tbody {
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.query-transition-table .ant-table-tbody {
+  transition: opacity 160ms ease;
 }
 
 .account-dropdown .ant-dropdown-menu {
@@ -1591,25 +1612,15 @@ button:disabled,
   border-radius: 12px;
 }
 
-.user-role-tag,
-.account-status {
+.user-role-tag {
   margin: 0;
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 700;
   border: 0;
   border-radius: 999px;
-}
-
-.user-role-tag,
-.account-status--active {
   color: var(--primary);
   background: var(--primary-soft);
-}
-
-.account-status--disabled {
-  color: var(--text-muted);
-  background: var(--bg-subtle);
 }
 
 .modal-title-block {
@@ -3528,9 +3539,8 @@ button:disabled,
   letter-spacing: 0.02em;
 }
 
-.project-information-item .ant-tag {
+.project-information-item .status-text {
   width: max-content;
-  margin: 0;
 }
 
 .project-information-item strong {
@@ -3712,7 +3722,7 @@ button:disabled,
     grid-template-columns: 44px minmax(0, 1fr);
   }
 
-  .activity-detail-hero > .ant-tag {
+  .activity-detail-hero > .status-text {
     grid-column: 1 / -1;
     width: max-content;
   }

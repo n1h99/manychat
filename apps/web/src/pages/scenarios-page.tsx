@@ -1,11 +1,12 @@
 import { DeleteOutlined, PauseOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Modal, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import { Alert, Button, Empty, Modal, Space, Spin, Table, Typography, message } from 'antd';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
 import { type ScenarioSummary, useScenarioMutations, useScenarios } from '../automation-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 export function ScenariosPage() {
   const { projectId } = useParams();
@@ -60,7 +61,7 @@ export function ScenariosPage() {
           { dataIndex: 'name', title: 'Name', width: '42%' },
           {
             dataIndex: 'status',
-            render: (status) => <Tag>{status}</Tag>,
+            render: (status) => <StatusText status={status} />,
             title: 'Status',
             width: 150,
           },

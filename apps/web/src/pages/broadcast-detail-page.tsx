@@ -1,22 +1,12 @@
 import { CopyOutlined, InboxOutlined } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Modal,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Button, Descriptions, Modal, Space, Spin, Table, Typography, message } from 'antd';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
 import { useBroadcast, useBroadcastMutations, useBroadcastRecipients } from '../broadcasts-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 export function BroadcastDetailPage() {
   const { projectId, broadcastId } = useParams();
@@ -83,7 +73,7 @@ export function BroadcastDetailPage() {
         bordered
         column={1}
         items={[
-          { key: 'status', label: 'Status', children: <Tag>{broadcast.status}</Tag> },
+          { key: 'status', label: 'Status', children: <StatusText status={broadcast.status} /> },
           { key: 'audience', label: 'Audience', children: broadcast.audience.mode },
           { key: 'text', label: 'Message', children: broadcast.text },
           { key: 'total', label: 'Recipients', children: broadcast.recipientCount },
@@ -169,7 +159,11 @@ export function BroadcastDetailPage() {
             dataIndex: ['channelIdentity', 'username'],
             render: (value) => value ?? '—',
           },
-          { title: 'Status', dataIndex: 'status', render: (value) => <Tag>{value}</Tag> },
+          {
+            title: 'Status',
+            dataIndex: 'status',
+            render: (value) => <StatusText status={value} />,
+          },
           { title: 'Error code', dataIndex: 'lastError', render: (value) => value ?? '—' },
         ]}
       />

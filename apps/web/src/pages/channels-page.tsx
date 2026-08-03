@@ -1,9 +1,10 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Spin, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Empty, Spin, Table, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 
 import { type Channel, useChannels } from '../channels-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 export function ChannelsPage() {
   const { projectId } = useParams();
@@ -51,11 +52,7 @@ export function ChannelsPage() {
           },
           {
             dataIndex: 'status',
-            render: (value) => (
-              <Tag color={value === 'ACTIVE' ? 'green' : value === 'ERROR' ? 'red' : 'default'}>
-                {value}
-              </Tag>
-            ),
+            render: (value) => <StatusText status={value} />,
             title: 'Status',
           },
           { dataIndex: 'webhookStatus', title: 'Webhook' },

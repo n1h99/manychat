@@ -107,6 +107,7 @@ import {
   type AutomationCustomField,
 } from '../automation-studio-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 import { useTemplates } from '../templates-api';
 
 const paletteGroups = [
@@ -818,15 +819,26 @@ export function ScenarioEditorPage() {
                     Duplicate
                   </Button>
                 </Space>
-                <Tag color={saveStatus === 'conflict' ? 'red' : draftDirty ? 'gold' : 'green'}>
-                  {saveStatus === 'conflict'
-                    ? 'Save conflict'
-                    : manualSavePending
-                      ? 'Saving…'
-                      : draftDirty
-                        ? 'Unsaved changes'
-                        : 'Saved'}
-                </Tag>
+                <StatusText
+                  label={
+                    saveStatus === 'conflict'
+                      ? 'Save conflict'
+                      : manualSavePending
+                        ? 'Saving…'
+                        : draftDirty
+                          ? 'Unsaved changes'
+                          : 'Saved'
+                  }
+                  status={
+                    saveStatus === 'conflict'
+                      ? 'FAILED'
+                      : manualSavePending
+                        ? 'PROCESSING'
+                        : draftDirty
+                          ? 'DRAFT'
+                          : 'SUCCEEDED'
+                  }
+                />
               </div>
               <ReactFlow
                 connectionLineStyle={{ stroke: '#0f766e', strokeWidth: 2 }}
@@ -1126,7 +1138,7 @@ export function ScenarioEditorPage() {
                 title: 'Status',
                 render: (value, version) => (
                   <Space size={6}>
-                    <Tag>{automationVersionStatus(value)}</Tag>
+                    <StatusText label={automationVersionStatus(value)} status={value} />
                     {version.id === scenarioQuery.data?.draftVersion?.id ||
                     (!scenarioQuery.data?.draftVersion &&
                       version.id === scenarioQuery.data?.activeVersion?.id) ? (
@@ -1194,7 +1206,9 @@ export function ScenarioEditorPage() {
               {
                 dataIndex: 'status',
                 title: 'Status',
-                render: (value) => <Tag>{automationExecutionStatus(value)}</Tag>,
+                render: (value) => (
+                  <StatusText label={automationExecutionStatus(value)} status={value} />
+                ),
               },
               {
                 dataIndex: 'currentNodeId',

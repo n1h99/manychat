@@ -1,11 +1,12 @@
 import { DeleteOutlined, FileOutlined } from '@ant-design/icons';
-import { Alert, Button, Modal, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, Modal, Select, Space, Table, Typography, Upload, message } from 'antd';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
 import { type MediaAsset, type MediaKind, useMediaAssets, useMediaMutations } from '../media-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 export function MediaAssetsPage() {
   const { projectId } = useParams();
@@ -115,7 +116,11 @@ export function MediaAssetsPage() {
           { dataIndex: 'originalFilename', title: 'File', render: (value) => value ?? 'Telegram' },
           { dataIndex: 'kind', title: 'Kind' },
           { dataIndex: 'source', title: 'Source' },
-          { dataIndex: 'status', title: 'Status', render: (value) => <Tag>{value}</Tag> },
+          {
+            dataIndex: 'status',
+            title: 'Status',
+            render: (value) => <StatusText status={value} />,
+          },
           {
             dataIndex: 'sizeBytes',
             title: 'Size',

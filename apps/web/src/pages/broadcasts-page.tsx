@@ -14,7 +14,6 @@ import {
   Space,
   Spin,
   Table,
-  Tag,
   Typography,
   message,
 } from 'antd';
@@ -24,6 +23,7 @@ import { useNavigate, useParams } from 'react-router';
 import { getUserErrorMessage } from '../api';
 import { type Broadcast, useBroadcastMutations, useBroadcasts } from '../broadcasts-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 
 export function BroadcastsPage() {
   const { projectId } = useParams();
@@ -86,12 +86,13 @@ export function BroadcastsPage() {
         />
       ) : null}
       <Table<Broadcast>
-        className="archive-state-table"
+        aria-busy={query.isPlaceholderData}
+        className={`archive-state-table query-transition-table${query.isPlaceholderData ? ' is-query-updating' : ''}`}
         columns={[
           { dataIndex: 'name', ellipsis: true, title: 'Name', width: 390 },
           {
             dataIndex: 'status',
-            render: (value) => <Tag>{value}</Tag>,
+            render: (value) => <StatusText status={value} />,
             title: 'Status',
             width: 140,
           },
@@ -106,73 +107,74 @@ export function BroadcastsPage() {
             ? [
                 {
                   key: 'actions',
-                  render: (_: unknown, broadcast: Broadcast) => (
-                    <Space
-                      className="stable-table-actions"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      {view === 'archived' && canArchive ? (
-                        <Button
-                          icon={<UndoOutlined />}
-                          loading={mutations.restore.isPending}
-                          onClick={() =>
-                            void action(
-                              () => mutations.restore.mutateAsync(broadcast.id),
-                              'Broadcast restored.',
-                              'Broadcast could not be restored.',
-                            )
-                          }
-                          size="small"
-                          type="primary"
-                        >
-                          Restore
-                        </Button>
-                      ) : null}
-                      {canPause && broadcast.status === 'RUNNING' ? (
-                        <Button
-                          className="broadcast-state-action"
-                          icon={<PauseOutlined />}
-                          onClick={() =>
-                            void action(
-                              () => mutations.pause.mutateAsync(broadcast.id),
-                              'Broadcast paused.',
-                              'Broadcast could not be paused.',
-                            )
-                          }
-                          size="small"
-                        >
-                          Deactivate
-                        </Button>
-                      ) : canPause && broadcast.status === 'PAUSED' ? (
-                        <Button
-                          className="broadcast-state-action"
-                          icon={<PlayCircleOutlined />}
-                          onClick={() =>
-                            void action(
-                              () => mutations.resume.mutateAsync(broadcast.id),
-                              'Broadcast resumed.',
-                              'Broadcast could not be resumed.',
-                            )
-                          }
-                          size="small"
-                        >
-                          Resume
-                        </Button>
-                      ) : null}
-                      {view === 'active' &&
-                      canArchive &&
-                      !['PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status) ? (
-                        <Button
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={() => setRemoving(broadcast)}
-                          size="small"
-                        >
-                          Archive
-                        </Button>
-                      ) : null}
-                    </Space>
-                  ),
+                  render: (_: unknown, broadcast: Broadcast) =>
+                    query.isPlaceholderData ? null : (
+                      <Space
+                        className="stable-table-actions"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {broadcast.status === 'ARCHIVED' && canArchive ? (
+                          <Button
+                            icon={<UndoOutlined />}
+                            loading={mutations.restore.isPending}
+                            onClick={() =>
+                              void action(
+                                () => mutations.restore.mutateAsync(broadcast.id),
+                                'Broadcast restored.',
+                                'Broadcast could not be restored.',
+                              )
+                            }
+                            size="small"
+                            type="primary"
+                          >
+                            Restore
+                          </Button>
+                        ) : null}
+                        {canPause && broadcast.status === 'RUNNING' ? (
+                          <Button
+                            className="broadcast-state-action"
+                            icon={<PauseOutlined />}
+                            onClick={() =>
+                              void action(
+                                () => mutations.pause.mutateAsync(broadcast.id),
+                                'Broadcast paused.',
+                                'Broadcast could not be paused.',
+                              )
+                            }
+                            size="small"
+                          >
+                            Deactivate
+                          </Button>
+                        ) : canPause && broadcast.status === 'PAUSED' ? (
+                          <Button
+                            className="broadcast-state-action"
+                            icon={<PlayCircleOutlined />}
+                            onClick={() =>
+                              void action(
+                                () => mutations.resume.mutateAsync(broadcast.id),
+                                'Broadcast resumed.',
+                                'Broadcast could not be resumed.',
+                              )
+                            }
+                            size="small"
+                          >
+                            Resume
+                          </Button>
+                        ) : null}
+                        {broadcast.status !== 'ARCHIVED' &&
+                        canArchive &&
+                        !['PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status) ? (
+                          <Button
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={() => setRemoving(broadcast)}
+                            size="small"
+                          >
+                            Archive
+                          </Button>
+                        ) : null}
+                      </Space>
+                    ),
                   title: 'Actions',
                   width: 250,
                 },
@@ -181,15 +183,19 @@ export function BroadcastsPage() {
         ]}
         dataSource={query.data ?? []}
         locale={{
-          emptyText: (
+          emptyText: query.isPlaceholderData ? (
+            <Typography.Text type="secondary">Updating view…</Typography.Text>
+          ) : (
             <Empty description="No broadcasts created" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ),
         }}
-        onRow={(row) => ({
-          onClick: () => navigate(`/projects/${projectId}/broadcasts/${row.id}`),
-        })}
+        onRow={(row) =>
+          query.isPlaceholderData
+            ? {}
+            : { onClick: () => navigate(`/projects/${projectId}/broadcasts/${row.id}`) }
+        }
         pagination={false}
-        rowClassName="clickable-row"
+        rowClassName={() => (query.isPlaceholderData ? '' : 'clickable-row')}
         rowKey="id"
         scroll={{ x: 1110 }}
         tableLayout="fixed"

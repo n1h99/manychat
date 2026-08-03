@@ -60,6 +60,10 @@ export function CustomFieldsPage() {
   const [form] = Form.useForm();
   const fields = useQuery({
     enabled: Boolean(projectId),
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === projectId && previousQuery?.queryKey[2] === accessToken
+        ? previousData
+        : undefined,
     queryFn: () =>
       apiRequest<Field[]>(
         `/api/v1/projects/${projectId}/custom-fields?archived=${view === 'archived'}`,
@@ -108,7 +112,15 @@ export function CustomFieldsPage() {
         />
       ) : null}
       <Table<Field>
-        className="archive-state-table"
+        {...(fields.isPlaceholderData
+          ? {
+              locale: {
+                emptyText: <Typography.Text type="secondary">Updating view…</Typography.Text>,
+              },
+            }
+          : {})}
+        aria-busy={fields.isPlaceholderData}
+        className={`archive-state-table query-transition-table${fields.isPlaceholderData ? ' is-query-updating' : ''}`}
         columns={[
           {
             dataIndex: 'name',
@@ -143,71 +155,72 @@ export function CustomFieldsPage() {
           },
           {
             align: 'right',
-            render: (_, row) => (
-              <Space size={8}>
-                {view === 'active' ? (
-                  <>
+            render: (_, row) =>
+              fields.isPlaceholderData ? null : (
+                <Space size={8}>
+                  {row.archivedAt === null ? (
+                    <>
+                      <Button
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          form.setFieldsValue({ ...row, options: row.options?.join(', ') });
+                          setEditing(row);
+                          setType(row.type);
+                          setOpen(true);
+                        }}
+                        size="small"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        danger
+                        icon={<InboxOutlined />}
+                        onClick={async () => {
+                          try {
+                            await apiRequest(
+                              `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
+                              { method: 'DELETE' },
+                              accessToken,
+                            );
+                            await reload();
+                            void message.success('Custom field archived.');
+                          } catch (error) {
+                            void message.error(
+                              getUserErrorMessage(error, 'Custom field could not be archived.'),
+                            );
+                          }
+                        }}
+                        size="small"
+                      >
+                        Archive
+                      </Button>
+                    </>
+                  ) : (
                     <Button
-                      icon={<EditOutlined />}
-                      onClick={() => {
-                        form.setFieldsValue({ ...row, options: row.options?.join(', ') });
-                        setEditing(row);
-                        setType(row.type);
-                        setOpen(true);
-                      }}
-                      size="small"
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      danger
-                      icon={<InboxOutlined />}
+                      icon={<UndoOutlined />}
                       onClick={async () => {
                         try {
                           await apiRequest(
-                            `/api/v1/projects/${projectId}/custom-fields/${row.id}`,
-                            { method: 'DELETE' },
+                            `/api/v1/projects/${projectId}/custom-fields/${row.id}/restore`,
+                            { method: 'POST' },
                             accessToken,
                           );
                           await reload();
-                          void message.success('Custom field archived.');
+                          void message.success('Custom field restored.');
                         } catch (error) {
                           void message.error(
-                            getUserErrorMessage(error, 'Custom field could not be archived.'),
+                            getUserErrorMessage(error, 'Custom field could not be restored.'),
                           );
                         }
                       }}
                       size="small"
+                      type="primary"
                     >
-                      Archive
+                      Restore
                     </Button>
-                  </>
-                ) : (
-                  <Button
-                    icon={<UndoOutlined />}
-                    onClick={async () => {
-                      try {
-                        await apiRequest(
-                          `/api/v1/projects/${projectId}/custom-fields/${row.id}/restore`,
-                          { method: 'POST' },
-                          accessToken,
-                        );
-                        await reload();
-                        void message.success('Custom field restored.');
-                      } catch (error) {
-                        void message.error(
-                          getUserErrorMessage(error, 'Custom field could not be restored.'),
-                        );
-                      }
-                    }}
-                    size="small"
-                    type="primary"
-                  >
-                    Restore
-                  </Button>
-                )}
-              </Space>
-            ),
+                  )}
+                </Space>
+              ),
             title: 'Actions',
             width: 220,
           },

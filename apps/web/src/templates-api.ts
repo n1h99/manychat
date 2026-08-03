@@ -56,6 +56,8 @@ export function useTemplates(projectId?: string, archived = false) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId),
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === projectId ? previousData : undefined,
     queryFn: () =>
       apiRequest<MessageTemplate[]>(
         `/api/v1/projects/${projectId}/templates?archived=${archived}`,

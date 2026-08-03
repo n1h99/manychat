@@ -8,7 +8,6 @@ import {
   Input,
   Select,
   Table,
-  Tag,
   Typography,
   message,
 } from 'antd';
@@ -18,6 +17,7 @@ import { useNavigate } from 'react-router';
 
 import { ApiError, apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
+import { StatusText } from '../status-text';
 
 export interface Project {
   createdAt: string;
@@ -89,9 +89,7 @@ export function ProjectsPage() {
           { dataIndex: 'timezone', title: 'Timezone' },
           {
             dataIndex: 'status',
-            render: (status: Project['status']) => (
-              <Tag color={status === 'ACTIVE' ? 'green' : 'orange'}>{status}</Tag>
-            ),
+            render: (status: Project['status']) => <StatusText status={status} />,
             title: 'Status',
           },
         ]}
