@@ -1631,19 +1631,22 @@ button:disabled,
 }
 
 .user-activate-action-btn {
-  color: var(--success) !important;
-  border-color: rgba(21, 128, 61, 0.22) !important;
+  color: #0f766e !important;
+  background-color: #e7f1f0 !important;
+  border-color: #d4e5e3 !important;
+  border-radius: 12px !important;
 }
 
 .user-activate-action-btn:hover,
 .user-activate-action-btn:focus,
 .user-activate-action-btn:active {
-  color: var(--success) !important;
-  border-color: rgba(21, 128, 61, 0.4) !important;
+  color: #0f766e !important;
+  background-color: #e7f1f0 !important;
+  border-color: #d4e5e3 !important;
 }
 
 .user-activate-action-btn .anticon {
-  color: inherit !important;
+  color: #0f766e !important;
 }
 
 .modal-title-block {
