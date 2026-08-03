@@ -3433,6 +3433,7 @@ button:disabled,
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+  --list-page-action-height: 50px;
   gap: 10px;
   width: 100%;
   margin-bottom: 10px;
@@ -3445,13 +3446,18 @@ button:disabled,
   flex-wrap: wrap;
 }
 
-.list-page-action-row .archive-view-switch,
-.list-page-action-row .segmented-switcher {
-  margin-bottom: 0;
+.list-page-action-row .channel-template-provider-switch.ant-segmented,
+.list-page-action-row .archive-view-switch.ant-segmented {
+  margin-bottom: 0 !important;
 }
 
 .list-page-action-button {
-  height: 42px;
+  --local-action-button-height: var(--list-page-action-height);
+  height: var(--local-action-button-height);
+  min-height: var(--local-action-button-height);
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .list-page-action-row .ant-btn {
@@ -4099,14 +4105,23 @@ button:disabled,
 
 .contact-summary-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+  align-items: start;
+}
+
+.contact-summary-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
 .contact-summary-row {
   align-items: flex-start;
   column-gap: 10px;
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-columns: 112px minmax(0, 1fr);
 }
 
 .contact-summary-label {
@@ -4121,58 +4136,11 @@ button:disabled,
   width: 100%;
 }
 
-.identity-list {
-  display: grid;
-  gap: 6px;
-}
-
-.identity-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-
-.identity-channel {
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.identity-name {
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.identity-metadata {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.identity-metadata-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.summary-value {
-  white-space: nowrap;
-}
-
-.summary-status-label {
-  font-weight: 700;
-  white-space: nowrap;
-  margin: 0;
-}
-
 .contact-summary-tags {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 6px;
+  width: 100%;
 }
 
 .contact-summary-card .ant-card-body,
@@ -4188,6 +4156,12 @@ button:disabled,
 
 .contact-tag-button {
   width: 100%;
+}
+
+@media (max-width: 860px) {
+  .contact-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .danger-card {

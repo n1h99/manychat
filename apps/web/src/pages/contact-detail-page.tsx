@@ -20,6 +20,7 @@ import { useParams } from 'react-router';
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import { StatusText } from '../status-text';
 import type { Project } from './projects-page';
 
 interface Contact {
@@ -82,7 +83,24 @@ const CONTACT_SETTINGS_LOCALE_MAP: Record<'en' | 'ru', ContactSettingsLocale> = 
   },
 };
 function contactSettingsLocale(locale: string | undefined): ContactSettingsLocale {
-  return locale === 'ru' ? CONTACT_SETTINGS_LOCALE_MAP.ru : CONTACT_SETTINGS_LOCALE_MAP.en;
+  const normalizedLocale = locale?.trim().toLowerCase();
+  return normalizedLocale?.startsWith('ru')
+    ? CONTACT_SETTINGS_LOCALE_MAP.ru
+    : CONTACT_SETTINGS_LOCALE_MAP.en;
+}
+
+function formatChannelLabel(channel: string): string {
+  const value = channel.trim().toLowerCase();
+  if (!value) return '\u2014';
+  const words = value.split(/[\s_-]+/g).filter(Boolean);
+  const formatted = words
+    .map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1).toLowerCase()}`)
+    .join(' ');
+  return formatted || '\u2014';
+}
+
+function formatIdentityValue(identity: Contact['channelIdentities'][number]): string {
+  return identity.username ? `@${identity.username}` : (identity.externalUserId ?? '\u2014');
 }
 
 export function ContactDetailPage() {
@@ -123,8 +141,6 @@ export function ContactDetailPage() {
     cache.invalidateQueries({ queryKey: ['contact', projectId, contactId] });
   const value = contact.data;
   const localeCopy = contactSettingsLocale(project.data?.locale);
-  const statusLabel = `${value.status[0]}${value.status.slice(1).toLowerCase().replace('_', '-')}`;
-  const automationLabel = value.automationMode === 'ENABLED' ? 'Enabled' : 'Disabled';
   const canUpdate = hasProjectPermission(access.data, 'contacts:update');
   const deleteContact = async () => {
     try {
@@ -158,74 +174,73 @@ export function ContactDetailPage() {
           <Card className="contact-summary-card" title="Contact summary">
             <div className="contact-summary-main">
               <div className="contact-summary-grid">
-                <div className="contact-summary-row">
-                  <div className="contact-summary-label">CRM lead:</div>
-                  <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
-                </div>
-                <div className="contact-summary-row">
-                  <div className="contact-summary-label">Channel identities:</div>
-                  <div className="contact-summary-value">
-                    <div className="identity-list">
-                      {value.channelIdentities.length
-                        ? value.channelIdentities.map((identity) => (
-                            <div className="identity-row" key={identity.id}>
-                              <span className="identity-channel">{identity.channel}</span>
-                              <span className="identity-name">
-                                {identity.username
-                                  ? `@${identity.username}`
-                                  : identity.externalUserId}
-                              </span>
-                            </div>
+                <div className="contact-summary-column">
+                  <div className="contact-summary-row">
+                    <div className="contact-summary-label">CRM lead:</div>
+                    <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
+                  </div>
+                  {value.channelIdentities.length
+                    ? value.channelIdentities.map((identity) => (
+                        <div className="contact-summary-row" key={identity.id}>
+                          <div className="contact-summary-label">
+                            {formatChannelLabel(identity.channel)}:
+                          </div>
+                          <div className="contact-summary-value">
+                            {formatIdentityValue(identity)}
+                          </div>
+                        </div>
+                      ))
+                    : null}
+                  <div className="contact-summary-row">
+                    <div className="contact-summary-label">Tags:</div>
+                    <div className="contact-summary-value contact-summary-tags">
+                      {value.tags.length
+                        ? value.tags.map((item) => (
+                            <Tag
+                              closable={canUpdate}
+                              {...(item.tag.color ? { color: item.tag.color } : {})}
+                              key={item.tag.id}
+                              onClose={(event) => {
+                                event.preventDefault();
+                                void (async () => {
+                                  try {
+                                    await apiRequest(
+                                      `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
+                                      { method: 'DELETE' },
+                                      accessToken,
+                                    );
+                                    await reload();
+                                    void message.success('Tag removed from contact.');
+                                  } catch (error) {
+                                    void message.error(
+                                      getUserErrorMessage(
+                                        error,
+                                        'Tag could not be removed from contact.',
+                                      ),
+                                    );
+                                  }
+                                })();
+                              }}
+                            >
+                              {item.tag.name}
+                            </Tag>
                           ))
-                        : 'No identities'}
-                    </div>
-                    <div className="identity-metadata">
-                      <span className="identity-metadata-item">
-                        <span className="summary-status-label">Status:</span>
-                        <span className="summary-value">{statusLabel}</span>
-                      </span>
-                      <span className="identity-metadata-item">
-                        <span className="summary-status-label">Automation:</span>
-                        <span className="summary-value">{automationLabel}</span>
-                      </span>
+                        : 'No tags'}
                     </div>
                   </div>
                 </div>
-                <div className="contact-summary-row">
-                  <div className="contact-summary-label">Tags:</div>
-                  <div className="contact-summary-value contact-summary-tags">
-                    {value.tags.length
-                      ? value.tags.map((item) => (
-                          <Tag
-                            closable={canUpdate}
-                            {...(item.tag.color ? { color: item.tag.color } : {})}
-                            key={item.tag.id}
-                            onClose={(event) => {
-                              event.preventDefault();
-                              void (async () => {
-                                try {
-                                  await apiRequest(
-                                    `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
-                                    { method: 'DELETE' },
-                                    accessToken,
-                                  );
-                                  await reload();
-                                  void message.success('Tag removed from contact.');
-                                } catch (error) {
-                                  void message.error(
-                                    getUserErrorMessage(
-                                      error,
-                                      'Tag could not be removed from contact.',
-                                    ),
-                                  );
-                                }
-                              })();
-                            }}
-                          >
-                            {item.tag.name}
-                          </Tag>
-                        ))
-                      : 'No tags'}
+                <div className="contact-summary-column">
+                  <div className="contact-summary-row">
+                    <div className="contact-summary-label">Status:</div>
+                    <div className="contact-summary-value">
+                      <StatusText status={value.status} />
+                    </div>
+                  </div>
+                  <div className="contact-summary-row">
+                    <div className="contact-summary-label">Automation:</div>
+                    <div className="contact-summary-value">
+                      <StatusText status={value.automationMode} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -466,7 +481,7 @@ export function ContactDetailPage() {
               }
             }}
           >
-            Delete contact
+            {localeCopy.deleteButtonLabel}
           </Button>
         </div>
       </Modal>
