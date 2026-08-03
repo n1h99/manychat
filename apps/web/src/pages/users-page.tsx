@@ -317,13 +317,13 @@ export function UsersPage() {
                     <Button
                       aria-label={`Disable ${fullName(row)}`}
                       danger
-                      disabled={row.status !== 'ACTIVE'}
+                      hidden={row.status === 'DISABLED'}
                       icon={<StopOutlined />}
                       onClick={() => setDisableTarget(row)}
                     />
                     <Button
                       aria-label={`Activate ${fullName(row)}`}
-                      disabled={row.status !== 'DISABLED'}
+                      hidden={row.status !== 'DISABLED'}
                       icon={<CheckCircleOutlined />}
                       onClick={() => setActivateTarget(row)}
                     />
