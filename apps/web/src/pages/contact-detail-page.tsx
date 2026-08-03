@@ -412,7 +412,7 @@ export function ContactDetailPage() {
                 }}
               >
                 <Form.Item
-                  label={localeCopy.primaryContactIdLabel}
+                  label="Primary contact ID"
                   name="primaryContactId"
                   rules={[{ required: true }]}
                 >
@@ -421,18 +421,18 @@ export function ContactDetailPage() {
                 <div className="contact-settings-actions">
                   <div className="contact-settings-action-group">
                     <Typography.Paragraph className="contact-settings-note" type="secondary">
-                      {localeCopy.mergeInstruction}
+                      Move this record into another contact. This action cannot be undone from the UI.
                     </Typography.Paragraph>
                     <Button block danger htmlType="submit">
-                      {localeCopy.mergeButtonLabel}
+                      Merge contacts
                     </Button>
                   </div>
                   <div className="contact-settings-action-group">
                     <Typography.Paragraph className="contact-settings-note" type="secondary">
-                      {localeCopy.deleteInstruction}
+                      Delete this contact from the project. This action cannot be undone from the UI.
                     </Typography.Paragraph>
                     <Button block danger onClick={() => setDeleteOpen(true)}>
-                      {localeCopy.deleteButtonLabel}
+                      Delete contact
                     </Button>
                   </div>
                 </div>
@@ -468,7 +468,7 @@ export function ContactDetailPage() {
               }
             }}
           >
-            {localeCopy.deleteButtonLabel}
+            Delete contact
           </Button>
         </div>
       </Modal>
