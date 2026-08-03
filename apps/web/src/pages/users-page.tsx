@@ -6,6 +6,7 @@ import {
   MailOutlined,
   PlusOutlined,
   DeleteOutlined,
+  CheckCircleOutlined,
   SafetyCertificateOutlined,
   StopOutlined,
   UserOutlined,
@@ -76,6 +77,7 @@ export function UsersPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow>();
   const [disableTarget, setDisableTarget] = useState<UserRow>();
+  const [activateTarget, setActivateTarget] = useState<UserRow>();
   const [deleteTarget, setDeleteTarget] = useState<UserRow>();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [secureLink, setSecureLink] = useState<{ expiresAt: string; title: string; url: string }>();
@@ -320,16 +322,21 @@ export function UsersPage() {
                       onClick={() => setDisableTarget(row)}
                     />
                     <Button
+                      aria-label={`Activate ${fullName(row)}`}
+                      disabled={row.status !== 'DISABLED'}
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => setActivateTarget(row)}
+                    />
+                    <Button
                       aria-label={`Delete ${fullName(row)}`}
                       danger
-                      disabled={row.status !== 'ACTIVE'}
                       icon={<DeleteOutlined />}
                       onClick={() => setDeleteTarget(row)}
                     />
                   </Space>
                 ) : null,
               title: 'Actions',
-              width: 246,
+              width: 285,
             },
           ]}
           dataSource={users.data ?? []}
@@ -627,6 +634,41 @@ export function UsersPage() {
       <Modal
         className="account-confirm-modal"
         footer={null}
+        onCancel={() => setActivateTarget(undefined)}
+        open={Boolean(activateTarget)}
+        title="Activate user account?"
+        width={460}
+      >
+        <Typography.Paragraph type="secondary">
+          {activateTarget ? `${fullName(activateTarget)} will be activated and can sign in again.` : ''}
+        </Typography.Paragraph>
+        <div className="modal-form-actions">
+          <Button onClick={() => setActivateTarget(undefined)}>Cancel</Button>
+          <Button
+            onClick={async () => {
+              if (!activateTarget) return;
+              try {
+                await apiRequest(
+                  `/api/v1/users/${activateTarget.id}/activate`,
+                  { method: 'POST' },
+                  accessToken,
+                );
+                setActivateTarget(undefined);
+                void message.success('User account activated.');
+                await refresh();
+              } catch (error) {
+                void message.error(getUserErrorMessage(error, 'User account could not be activated.'));
+              }
+            }}
+          >
+            Activate account
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        className="account-confirm-modal"
+        footer={null}
         onCancel={() => setDeleteTarget(undefined)}
         open={Boolean(deleteTarget)}
         title="Delete user account?"
@@ -634,7 +676,7 @@ export function UsersPage() {
       >
         <Typography.Paragraph type="secondary">
           {deleteTarget
-            ? `${fullName(deleteTarget)} will be disabled and all active sessions will be revoked.`
+            ? `${fullName(deleteTarget)} will be permanently removed. This action cannot be undone.`
             : ''}
         </Typography.Paragraph>
         <div className="modal-form-actions">

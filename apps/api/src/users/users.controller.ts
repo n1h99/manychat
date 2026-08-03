@@ -100,6 +100,16 @@ export class UsersController {
     await this.users.disable(userId, request.auth!, this.context(request));
   }
 
+  @Post(':userId/activate')
+  @HttpCode(204)
+  @RequireGlobalPermission('users:manage')
+  async activate(
+    @Param('userId') userId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.users.activate(userId, request.auth!, this.context(request));
+  }
+
   @Delete(':userId')
   @HttpCode(204)
   @RequireGlobalPermission('users:manage')

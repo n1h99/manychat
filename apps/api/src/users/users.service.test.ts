@@ -121,4 +121,63 @@ describe('UsersService account profiles', () => {
       }),
     );
   });
+
+  it('activates a disabled user and audits activation', async () => {
+    const update = vi.fn().mockImplementation(({ data }) => ({ ...existingUser, ...data }));
+    const transaction = {
+      user: { update },
+    };
+    const audit = { record: vi.fn() };
+    const database = {
+      client: {
+        $transaction: vi.fn(async (callback) => callback(transaction)),
+        user: {
+          findUnique: vi.fn().mockResolvedValue({
+            ...existingUser,
+            status: 'DISABLED',
+          }),
+        },
+      },
+    };
+    const service = new UsersService(audit as never, {} as never, database as never);
+
+    await service.activate('user-a', actor, { correlationId: 'correlation-activate' });
+
+    expect(update).toHaveBeenCalledWith({ data: { status: 'ACTIVE' }, where: { id: 'user-a' } });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'user.activated',
+        beforeSafeJson: { status: 'DISABLED' },
+        afterSafeJson: { status: 'ACTIVE' },
+      }),
+    );
+  });
+
+  it('hard deletes a user account and all related sessions', async () => {
+    const deleteMany = vi.fn();
+    const userDelete = vi.fn().mockResolvedValue(existingUser);
+    const transaction = {
+      session: { deleteMany },
+      user: { delete: userDelete },
+    };
+    const audit = { record: vi.fn() };
+    const database = {
+      client: {
+        $transaction: vi.fn(async (callback) => callback(transaction)),
+        user: { findUnique: vi.fn().mockResolvedValue(existingUser) },
+      },
+    };
+    const service = new UsersService(audit as never, {} as never, database as never);
+
+    await service.delete('user-a', actor, { correlationId: 'correlation-delete' });
+
+    expect(deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-a' } });
+    expect(userDelete).toHaveBeenCalledWith({ where: { id: 'user-a' } });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'user.deleted',
+        beforeSafeJson: { status: 'ACTIVE' },
+      }),
+    );
+  });
 });

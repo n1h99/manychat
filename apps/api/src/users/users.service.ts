@@ -220,14 +220,30 @@ export class UsersService {
     });
   }
 
+  async activate(userId: string, actor: AuthenticatedUser, context: RequestSecurityContext) {
+    const user = await this.requireUser(userId);
+    await this.database.client.$transaction(async (transaction) => {
+      await transaction.user.update({ data: { status: 'ACTIVE' }, where: { id: userId } });
+    });
+    await this.audit.record({
+      action: 'user.activated',
+      actorEmailSnapshot: actor.email,
+      actorUserId: actor.userId,
+      beforeSafeJson: { status: user.status },
+      afterSafeJson: { status: 'ACTIVE' },
+      correlationId: context.correlationId,
+      entityId: userId,
+      entityType: 'User',
+      ip: context.ip,
+      userAgent: context.userAgent,
+    });
+  }
+
   async delete(userId: string, actor: AuthenticatedUser, context: RequestSecurityContext) {
     const user = await this.requireUser(userId);
     await this.database.client.$transaction(async (transaction) => {
-      await transaction.user.update({ data: { status: 'DISABLED' }, where: { id: userId } });
-      await transaction.session.updateMany({
-        data: { revokedAt: new Date(), status: 'REVOKED' },
-        where: { status: 'ACTIVE', userId },
-      });
+      await transaction.session.deleteMany({ where: { userId } });
+      await transaction.user.delete({ where: { id: userId } });
     });
     await this.audit.record({
       action: 'user.deleted',
