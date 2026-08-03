@@ -9,6 +9,9 @@ import {
   PlayCircleOutlined,
   RobotOutlined,
   SendOutlined,
+  SettingOutlined,
+  SafetyCertificateOutlined,
+  ToolOutlined,
   TagsOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
@@ -87,6 +90,12 @@ export function ProjectDetailPage() {
       path: `/projects/${project.id}/members`,
     },
     {
+      description: 'Custom roles and permissions',
+      icon: <SafetyCertificateOutlined />,
+      label: 'Roles',
+      path: `/projects/${project.id}/roles`,
+    },
+    {
       description: 'People and channel identities',
       icon: <ContactsOutlined />,
       label: 'Contacts',
@@ -145,6 +154,19 @@ export function ProjectDetailPage() {
       label: 'Media',
       path: `/projects/${project.id}/media-assets`,
       visible: hasProjectPermission(access.data, 'media:read'),
+    },
+    {
+      description: 'Delivery journals, recovery and audit',
+      icon: <ToolOutlined />,
+      label: 'Operations',
+      path: `/projects/${project.id}/operations`,
+    },
+    {
+      description: 'Workspace identity, locale and cloning',
+      icon: <SettingOutlined />,
+      label: 'Settings',
+      path: `/projects/${project.id}/settings`,
+      visible: canManage,
     },
   ];
 

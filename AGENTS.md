@@ -32,6 +32,8 @@ Pilot и утверждённые post-pilot slices реализованы и р
   `EXTERNAL_HTTP_REQUEST`;
 - Telegram Chat v3.3, включая recurring schedules, reply keyboards, native
   rich messages и live-verified user reaction events;
+- Operations & Audit Center, account invitations/password recovery, custom
+  global/project roles, safe project cloning и permission-guarded System Health;
 - Railway web/API/worker deployment с automatic deploy из `main`.
 
 Исторические этапы в `docs/IMPLEMENTATION_PLAN.md` не ограничивают уже

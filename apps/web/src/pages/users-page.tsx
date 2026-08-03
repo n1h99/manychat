@@ -2,6 +2,8 @@ import {
   EditOutlined,
   EnvironmentOutlined,
   KeyOutlined,
+  LinkOutlined,
+  MailOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
   StopOutlined,
@@ -73,7 +75,12 @@ export function UsersPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow>();
   const [disableTarget, setDisableTarget] = useState<UserRow>();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [secureLink, setSecureLink] = useState<{ expiresAt: string; title: string; url: string }>();
   const [form] = Form.useForm<UserFormValues>();
+  const canManage =
+    identity?.globalRoleNames.includes('super-admin') ||
+    identity?.globalPermissions.includes('users:manage');
   const users = useQuery({
     queryFn: () => apiRequest<UserRow[]>('/api/v1/users', {}, accessToken),
     queryKey: ['users', accessToken],
@@ -82,9 +89,21 @@ export function UsersPage() {
     queryFn: () => apiRequest<GlobalRole[]>('/api/v1/users/roles/global', {}, accessToken),
     queryKey: ['global-roles', accessToken],
   });
-  const canManage =
-    identity?.globalRoleNames.includes('super-admin') ||
-    identity?.globalPermissions.includes('users:manage');
+  const invitations = useQuery({
+    enabled: Boolean(canManage),
+    queryFn: () =>
+      apiRequest<
+        Array<{
+          acceptedAt: string | null;
+          emailSnapshot: string;
+          expiresAt: string;
+          globalRole: { name: string };
+          id: string;
+          revokedAt: string | null;
+        }>
+      >('/api/v1/users/invitations', {}, accessToken),
+    queryKey: ['global-invitations', accessToken],
+  });
   const summary = useMemo(() => {
     const rows = users.data ?? [];
     return {
@@ -134,9 +153,14 @@ export function UsersPage() {
             </Typography.Text>
           </div>
           {canManage ? (
-            <Button icon={<PlusOutlined />} onClick={openCreate} type="primary">
-              Create user
-            </Button>
+            <Space>
+              <Button icon={<MailOutlined />} onClick={() => setInviteOpen(true)}>
+                Invite user
+              </Button>
+              <Button icon={<PlusOutlined />} onClick={openCreate} type="primary">
+                Create user
+              </Button>
+            </Space>
           ) : null}
         </div>
         <div className="users-summary-grid">
@@ -267,6 +291,33 @@ export function UsersPage() {
                         }}
                       />
                     </Tooltip>
+                    <Tooltip placement="bottom" title="Create one-time password reset link">
+                      <Button
+                        aria-label={`Reset password for ${fullName(row)}`}
+                        icon={<LinkOutlined />}
+                        onClick={async () => {
+                          try {
+                            const result = await apiRequest<{
+                              expiresAt: string;
+                              resetUrl: string;
+                            }>(
+                              `/api/v1/users/${row.id}/password-reset-link`,
+                              { method: 'POST' },
+                              accessToken,
+                            );
+                            setSecureLink({
+                              expiresAt: result.expiresAt,
+                              title: 'Password reset link',
+                              url: result.resetUrl,
+                            });
+                          } catch (error) {
+                            void message.error(
+                              getUserErrorMessage(error, 'The reset link could not be created.'),
+                            );
+                          }
+                        }}
+                      />
+                    </Tooltip>
                     <Tooltip
                       placement="bottom"
                       title={row.status === 'ACTIVE' ? 'Disable account' : 'Account disabled'}
@@ -297,6 +348,55 @@ export function UsersPage() {
           scroll={{ x: 1220 }}
         />
       </div>
+
+      {canManage ? (
+        <div className="users-table-card surface">
+          <div className="section-heading-inline">
+            <div>
+              <Typography.Title level={4}>Invitations</Typography.Title>
+              <Typography.Text type="secondary">
+                Recent one-time access links and their status.
+              </Typography.Text>
+            </div>
+          </div>
+          <Table
+            dataSource={invitations.data ?? []}
+            loading={invitations.isLoading}
+            pagination={{ hideOnSinglePage: true, pageSize: 8 }}
+            rowKey="id"
+            columns={[
+              { dataIndex: 'emailSnapshot', title: 'Email' },
+              { dataIndex: ['globalRole', 'name'], title: 'Role' },
+              {
+                render: (_, row) => {
+                  const label = row.acceptedAt
+                    ? 'Accepted'
+                    : row.revokedAt
+                      ? 'Revoked'
+                      : new Date(row.expiresAt) <= new Date()
+                        ? 'Expired'
+                        : 'Active';
+                  return (
+                    <Tag
+                      color={
+                        label === 'Active' ? 'blue' : label === 'Accepted' ? 'green' : 'default'
+                      }
+                    >
+                      {label}
+                    </Tag>
+                  );
+                },
+                title: 'Status',
+              },
+              {
+                dataIndex: 'expiresAt',
+                render: (value) => new Date(value).toLocaleString(),
+                title: 'Expires',
+              },
+            ]}
+          />
+        </div>
+      ) : null}
 
       <Modal
         className="user-editor-modal"
@@ -427,6 +527,73 @@ export function UsersPage() {
             </Button>
           </div>
         </Form>
+      </Modal>
+      <Modal
+        destroyOnHidden
+        footer={null}
+        onCancel={() => setInviteOpen(false)}
+        open={inviteOpen}
+        title="Invite system user"
+      >
+        <Form
+          layout="vertical"
+          onFinish={async (values: { email: string; globalRoleId: string }) => {
+            try {
+              const result = await apiRequest<{ expiresAt: string; invitationUrl: string }>(
+                '/api/v1/users/invitations',
+                { body: JSON.stringify(values), method: 'POST' },
+                accessToken,
+              );
+              setInviteOpen(false);
+              setSecureLink({
+                expiresAt: result.expiresAt,
+                title: 'Invitation link',
+                url: result.invitationUrl,
+              });
+              await client.invalidateQueries({ queryKey: ['global-invitations'] });
+            } catch (error) {
+              void message.error(
+                getUserErrorMessage(error, 'The invitation could not be created.'),
+              );
+            }
+          }}
+        >
+          <Form.Item label="Email" name="email" rules={[{ required: true, type: 'email' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item label="System role" name="globalRoleId" rules={[{ required: true }]}>
+            <Select fieldNames={{ label: 'name', value: 'id' }} options={globalRoles.data ?? []} />
+          </Form.Item>
+          <Button htmlType="submit" type="primary">
+            Create invitation
+          </Button>
+        </Form>
+      </Modal>
+      <Modal
+        footer={null}
+        onCancel={() => setSecureLink(undefined)}
+        open={Boolean(secureLink)}
+        title={secureLink?.title}
+      >
+        <Alert
+          className="form-alert"
+          description={`This value is shown once and expires ${secureLink ? new Date(secureLink.expiresAt).toLocaleString() : ''}. Share it only through a trusted channel.`}
+          message="One-time secure link"
+          showIcon
+          type="warning"
+        />
+        <Input.TextArea readOnly autoSize={{ minRows: 3, maxRows: 5 }} value={secureLink?.url} />
+        <Button
+          className="secure-link-copy"
+          onClick={async () => {
+            if (!secureLink) return;
+            await navigator.clipboard.writeText(secureLink.url);
+            void message.success('Secure link copied.');
+          }}
+          type="primary"
+        >
+          Copy link
+        </Button>
       </Modal>
 
       <Modal

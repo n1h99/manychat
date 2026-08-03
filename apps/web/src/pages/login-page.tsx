@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Form, Input, Typography } from 'antd';
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { ApiError } from '../api';
 import { useAuth } from '../auth';
@@ -48,6 +48,9 @@ export function LoginPage() {
             Sign in
           </Button>
         </Form>
+        <Link className="account-link-back" to="/forgot-password">
+          Forgot password?
+        </Link>
       </Card>
     </main>
   );

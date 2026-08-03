@@ -48,19 +48,30 @@ export function AppShell() {
   const isMobile = screens.lg === false;
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const availableNavigation = useMemo(
+    () =>
+      navigationItems.filter(
+        (item) =>
+          !item.permission ||
+          identity?.globalRoleNames.includes('super-admin') ||
+          identity?.globalPermissions.includes(item.permission),
+      ),
+    [identity],
+  );
   const selectedKey = useMemo(
     () =>
-      navigationItems.find((item) => location.pathname.startsWith(item.path))?.key ?? 'projects',
-    [location.pathname],
+      availableNavigation.find((item) => location.pathname.startsWith(item.path))?.key ??
+      'projects',
+    [availableNavigation, location.pathname],
   );
-  const selectedItem = navigationItems.find((item) => item.key === selectedKey);
+  const selectedItem = availableNavigation.find((item) => item.key === selectedKey);
   const accountName =
     [identity?.firstName, identity?.lastName].filter(Boolean).join(' ') || 'Account';
   const accountRole = identity?.globalRoleNames[0]
     ?.split('-')
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(' ');
-  const menuItems = navigationItems.map(({ icon, key, label }) => ({ icon, key, label }));
+  const menuItems = availableNavigation.map(({ icon, key, label }) => ({ icon, key, label }));
   const projectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
   const project = useQuery({
     enabled: Boolean(projectId),
@@ -77,7 +88,7 @@ export function AppShell() {
         items={menuItems}
         mode="inline"
         onClick={({ key }) => {
-          const item = navigationItems.find((candidate) => candidate.key === key);
+          const item = availableNavigation.find((candidate) => candidate.key === key);
           if (item) {
             void navigate(item.path);
             setMobileNavigationOpen(false);

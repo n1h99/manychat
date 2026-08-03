@@ -1,7 +1,7 @@
 # Omnicus documentation index
 
-Status reviewed: 2026-08-03, `main` at Automation Studio 2.2 and Telegram Chat
-v3.3.
+Status reviewed: 2026-08-03, `main` at Automation Studio 2.2, Telegram Chat
+v3.3 and platform operations completion.
 
 ## Current product status
 
@@ -10,6 +10,22 @@ v3.3.
 - All operator mutations expose action-specific success/failure feedback. Safe
   API codes and validation field names are translated into actionable UI copy;
   internal 5xx details remain hidden behind a correlation reference.
+- Project workspaces now include an Operations & Audit Center with safe bounded
+  inbox/outbox/automation/broadcast projections, reasoned terminal retry and
+  evidence-based `UNKNOWN` reconciliation. Raw payloads, message content and
+  credentials are not selected into these responses.
+- Account lifecycle is complete for the current operator-delivered model:
+  global/project invitations, hashed expiring single-use links, invitation
+  acceptance, password-reset requests, one-time admin-generated reset links and
+  active-session revocation after reset. No email provider contract is invented.
+- Built-in global/project roles remain immutable; authorized operators can
+  create custom roles from scope-safe permission catalogs. Project Settings can
+  update general metadata and make a safe draft clone containing only general
+  settings and custom role definitions.
+- Permission-guarded System Health combines PostgreSQL, Redis and worker probes with
+  queue pressure, durable terminal-operation counts and global audit history.
+  Alerts are derived from authoritative state. Sentry is not used and Railway
+  backup configuration remains operator-owned.
 - Telegram and Cyber Pulse CRM are the active live integration slice.
 - Every normalized Telegram inbound message is queued to an active paired CRM
   independently of Automation Studio. Inbound replies keep a same-conversation

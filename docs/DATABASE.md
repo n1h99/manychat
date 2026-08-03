@@ -1427,3 +1427,22 @@ and monotonically increasing `occurrence`. The unique
 harmless. Only one future occurrence is created; cancellation therefore stops
 the series without a Redis-owned recurring job. `revision` is incremented by a
 conditional queued-only update and is the public optimistic-concurrency token.
+
+## Operations and account-lifecycle completion
+
+The Operations/Audit, role authoring, invitation, password-reset, project clone
+and System Health slice introduces no new table or column. It intentionally
+reuses these existing records:
+
+- `InboxRecord`, `OutboxRecord`, `ScenarioExecution`, `Broadcast` and
+  `CrmOperation` for bounded safe operational projections;
+- `AuditLog` for every retry, reconciliation, role, invitation, reset and clone
+  mutation;
+- `PasswordResetToken`, `GlobalUserInviteToken`,
+  `ProjectUserInviteToken` and their active-reservation rows for hashed,
+  expiring, one-time links;
+- `GlobalRole`, `ProjectRole` and their permission join tables for custom roles.
+
+Raw webhook payloads, outbox payloads, message content, password/reset/invite
+tokens and encrypted credentials are never selected into the new list APIs.
+Because the Prisma schema is unchanged, this slice has no migration.

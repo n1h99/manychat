@@ -4,11 +4,17 @@ Omnicus is a production-deployed omnichannel automation platform built as a
 `pnpm`/Turborepo monorepo. The current release includes Auth/RBAC, projects,
 contacts and segmentation, Telegram messaging, durable inbox/outbox delivery,
 Cyber Pulse CRM integration, broadcasts, media/templates and Automation Studio
-2.2. PostgreSQL is the source of truth; Redis/BullMQ accelerates recoverable
-jobs and never owns business state.
+2.2. The current platform completion also includes Operations & Audit, complete
+operator-delivered invitations/password recovery, custom roles, safe project
+cloning and permission-guarded System Health. PostgreSQL is the source of truth;
+Redis/BullMQ accelerates recoverable jobs and never owns business state.
 
 WhatsApp and Instagram are intentionally deferred until dedicated test accounts
 and a separately approved provider scope are available.
+
+Sentry is not part of the observability stack. Health and operational alerts are
+derived from service probes, queues and durable PostgreSQL journals. Railway
+backup configuration remains operator-owned and is not managed by Omnicus.
 
 ## Applications and packages
 

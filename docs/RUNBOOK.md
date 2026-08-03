@@ -136,13 +136,20 @@ ID, correlation ID, inbox status, attempts, safe error code, normalized type
 and resulting contact ID. The endpoint is project-scoped and requires
 `channels:read`; it never selects raw payload or encrypted credentials.
 
-For deeper operations, query `inbox_records` by `status`, `nextAttemptAt`,
-`lockedAt`, and `lastError` through a controlled session. Never log or copy raw
-payloads, bot tokens, webhook secrets, ciphertext, or contact PII into an
-incident ticket. A future operations endpoint will call the internal audited
-manual-retry service for `DEAD_LETTER` / `FAILED` records. It moves only a
-terminal record to `RETRY`; it resets attempts only when explicitly requested,
-and falls back to the recovery scan if its immediate enqueue fails.
+For deeper operations, use the project **Operations & Audit** screen or its
+permission-guarded `/api/v1/projects/:projectId/operations` and
+`/api/v1/projects/:projectId/audit` APIs. They select bounded safe projections
+only (up to the latest 500 rows per selected journal). Never log or copy raw
+payloads, bot tokens, webhook secrets, ciphertext,
+message content or contact PII into an incident ticket.
+
+Manual retry is available only for eligible `FAILED`/`DEAD_LETTER` inbox rows
+and `FAILED` Telegram outbox rows. It requires an operator reason, performs a
+conditional state transition and records audit history. Immediate BullMQ
+enqueue remains best-effort because the PostgreSQL recovery scan is
+authoritative. `UNKNOWN` is never a retry action: record provider evidence as
+**Applied** or **Not applied** through reconciliation first. Applied becomes
+`SUCCEEDED`; confirmed not-applied permits one durable `RETRY` transition.
 
 On worker crash, an active lease is left untouched until its configured expiry;
 then recovery atomically releases it for retry. Lease-token conditional updates

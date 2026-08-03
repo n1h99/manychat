@@ -5,6 +5,7 @@ import { Navigate, Route, Routes } from 'react-router';
 import { AppShell } from './app-shell';
 import { ProtectedRoute } from './protected-route';
 import { ProjectPermissionRoute } from './project-permission-route';
+import { GlobalPermissionRoute } from './global-permission-route';
 
 function lazyPage<TModule, TKey extends keyof TModule>(
   loader: () => Promise<TModule>,
@@ -16,6 +17,18 @@ function lazyPage<TModule, TKey extends keyof TModule>(
 }
 
 const LoginPage = lazyPage(() => import('./pages/login-page'), 'LoginPage');
+const ForgotPasswordPage = lazyPage(
+  () => import('./pages/forgot-password-page'),
+  'ForgotPasswordPage',
+);
+const ResetPasswordPage = lazyPage(
+  () => import('./pages/reset-password-page'),
+  'ResetPasswordPage',
+);
+const AcceptInvitationPage = lazyPage(
+  () => import('./pages/accept-invitation-page'),
+  'AcceptInvitationPage',
+);
 const MembersPage = lazyPage(() => import('./pages/members-page'), 'MembersPage');
 const ProjectDetailPage = lazyPage(
   () => import('./pages/project-detail-page'),
@@ -57,6 +70,14 @@ const BroadcastDetailPage = lazyPage(
 );
 const MediaAssetsPage = lazyPage(() => import('./pages/media-assets-page'), 'MediaAssetsPage');
 const TemplatesPage = lazyPage(() => import('./pages/templates-page'), 'TemplatesPage');
+const OperationsPage = lazyPage(() => import('./pages/operations-page'), 'OperationsPage');
+const ProjectRolesPage = lazyPage(() => import('./pages/project-roles-page'), 'ProjectRolesPage');
+const ProjectSettingsPage = lazyPage(
+  () => import('./pages/project-settings-page'),
+  'ProjectSettingsPage',
+);
+const GlobalRolesPage = lazyPage(() => import('./pages/global-roles-page'), 'GlobalRolesPage');
+const SystemHealthPage = lazyPage(() => import('./pages/system-health-page'), 'SystemHealthPage');
 
 export function App() {
   return (
@@ -69,12 +90,22 @@ export function App() {
     >
       <Routes>
         <Route element={<LoginPage />} path="/login" />
+        <Route element={<ForgotPasswordPage />} path="/forgot-password" />
+        <Route element={<ResetPasswordPage />} path="/reset-password" />
+        <Route element={<AcceptInvitationPage />} path="/accept-invitation" />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
             <Route element={<Navigate replace to="/projects" />} path="/" />
             <Route element={<ProjectsPage />} path="/projects" />
             <Route element={<ProjectDetailPage />} path="/projects/:projectId" />
-            <Route element={<MembersPage />} path="/projects/:projectId/members" />
+            <Route element={<ProjectPermissionRoute permission="project:read" />}>
+              <Route element={<MembersPage />} path="/projects/:projectId/members" />
+              <Route element={<ProjectRolesPage />} path="/projects/:projectId/roles" />
+              <Route element={<OperationsPage />} path="/projects/:projectId/operations" />
+            </Route>
+            <Route element={<ProjectPermissionRoute permission="project:manage" />}>
+              <Route element={<ProjectSettingsPage />} path="/projects/:projectId/settings" />
+            </Route>
             <Route element={<ContactsPage />} path="/projects/:projectId/contacts" />
             <Route
               element={<ContactDetailPage />}
@@ -124,7 +155,13 @@ export function App() {
             <Route element={<ProjectPermissionRoute permission="media:read" />}>
               <Route element={<MediaAssetsPage />} path="/projects/:projectId/media-assets" />
             </Route>
-            <Route element={<UsersPage />} path="/users" />
+            <Route element={<GlobalPermissionRoute permission="users:read" />}>
+              <Route element={<UsersPage />} path="/users" />
+            </Route>
+            <Route element={<GlobalPermissionRoute permission="roles:manage" />}>
+              <Route element={<GlobalRolesPage />} path="/roles" />
+              <Route element={<SystemHealthPage />} path="/system-health" />
+            </Route>
             <Route element={<Navigate replace to="/projects" />} path="*" />
           </Route>
         </Route>

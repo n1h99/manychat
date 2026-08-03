@@ -1232,3 +1232,47 @@ stale clients cannot bypass server isolation. Clearing a value cannot archive a
 field definition or affect another contact/project. Incomplete drafts remain a
 supported authoring state; only execution and publication require a fully
 reachable, resource-valid graph.
+
+## ADR-050: Operations, account lifecycle and system health reuse durable journals
+
+**Status:** Accepted, 2026-08-03.
+
+**Context:** Omnicus already persists inbox, outbox, execution and audit records,
+but operators have to inspect several feature-specific screens. Password-reset
+and invitation token tables also exist without a complete product workflow, and
+project roles cannot be authored from the application. Platform health is
+available only through service probes and does not explain queue or terminal
+operation pressure.
+
+**Decision:** The Operations Center reads bounded, project-scoped projections
+from the existing inbox, outbox, scenario, broadcast and CRM journals. It never
+returns raw webhook bodies, outbox payloads, credentials, customer content or
+secret values. Terminal retries are conditional state transitions with a reason
+and audit record. `UNKNOWN` is never treated as a failure: an operator must
+record provider evidence as applied or not applied before the journal can move
+to `SUCCEEDED` or `RETRY`.
+
+Audit history is exposed as a separately permission-guarded safe projection.
+Custom global/project roles may contain only permissions from their matching
+scope; seeded system roles remain immutable. Invitation and password-reset links
+are random, hashed at rest, time-bounded, single-use and returned only at their
+creation boundary for delivery by an authorized operator. Acceptance never
+reveals whether another account exists and revokes active sessions after a
+password reset.
+
+Project cloning copies only project configuration and custom role definitions.
+It creates a new project-admin membership for the actor and never copies
+contacts, identities, messages, executions, channels, CRM credentials, media,
+automation secrets or history.
+
+System Health is a `roles:manage`-guarded projection over dependency probes, a bounded
+BullMQ worker round-trip, queue counts and safe database aggregates. Alerts are
+derived from current state rather than becoming another source of truth. Sentry
+and backup management are explicitly outside this slice; Railway backup policy
+remains operator-owned.
+
+**Consequences:** PostgreSQL journals remain authoritative and Redis remains an
+execution/health signal only. Operations UI cannot leak stored payloads or turn
+an uncertain side effect into a blind retry. No Prisma schema change is required
+because the reviewed token, role, project, audit and operation models already
+contain the necessary durable state.

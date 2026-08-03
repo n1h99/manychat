@@ -19,6 +19,10 @@ import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { MediaModule } from './media/media.module';
 import { TemplatesModule } from './templates/templates.module';
 import { CrmIntegrationModule } from './crm-integration/crm-integration.module';
+import { OperationsModule } from './operations/operations.module';
+import { RolesModule } from './roles/roles.module';
+import { AccountLifecycleModule } from './account-lifecycle/account-lifecycle.module';
+import { SystemHealthModule } from './system-health/system-health.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -49,6 +53,10 @@ const rootEnvFile =
     BroadcastsModule,
     MediaModule,
     TemplatesModule,
+    OperationsModule,
+    RolesModule,
+    AccountLifecycleModule,
+    SystemHealthModule,
   ],
 })
 export class AppModule implements NestModule {

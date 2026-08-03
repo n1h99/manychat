@@ -5,7 +5,7 @@ import { ProjectRolesService } from './project-roles.service';
 describe('ProjectRolesService', () => {
   it('assigns channel permissions to the Project Admin role when creating a project', async () => {
     const upsertPermission = vi.fn().mockResolvedValue(undefined);
-    const service = new ProjectRolesService({} as never);
+    const service = new ProjectRolesService({} as never, {} as never);
     const transaction = {
       permission: {
         findMany: vi.fn().mockResolvedValue([

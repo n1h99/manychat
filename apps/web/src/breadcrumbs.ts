@@ -11,10 +11,13 @@ const sectionLabels: Record<string, string> = {
   'custom-fields': 'Custom fields',
   'media-assets': 'Media',
   members: 'Members',
+  operations: 'Operations & audit',
+  roles: 'Roles',
   scenarios: 'Automation',
   segments: 'Segments',
   tags: 'Tags',
   templates: 'Templates',
+  settings: 'Settings',
 };
 
 const detailLabels: Record<string, string> = {
@@ -34,6 +37,8 @@ export function breadcrumbsFor(pathname: string, projectName?: string): AppBread
   const segments = pathname.split('/').filter(Boolean);
 
   if (segments[0] === 'users') return [{ label: 'Users' }];
+  if (segments[0] === 'roles') return [{ label: 'System roles' }];
+  if (segments[0] === 'system-health') return [{ label: 'System health' }];
   if (segments[0] !== 'projects') return [];
   if (segments.length === 1) return [{ label: 'Projects' }];
 

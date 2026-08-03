@@ -128,4 +128,20 @@ describe('workspace lifecycle UI contracts', () => {
       'Unknown delivery requires confirmation',
     );
   });
+
+  it('exposes the completed operations and account lifecycle surfaces safely', () => {
+    const operations = source('./pages/operations-page.tsx');
+    const settings = source('./pages/project-settings-page.tsx');
+    const users = source('./pages/users-page.tsx');
+    const health = source('./pages/system-health-page.tsx');
+    expect(operations).toContain('Reconcile unknown outcome');
+    expect(operations).toContain('Retry terminal operation');
+    expect(operations).toContain('Audit log');
+    expect(settings).toContain('Contacts, channels, credentials');
+    expect(settings).toContain('canClone');
+    expect(users).toContain('Create invitation');
+    expect(users).toContain('Create one-time password reset link');
+    expect(health).toContain('System health');
+    expect(health).toContain('No Sentry dependency');
+  });
 });

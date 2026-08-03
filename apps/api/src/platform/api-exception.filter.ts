@@ -59,7 +59,14 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   CRM_UNKNOWN_RETRY_CONFIRMATION_REQUIRED:
     'Confirm the unknown delivery result before retrying this CRM operation',
   DRAFT_CONTENT_CONFLICT: 'Choose only one draft content format',
+  GLOBAL_ROLE_NOT_FOUND: 'The selected global role was not found',
   IDEMPOTENCY_CONFLICT: 'This request reuses an idempotency key with different data',
+  INVITATION_ACCOUNT_AUTH_FAILED: 'The password for the invited account is incorrect',
+  INVITATION_ALREADY_ACTIVE: 'An active invitation already exists for this account and scope',
+  INVITATION_INVALID: 'This invitation link is invalid',
+  INVITATION_NOT_ACTIVE: 'This invitation was already used, revoked or expired',
+  INVITATION_NOT_FOUND: 'The invitation was not found',
+  INVITATION_PROFILE_REQUIRED: 'Enter a first and last name for the new account',
   MEDIA_GROUP_ASSET_NOT_FOUND: 'One or more media-group files are no longer available',
   MEDIA_GROUP_ENTITIES_INVALID: 'The media-group caption formatting is invalid',
   MEDIA_GROUP_KIND_COMBINATION_INVALID: 'These media types cannot be combined in one media group',
@@ -70,13 +77,28 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   MESSAGE_NOT_EDITABLE: 'This Telegram message can no longer be edited',
   MESSAGE_NOT_FOUND: 'The Telegram message was not found',
   OPERATION_NOT_FAILED: 'Only a failed operation can be retried',
+  OPERATION_CHANGED_REFRESH_REQUIRED:
+    'The operation changed. Refresh its current status before continuing',
   OPERATION_NOT_FOUND: 'The requested operation was not found',
+  OPERATION_NOT_RETRYABLE: 'This operation does not support a safe manual retry',
   OPERATION_PAYLOAD_INVALID: 'The saved operation data is invalid and cannot be retried safely',
+  OPERATION_RECONCILIATION_UNAVAILABLE:
+    'This provider outcome cannot be reconciled from the generic operations screen',
+  PASSWORD_RESET_INVALID: 'This password reset link is invalid, expired or already used',
+  PROJECT_MEMBER_EXISTS: 'This user is already a member of the project',
+  PROJECT_ROLE_NOT_FOUND: 'The selected project role was not found',
+  PROJECT_SLUG_EXISTS: 'Choose a different project slug because this one is already in use',
   RICH_DRAFT_INVALID: 'The rich draft settings are invalid',
   RICH_DRAFT_MEDIA_INVALID: 'The selected rich-draft media is invalid',
   RICH_DRAFT_MEDIA_NOT_REUSABLE: 'The selected media cannot be reused in this rich draft',
+  ROLE_IN_USE: 'Remove this role from every assigned user before deleting it',
+  ROLE_NAME_EXISTS: 'A role with this name already exists in this scope',
+  ROLE_NAME_INVALID: 'Enter a role name that contains letters or numbers',
+  ROLE_PERMISSION_NOT_FOUND: 'One or more selected permissions are not available in this scope',
+  SYSTEM_ROLE_IMMUTABLE: 'Built-in system roles cannot be edited or deleted',
   UNKNOWN_REQUIRES_RECONCILIATION:
     'Reconcile the unknown delivery result before attempting a retry',
+  USER_NOT_FOUND: 'The selected user was not found',
 };
 
 function isHttpErrorResponse(value: unknown): value is HttpErrorResponse {

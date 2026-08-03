@@ -1,4 +1,9 @@
-import { IsObject, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsArray, IsObject, IsOptional, IsString, Length, Matches } from 'class-validator';
+
+function optionalDescription({ value }: { value: unknown }): unknown {
+  return typeof value === 'string' && value.trim() === '' ? null : value;
+}
 
 export class CreateProjectDto {
   @IsString()
@@ -10,9 +15,10 @@ export class CreateProjectDto {
   slug!: string;
 
   @IsOptional()
+  @Transform(optionalDescription)
   @IsString()
   @Length(1, 2_000)
-  description?: string;
+  description?: string | null;
 
   @IsString()
   @Length(1, 100)
@@ -34,9 +40,10 @@ export class UpdateProjectDto {
   name?: string;
 
   @IsOptional()
+  @Transform(optionalDescription)
   @IsString()
   @Length(1, 2_000)
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsString()
@@ -56,6 +63,38 @@ export class UpdateProjectDto {
 export class UpdateMembershipDto {
   @IsString()
   projectRoleId!: string;
+}
+
+export class CloneProjectDto {
+  @IsString()
+  @Length(1, 160)
+  name!: string;
+
+  @IsString()
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  slug!: string;
+}
+
+export class CreateProjectRoleDto {
+  @IsString()
+  @Length(1, 100)
+  name!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  permissionCodes!: string[];
+}
+
+export class UpdateProjectRoleDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 100)
+  name?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissionCodes?: string[];
 }
 
 export class AddMemberDto extends UpdateMembershipDto {

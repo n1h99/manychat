@@ -651,3 +651,35 @@ managers cannot enumerate another lead's schedule.
   affected node or connection and server race errors remain human-readable.
 - `CLEAR_CUSTOM_FIELD` clears one contact value transactionally from JSON and
   typed projections without deleting the field definition.
+
+## Platform operations completion — implemented
+
+The final non-provider platform slice is implemented as four connected product
+areas:
+
+1. **Operations & Audit Center.** A project-scoped screen combines bounded safe
+   projections from inbound, outbound, automation and broadcast journals with
+   filters, status summaries and audit history. `FAILED`/`DEAD_LETTER` recovery
+   is explicit, reasoned and audited. `UNKNOWN` requires provider evidence and
+   cannot be blindly retried.
+2. **Account lifecycle and RBAC.** Global/project invitations use hashed,
+   expiring single-use tokens. Existing accounts authenticate before accepting;
+   new accounts establish their profile and password at acceptance. Password
+   reset is enumeration-safe, operator-mediated until an email provider is
+   approved, and revokes active sessions. Custom global/project roles are
+   editable while seeded roles remain immutable.
+3. **Project settings and clone.** General name, locale, timezone and optional
+   description are editable. A safe clone starts in `DRAFT`, gives the actor a
+   project-admin membership and copies only general settings plus custom role
+   definitions—never contacts, channels, credentials, messages, media,
+   automations, executions or history.
+4. **System Health.** A `roles:manage`-guarded page combines live PostgreSQL/Redis/worker
+   checks, BullMQ counts, durable failure/unknown aggregates, derived alerts and
+   global audit history. PostgreSQL remains authoritative and Redis remains an
+   execution signal.
+
+This slice adds no Prisma migration. Sentry and in-product backup management
+are deliberately excluded; Railway backups remain an operator configuration.
+WhatsApp/Instagram and provider-limited Telegram capabilities remain separately
+deferred. Automated gates run before deployment; broad live acceptance remains
+the final combined user verification stage.

@@ -13,7 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { DatabaseService } from '../database/database.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
-import type { CreateProjectDto, UpdateProjectDto } from './dto';
+import type { CloneProjectDto, CreateProjectDto, UpdateProjectDto } from './dto';
 import { ProjectRolesService } from './project-roles.service';
 
 const projectSelection = {
@@ -70,10 +70,83 @@ export class ProjectsService {
 
   async listRoles(projectId: string, auth: AuthenticatedUser) {
     await this.assertProjectRead(projectId, auth);
-    return this.database.client.projectRole.findMany({
-      orderBy: { name: 'asc' },
-      select: { id: true, name: true, normalizedName: true },
-      where: { projectId },
+    return this.roles.list(projectId);
+  }
+
+  async clone(
+    sourceProjectId: string,
+    input: CloneProjectDto,
+    auth: AuthenticatedUser,
+    context: RequestSecurityContext,
+  ) {
+    const source = await this.get(sourceProjectId, auth);
+    const existing = await this.database.client.project.findUnique({ where: { slug: input.slug } });
+    if (existing) throw new ConflictException({ code: 'PROJECT_SLUG_EXISTS' });
+    const customRoles = await this.database.client.projectRole.findMany({
+      include: { permissions: { select: { permissionId: true } } },
+      where: { projectId: sourceProjectId, system: false },
+    });
+    return this.database.client.$transaction(async (transaction) => {
+      const project = await transaction.project.create({
+        data: {
+          description: source.description,
+          locale: source.locale,
+          name: input.name.trim(),
+          settings: source.settings as Prisma.InputJsonValue,
+          slug: input.slug,
+          status: 'DRAFT',
+          timezone: source.timezone,
+        },
+        select: projectSelection,
+      });
+      const roles = await this.roles.ensureForProject(project.id, transaction);
+      for (const role of customRoles) {
+        const cloned = await transaction.projectRole.create({
+          data: {
+            name: role.name,
+            normalizedName: role.normalizedName,
+            projectId: project.id,
+            system: false,
+          },
+        });
+        if (role.permissions.length)
+          await transaction.projectRolePermission.createMany({
+            data: role.permissions.map(({ permissionId }) => ({
+              permissionId,
+              projectId: project.id,
+              projectRoleId: cloned.id,
+            })),
+          });
+      }
+      const projectAdminRoleId = roles.get('project-admin');
+      if (!projectAdminRoleId) throw new Error('Project Admin system role was not created');
+      await transaction.projectMembership.create({
+        data: {
+          createdById: auth.userId,
+          projectId: project.id,
+          projectRoleId: projectAdminRoleId,
+          userId: auth.userId,
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          action: 'project.cloned',
+          actorEmailSnapshot: auth.email,
+          actorType: 'USER',
+          actorUserId: auth.userId,
+          afterSafeJson: { name: project.name, slug: project.slug, sourceProjectId },
+          correlationId: context.correlationId,
+          entityId: project.id,
+          entityType: 'Project',
+          ip: context.ip ?? null,
+          projectId: project.id,
+          projectNameSnapshot: project.name,
+          projectSlugSnapshot: project.slug,
+          purgeAfter: new Date(Date.now() + 180 * 24 * 60 * 60 * 1_000),
+          userAgent: context.userAgent ?? null,
+        },
+      });
+      return project;
     });
   }
 
