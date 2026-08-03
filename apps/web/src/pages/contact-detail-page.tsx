@@ -21,7 +21,6 @@ import { useParams } from 'react-router';
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
-import { StatusText } from '../status-text';
 
 interface Contact {
   id: string;
@@ -83,6 +82,8 @@ export function ContactDetailPage() {
   const reload = async () =>
     cache.invalidateQueries({ queryKey: ['contact', projectId, contactId] });
   const value = contact.data;
+  const statusLabel = `${value.status[0]}${value.status.slice(1).toLowerCase().replace('_', '-')}`;
+  const automationLabel = value.automationMode === 'ENABLED' ? 'Enabled' : 'Disabled';
   const canUpdate = hasProjectPermission(access.data, 'contacts:update');
   const deleteContact = async () => {
     try {
@@ -115,24 +116,25 @@ export function ContactDetailPage() {
         <Col lg={9} xs={24}>
           <Card className="contact-summary-card" title="Contact summary">
             <Descriptions column={1} size="small">
-              <Descriptions.Item label="CRM lead">{value.crmLeadId ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="CRM lead">{value.crmLeadId ?? '\u2014'}</Descriptions.Item>
               <Descriptions.Item label="Channel identities">
                 {value.channelIdentities.length
                   ? value.channelIdentities.map((identity) => (
                       <div className="identity-row" key={identity.id}>
-                        <Tag>{identity.channel}</Tag>
-                        <span>
-                          {identity.username ? `@${identity.username}` : identity.externalUserId}
-                        </span>
+                        <span className="identity-channel">{identity.channel}</span>
+                        <span className="identity-name">{identity.username ? `@${identity.username}` : identity.externalUserId}</span>
                       </div>
                     ))
                   : 'No identities'}
                 <div className="identity-metadata">
-                  <StatusText status={value.status} />
-                  <StatusText
-                    label={`Automation ${value.automationMode.toLowerCase()}`}
-                    status={value.automationMode}
-                  />
+                  <span>
+                    <span className="summary-status-label">Status:</span>
+                    <span>{statusLabel}</span>
+                  </span>
+                  <span>
+                    <span className="summary-status-label">Automation:</span>
+                    <span>{automationLabel}</span>
+                  </span>
                 </div>
               </Descriptions.Item>
               <Descriptions.Item label="Tags">
@@ -407,4 +409,3 @@ export function ContactDetailPage() {
     </section>
   );
 }
-
