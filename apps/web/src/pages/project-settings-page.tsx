@@ -100,10 +100,7 @@ export function ProjectSettingsPage() {
           ) : null}
         </Card>
         {canClone || data ? (
-          <Card
-            className="settings-card settings-card--soft"
-            title={canClone ? 'Clone project' : 'Project actions'}
-          >
+          <Card className="settings-card settings-card--soft" title="Project actions">
             <div className="clone-project-card-content">
               {canClone ? (
                 <>
