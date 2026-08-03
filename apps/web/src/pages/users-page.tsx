@@ -265,14 +265,16 @@ export function UsersPage() {
               align: 'right',
               render: (_, row) =>
                 canManage ? (
-                  <Space size={8}>
+                  <Space className="user-row-actions" size={8}>
                     <Button
                       aria-label={`Edit ${fullName(row)}`}
+                      className="user-row-action-btn"
                       icon={<EditOutlined />}
                       onClick={() => openEdit(row)}
                     />
                     <Button
                       aria-label={`Revoke sessions for ${fullName(row)}`}
+                      className="user-row-action-btn"
                       icon={<SafetyCertificateOutlined />}
                       onClick={async () => {
                         try {
@@ -291,6 +293,7 @@ export function UsersPage() {
                     />
                     <Button
                       aria-label={`Reset password for ${fullName(row)}`}
+                      className="user-row-action-btn"
                       icon={<LinkOutlined />}
                       onClick={async () => {
                         try {
@@ -314,22 +317,26 @@ export function UsersPage() {
                         }
                       }}
                     />
-                    <Button
-                      aria-label={`Disable ${fullName(row)}`}
-                      danger
-                      hidden={row.status !== 'ACTIVE'}
-                      icon={<StopOutlined />}
-                      onClick={() => setDisableTarget(row)}
-                    />
-                    <Button
-                      aria-label={`Activate ${fullName(row)}`}
-                      className="user-activate-action-btn"
-                      hidden={row.status !== 'DISABLED'}
-                      icon={<CheckCircleOutlined />}
-                      onClick={() => setActivateTarget(row)}
-                    />
+                    {row.status === 'ACTIVE' ? (
+                      <Button
+                        aria-label={`Disable ${fullName(row)}`}
+                        className="user-row-action-btn"
+                        danger
+                        icon={<StopOutlined />}
+                        onClick={() => setDisableTarget(row)}
+                      />
+                    ) : null}
+                    {row.status === 'DISABLED' ? (
+                      <Button
+                        aria-label={`Activate ${fullName(row)}`}
+                        className="user-row-action-btn user-activate-action-btn"
+                        icon={<CheckCircleOutlined />}
+                        onClick={() => setActivateTarget(row)}
+                      />
+                    ) : null}
                     <Button
                       aria-label={`Delete ${fullName(row)}`}
+                      className="user-row-action-btn"
                       danger
                       icon={<DeleteOutlined />}
                       onClick={() => setDeleteTarget(row)}
@@ -625,10 +632,10 @@ export function UsersPage() {
                   getUserErrorMessage(error, 'User account could not be disabled.'),
                 );
               }
-              }}
-            >
-              Disable account
-            </Button>
+            }}
+          >
+            Disable account
+          </Button>
         </div>
       </Modal>
 
@@ -641,7 +648,9 @@ export function UsersPage() {
         width={460}
       >
         <Typography.Paragraph type="secondary">
-          {activateTarget ? `${fullName(activateTarget)} will be activated and can sign in again.` : ''}
+          {activateTarget
+            ? `${fullName(activateTarget)} will be activated and can sign in again.`
+            : ''}
         </Typography.Paragraph>
         <div className="modal-form-actions">
           <Button onClick={() => setActivateTarget(undefined)}>Cancel</Button>
@@ -658,7 +667,9 @@ export function UsersPage() {
                 void message.success('User account activated.');
                 await refresh();
               } catch (error) {
-                void message.error(getUserErrorMessage(error, 'User account could not be activated.'));
+                void message.error(
+                  getUserErrorMessage(error, 'User account could not be activated.'),
+                );
               }
             }}
           >
@@ -696,7 +707,9 @@ export function UsersPage() {
                 void message.success('User account deleted.');
                 await refresh();
               } catch (error) {
-                void message.error(getUserErrorMessage(error, 'User account could not be deleted.'));
+                void message.error(
+                  getUserErrorMessage(error, 'User account could not be deleted.'),
+                );
               }
             }}
           >
