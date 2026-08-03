@@ -43,6 +43,12 @@ export interface WhatsAppChannel extends BaseChannel {
 }
 
 export type Channel = TelegramChannel | WhatsAppChannel;
+type Paged<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
 export interface ChannelInboundEvent {
   correlationId: string;
   externalUpdateId: string;
@@ -167,17 +173,26 @@ export function useWhatsAppSetup(projectId?: string, enabled = true) {
     queryKey: ['whatsapp-setup', projectId],
   });
 }
-export function useChannelInboundEvents(projectId?: string, id?: string) {
+function unwrapChannelEvents<T>(payload: T[] | Paged<T>) {
+  return Array.isArray(payload) ? payload : payload.items;
+}
+export function useChannelInboundEvents(
+  projectId?: string,
+  id?: string,
+  page = 1,
+  pageSize = 20,
+) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId && id),
     queryFn: () =>
-      apiRequest<ChannelInboundEvent[]>(
-        `/api/v1/projects/${projectId}/channels/${id}/inbound-events`,
+      apiRequest<ChannelInboundEvent[] | Paged<ChannelInboundEvent>>(
+        `/api/v1/projects/${projectId}/channels/${id}/inbound-events?page=${page}&pageSize=${pageSize}`,
         {},
         accessToken,
       ),
-    queryKey: ['channel-inbound-events', projectId, id],
+    queryKey: ['channel-inbound-events', projectId, id, page, pageSize],
+    select: unwrapChannelEvents,
     refetchInterval: 10_000,
   });
 }
@@ -194,17 +209,23 @@ export function useChannelIdentities(projectId?: string, id?: string) {
     queryKey: ['channel-identities', projectId, id],
   });
 }
-export function useChannelOutboundEvents(projectId?: string, id?: string) {
+export function useChannelOutboundEvents(
+  projectId?: string,
+  id?: string,
+  page = 1,
+  pageSize = 20,
+) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId && id),
     queryFn: () =>
-      apiRequest<ChannelOutboundEvent[]>(
-        `/api/v1/projects/${projectId}/channels/${id}/outbound-events`,
+      apiRequest<ChannelOutboundEvent[] | Paged<ChannelOutboundEvent>>(
+        `/api/v1/projects/${projectId}/channels/${id}/outbound-events?page=${page}&pageSize=${pageSize}`,
         {},
         accessToken,
       ),
-    queryKey: ['channel-outbound-events', projectId, id],
+    queryKey: ['channel-outbound-events', projectId, id, page, pageSize],
+    select: unwrapChannelEvents,
     refetchInterval: 5_000,
   });
 }

@@ -32,6 +32,7 @@ describe('ChannelsService outbound diagnostics', () => {
             ]),
           },
           outboxRecord: {
+            count: vi.fn().mockResolvedValue(1),
             findMany: vi.fn().mockResolvedValue([
               {
                 attempts: 2,
@@ -58,14 +59,17 @@ describe('ChannelsService outbound diagnostics', () => {
       {} as never,
     );
 
-    const [result] = await service.outboundEvents('project-a', 'connection-a');
+    const result = await service.outboundEvents('project-a', 'connection-a', {
+      page: 1,
+      pageSize: 20,
+    });
 
-    expect(result).toMatchObject({
+    expect(result.items[0]).toMatchObject({
       id: 'outbox-a',
       message: { id: 'message-a', status: 'QUEUED' },
       status: 'RETRY',
     });
-    expect(result).not.toHaveProperty('payload');
-    expect(JSON.stringify(result)).not.toContain('must-not-leak');
+    expect(result.items[0]).not.toHaveProperty('payload');
+    expect(JSON.stringify(result.items[0])).not.toContain('must-not-leak');
   });
 });

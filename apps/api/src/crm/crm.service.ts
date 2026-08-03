@@ -15,6 +15,7 @@ import type {
   RetryCrmOperationDto,
   StartCrmPairingDto,
   UpsertCrmProjectConfigDto,
+  CrmOperationsQueryDto,
 } from './dto';
 
 type SafeCrmOperation = {
@@ -294,14 +295,25 @@ export class CrmService {
     return this.safeConfig(updated);
   }
 
-  async listOperations(projectId: string): Promise<SafeCrmOperation[]> {
+  async listOperations(
+    projectId: string,
+    query: CrmOperationsQueryDto,
+  ): Promise<{ items: SafeCrmOperation[]; page: number; pageSize: number; total: number }> {
+    const skip = (query.page - 1) * query.pageSize;
     const operations = await this.database.client.crmOperation.findMany({
       include: { outbox: true },
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      skip,
+      take: query.pageSize,
       where: { projectId },
     });
-    return operations.map((operation) => this.safeOperation(operation));
+    const total = await this.database.client.crmOperation.count({ where: { projectId } });
+    return {
+      items: operations.map((operation) => this.safeOperation(operation)),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
   }
 
   async retryOperation(

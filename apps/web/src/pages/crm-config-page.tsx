@@ -33,7 +33,8 @@ export function CrmConfigPage() {
   const { projectId } = useParams();
   const access = useProjectAccess(projectId);
   const config = useCrmProjectConfig(projectId);
-  const operations = useCrmOperations(projectId);
+  const [crmOperationsPage, setCrmOperationsPage] = useState(1);
+  const operations = useCrmOperations(projectId, crmOperationsPage);
   const retry = useRetryCrmOperation(projectId);
   const save = useSaveCrmProjectConfig(projectId);
   const connectionMutations = useCrmConnectionMutations(projectId);
@@ -221,14 +222,20 @@ export function CrmConfigPage() {
         CRM operation journal
       </Typography.Title>
       <Table<CrmOperation>
-        dataSource={operations.data ?? []}
+        dataSource={operations.data?.items ?? []}
         loading={operations.isLoading}
         locale={{
           emptyText: operations.isError
             ? 'The CRM operation journal could not be loaded.'
             : 'No CRM operations yet.',
         }}
-        pagination={{ pageSize: 10, showSizeChanger: false }}
+        pagination={{
+          current: crmOperationsPage,
+          onChange: setCrmOperationsPage,
+          pageSize: 10,
+          showSizeChanger: false,
+          total: operations.data?.total ?? 0,
+        }}
         rowKey="id"
         columns={[
           { dataIndex: 'type', key: 'type', title: 'Operation' },

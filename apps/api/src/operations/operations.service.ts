@@ -58,10 +58,12 @@ export class OperationsService {
   ) {}
 
   async list(projectId: string, query: OperationsQueryDto) {
-    const take = 500;
     const createdAt = dateWhere(query);
     const source = query.source;
-    const rows: SafeOperation[] = [];
+    const offset = (query.page - 1) * query.pageSize;
+    const sourceLimit = source === undefined ? query.page * query.pageSize : query.pageSize;
+    const baseRows: SafeOperation[] = [];
+    const total = await this.total(projectId, source, query, createdAt);
 
     if (!source || source === 'INBOX') {
       const inbox = await this.database.client.inboxRecord.findMany({
@@ -77,7 +79,8 @@ export class OperationsService {
           status: true,
           updatedAt: true,
         },
-        take,
+        skip: source ? offset : 0,
+        take: sourceLimit,
         where: {
           projectId,
           ...(createdAt ? { createdAt } : {}),
@@ -88,7 +91,7 @@ export class OperationsService {
             : {}),
         },
       });
-      rows.push(
+      baseRows.push(
         ...inbox.map((row): SafeOperation => ({
           attempts: row.attempts,
           correlationId: row.rawWebhookEvent.correlationId,
@@ -125,7 +128,8 @@ export class OperationsService {
           status: true,
           updatedAt: true,
         },
-        take,
+        skip: source ? offset : 0,
+        take: sourceLimit,
         where: {
           projectId,
           ...(createdAt ? { createdAt } : {}),
@@ -140,7 +144,7 @@ export class OperationsService {
             : {}),
         },
       });
-      rows.push(
+      baseRows.push(
         ...outbox.map((row): SafeOperation => {
           const externalHttp = Boolean(row.externalHttpOperation);
           const entityType = externalHttp
@@ -187,7 +191,8 @@ export class OperationsService {
           status: true,
           updatedAt: true,
         },
-        take,
+        skip: source ? offset : 0,
+        take: sourceLimit,
         where: {
           projectId,
           ...(createdAt ? { createdAt } : {}),
@@ -195,7 +200,7 @@ export class OperationsService {
           ...(query.correlationId ? { correlationId: { contains: query.correlationId } } : {}),
         },
       });
-      rows.push(
+      baseRows.push(
         ...executions.map((row): SafeOperation => ({
           correlationId: row.correlationId,
           createdAt: row.createdAt,
@@ -224,7 +229,8 @@ export class OperationsService {
           status: true,
           updatedAt: true,
         },
-        take,
+        skip: source ? offset : 0,
+        take: sourceLimit,
         where: {
           projectId,
           ...(createdAt ? { createdAt } : {}),
@@ -233,7 +239,7 @@ export class OperationsService {
           ...(query.correlationId ? { id: '__no_broadcast_correlation_match__' } : {}),
         },
       });
-      rows.push(
+      baseRows.push(
         ...broadcasts.map((row): SafeOperation => ({
           createdAt: row.createdAt,
           entityType: `Broadcast: ${row.name}`,
@@ -248,14 +254,112 @@ export class OperationsService {
       );
     }
 
-    rows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
-    const start = (query.page - 1) * query.pageSize;
+    baseRows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    const merged = source === undefined ? baseRows.slice(offset, offset + query.pageSize) : baseRows;
     return {
-      items: rows.slice(start, start + query.pageSize),
+      items: merged,
       page: query.page,
       pageSize: query.pageSize,
-      total: rows.length,
+      total,
     };
+  }
+
+  private async total(
+    projectId: string,
+    source: 'AUTOMATION' | 'BROADCAST' | 'INBOX' | 'OUTBOX' | undefined,
+    query: OperationsQueryDto,
+    createdAt: Prisma.DateTimeFilter | undefined,
+  ): Promise<number> {
+    const whereBase = {
+      projectId,
+      ...(createdAt ? { createdAt } : {}),
+      ...(query.status ? { status: query.status as never } : {}),
+    };
+    if (source === 'INBOX') {
+      const inboxCount = await this.database.client.inboxRecord.count({
+        where: {
+          ...whereBase,
+          ...(query.connectionId ? { connectionId: query.connectionId } : {}),
+          ...(query.correlationId
+            ? { rawWebhookEvent: { correlationId: { contains: query.correlationId } } }
+            : {}),
+        },
+      });
+      return inboxCount;
+    }
+    if (source === 'OUTBOX') {
+      const outboxCount = await this.database.client.outboxRecord.count({
+        where: {
+          ...whereBase,
+          ...(query.connectionId ? { connectionId: query.connectionId } : {}),
+          ...(query.correlationId
+            ? {
+                externalHttpOperation: {
+                  execution: { correlationId: { contains: query.correlationId } },
+                },
+              }
+            : {}),
+        },
+      });
+      return outboxCount;
+    }
+    if (source === 'AUTOMATION') {
+      const executionCount = await this.database.client.scenarioExecution.count({
+        where: {
+          ...whereBase,
+          ...(query.correlationId ? { correlationId: { contains: query.correlationId } } : {}),
+        },
+      });
+      return executionCount;
+    }
+    if (source === 'BROADCAST') {
+      const broadcastCount = await this.database.client.broadcast.count({
+        where: {
+          ...whereBase,
+          ...(query.connectionId ? { connectionId: query.connectionId } : {}),
+          ...(query.correlationId ? { id: '__no_broadcast_correlation_match__' } : {}),
+        },
+      });
+      return broadcastCount;
+    }
+    const [inboxCount, outboxCount, executionCount, broadcastCount] = await Promise.all([
+      this.database.client.inboxRecord.count({
+        where: {
+          ...whereBase,
+          ...(query.connectionId ? { connectionId: query.connectionId } : {}),
+          ...(query.correlationId
+            ? { rawWebhookEvent: { correlationId: { contains: query.correlationId } } }
+            : {}),
+        },
+      }),
+      this.database.client.outboxRecord.count({
+        where: {
+          ...whereBase,
+          ...(query.connectionId ? { connectionId: query.connectionId } : {}),
+          ...(query.correlationId
+            ? {
+                externalHttpOperation: {
+                  execution: { correlationId: { contains: query.correlationId } },
+                },
+              }
+            : {}),
+        },
+      }),
+      this.database.client.scenarioExecution.count({
+        where: {
+          ...whereBase,
+          ...(query.correlationId ? { correlationId: { contains: query.correlationId } } : {}),
+        },
+      }),
+      this.database.client.broadcast.count({
+        where: {
+          ...whereBase,
+          ...(query.connectionId ? { connectionId: query.connectionId } : {}),
+          ...(query.correlationId ? { id: '__no_broadcast_correlation_match__' } : {}),
+        },
+      }),
+    ]);
+    return inboxCount + outboxCount + executionCount + broadcastCount;
   }
 
   async summary(projectId: string) {

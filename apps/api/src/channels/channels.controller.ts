@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
@@ -7,8 +7,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { ChannelsService } from './channels.service';
-import type { CompleteWhatsAppSetupDto } from './dto';
 import { CreateTelegramChannelDto, TestTelegramMessageDto, UpdateTelegramChannelDto } from './dto';
+import type { ChannelEventsQueryDto, CompleteWhatsAppSetupDto } from './dto';
 import { WhatsAppChannelsService } from './whatsapp-channels.service';
 
 @ApiTags('channels')
@@ -66,9 +66,10 @@ export class ChannelsController {
   async inboundEvents(
     @Param('projectId') projectId: string,
     @Param('connectionId') connectionId: string,
+    @Query() query: ChannelEventsQueryDto,
   ) {
     return {
-      data: await this.channels.inboundEvents(projectId, connectionId),
+      data: await this.channels.inboundEvents(projectId, connectionId, query),
       meta: {},
     };
   }
@@ -77,9 +78,10 @@ export class ChannelsController {
   async outboundEvents(
     @Param('projectId') projectId: string,
     @Param('connectionId') connectionId: string,
+    @Query() query: ChannelEventsQueryDto,
   ) {
     return {
-      data: await this.channels.outboundEvents(projectId, connectionId),
+      data: await this.channels.outboundEvents(projectId, connectionId, query),
       meta: {},
     };
   }

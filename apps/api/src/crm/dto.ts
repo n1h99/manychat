@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsObject,
@@ -7,6 +8,8 @@ import {
   IsUrl,
   Length,
   MaxLength,
+  Max,
+  Min,
 } from 'class-validator';
 
 export class UpsertCrmProjectConfigDto {
@@ -74,4 +77,17 @@ export class CompleteCrmPairingDto {
   @IsOptional()
   @IsObject()
   capabilities?: Record<string, unknown>;
+}
+
+export class CrmOperationsQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @Min(1)
+  page = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(10)
+  @Max(100)
+  pageSize = 50;
 }

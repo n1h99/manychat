@@ -28,7 +28,7 @@ import {
   message,
 } from 'antd';
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
 import {
@@ -566,7 +566,16 @@ export function ChannelDetailPage() {
             key: 'graph-version',
             label: 'Graph API version',
           },
-        ];
+    ];
+
+  const inboundOperationsLink = `/projects/${projectId}/operations?${new URLSearchParams({
+    connectionId: connection.id,
+    source: 'INBOX',
+  }).toString()}`;
+  const outboundOperationsLink = `/projects/${projectId}/operations?${new URLSearchParams({
+    connectionId: connection.id,
+    source: 'OUTBOX',
+  }).toString()}`;
 
   return (
     <section>
@@ -1022,6 +1031,12 @@ export function ChannelDetailPage() {
         <Typography.Paragraph type="secondary">
           Safe processing diagnostics only. Provider payloads and channel secrets are never shown.
         </Typography.Paragraph>
+        {inboundOperationsLink ? (
+          <Typography.Paragraph type="secondary">
+            Need older events?{' '}
+            <Link to={inboundOperationsLink}>Open full inbound operation history</Link>.
+          </Typography.Paragraph>
+        ) : null}
         <Table<ChannelInboundEvent>
           columns={[
             {
@@ -1075,6 +1090,12 @@ export function ChannelDetailPage() {
         <Typography.Paragraph type="secondary">
           Safe delivery diagnostics only. Message content and channel secrets are never shown.
         </Typography.Paragraph>
+        {outboundOperationsLink ? (
+          <Typography.Paragraph type="secondary">
+            Need older events?{' '}
+            <Link to={outboundOperationsLink}>Open full outbound operation history</Link>.
+          </Typography.Paragraph>
+        ) : null}
         <Table<ChannelOutboundEvent>
           columns={[
             {

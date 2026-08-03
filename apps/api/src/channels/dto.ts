@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -7,6 +8,8 @@ import {
   IsUUID,
   Length,
   Matches,
+  Max,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -129,4 +132,17 @@ export class TestTelegramMessageDto {
   @ApiProperty({ type: String }) @IsString() @Length(8, 200) idempotencyKey!: string;
   @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() disableNotification?: boolean;
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() replyToMessageId?: string;
+}
+
+export class ChannelEventsQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @Min(1)
+  page = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(10)
+  @Max(100)
+  pageSize = 20;
 }

@@ -106,6 +106,7 @@ export function OperationsPage() {
   const client = useQueryClient();
   const sourceParam = searchParams.get('source');
   const statusParam = searchParams.get('status');
+  const connectionIdParam = searchParams.get('connectionId');
   const source =
     sourceParam && operationSources.includes(sourceParam as (typeof operationSources)[number])
       ? sourceParam
@@ -113,6 +114,10 @@ export function OperationsPage() {
   const status =
     statusParam && operationStatuses.includes(statusParam as (typeof operationStatuses)[number])
       ? statusParam
+      : undefined;
+  const connectionId =
+    connectionIdParam && connectionIdParam.length >= 1 && connectionIdParam.length <= 160
+      ? connectionIdParam
       : undefined;
   const [correlationId, setCorrelationId] = useState('');
   const [page, setPage] = useState(1);
@@ -135,13 +140,14 @@ export function OperationsPage() {
     const query = new URLSearchParams({ page: String(page), pageSize: '50' });
     if (source) query.set('source', source);
     if (status) query.set('status', status);
+    if (connectionId) query.set('connectionId', connectionId);
     if (correlationId.trim()) query.set('correlationId', correlationId.trim());
     if (range) {
       query.set('from', range[0]);
       query.set('to', range[1]);
     }
     return query.toString();
-  }, [correlationId, page, range, source, status]);
+  }, [connectionId, correlationId, page, range, source, status]);
   const operations = useQuery({
     enabled: Boolean(projectId),
     queryFn: () =>

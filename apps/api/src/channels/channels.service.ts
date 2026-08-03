@@ -73,43 +73,58 @@ export class ChannelsService {
       return this.whatsApp.get(projectId, connectionId);
     return this.safe(await this.connection(projectId, connectionId));
   }
-  async inboundEvents(projectId: string, connectionId: string) {
+  async inboundEvents(
+    projectId: string,
+    connectionId: string,
+    query: { page: number; pageSize: number },
+  ) {
     await this.providerType(projectId, connectionId);
-    return this.database.client.rawWebhookEvent.findMany({
-      orderBy: { receivedAt: 'desc' },
-      select: {
-        correlationId: true,
-        externalUpdateId: true,
-        inboxRecord: {
-          select: {
-            attempts: true,
-            completedAt: true,
-            lastError: true,
-            maxAttempts: true,
-            nextAttemptAt: true,
-            normalizedEvent: {
-              select: {
-                createdAt: true,
-                message: {
-                  select: {
-                    contactId: true,
-                    conversationId: true,
-                    id: true,
-                    status: true,
+    const skip = (query.page - 1) * query.pageSize;
+    const [items, total] = await Promise.all([
+      this.database.client.rawWebhookEvent.findMany({
+        orderBy: { receivedAt: 'desc' },
+        select: {
+          correlationId: true,
+          externalUpdateId: true,
+          inboxRecord: {
+            select: {
+              attempts: true,
+              completedAt: true,
+              lastError: true,
+              maxAttempts: true,
+              nextAttemptAt: true,
+              normalizedEvent: {
+                select: {
+                  createdAt: true,
+                  message: {
+                    select: {
+                      contactId: true,
+                      conversationId: true,
+                      id: true,
+                      status: true,
+                    },
                   },
+                  type: true,
                 },
-                type: true,
               },
+              status: true,
             },
-            status: true,
           },
+          receivedAt: true,
+          status: true,
         },
-        receivedAt: true,
-        status: true,
-      },
-      take: 20,
-      where: { connectionId, projectId },
-    });
+        skip,
+        take: query.pageSize,
+        where: { connectionId, projectId },
+      }),
+      this.database.client.rawWebhookEvent.count({ where: { connectionId, projectId } }),
+    ]);
+    return {
+      items,
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
   }
   async create(
     projectId: string,
@@ -542,29 +557,39 @@ export class ChannelsService {
       },
     });
   }
-  async outboundEvents(projectId: string, connectionId: string) {
+  async outboundEvents(
+    projectId: string,
+    connectionId: string,
+    query: { page: number; pageSize: number },
+  ) {
     const channel = await this.providerType(projectId, connectionId);
-    const records = await this.database.client.outboxRecord.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        attempts: true,
-        completedAt: true,
-        createdAt: true,
-        id: true,
-        lastError: true,
-        maxAttempts: true,
-        nextAttemptAt: true,
-        payload: true,
-        status: true,
-        updatedAt: true,
-      },
-      take: 20,
-      where: {
-        connectionId,
-        kind: channel,
-        projectId,
-      },
-    });
+    const skip = (query.page - 1) * query.pageSize;
+    const where = {
+      connectionId,
+      kind: channel,
+      projectId,
+    };
+    const [records, total] = await Promise.all([
+      this.database.client.outboxRecord.findMany({
+        orderBy: { createdAt: 'desc' },
+        select: {
+          attempts: true,
+          completedAt: true,
+          createdAt: true,
+          id: true,
+          lastError: true,
+          maxAttempts: true,
+          nextAttemptAt: true,
+          payload: true,
+          status: true,
+          updatedAt: true,
+        },
+        skip,
+        take: query.pageSize,
+        where,
+      }),
+      this.database.client.outboxRecord.count({ where }),
+    ]);
     const messageIds = records.flatMap((record) => {
       const messageId = (record.payload as { messageId?: unknown }).messageId;
       return typeof messageId === 'string' ? [messageId] : [];
@@ -584,13 +609,14 @@ export class ChannelsService {
       },
     });
     const messagesById = new Map(messages.map((message) => [message.id, message]));
-    return records.map(({ payload, ...record }) => {
+    const items = records.map(({ payload, ...record }) => {
       const messageId = (payload as { messageId?: unknown }).messageId;
       return {
         ...record,
         message: typeof messageId === 'string' ? (messagesById.get(messageId) ?? null) : null,
       };
     });
+    return { items, page: query.page, pageSize: query.pageSize, total };
   }
   private async connection(projectId: string, id: string) {
     const row = await this.database.client.channelConnection.findUnique({

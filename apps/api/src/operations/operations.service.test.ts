@@ -30,7 +30,7 @@ describe('OperationsService', () => {
     ]);
     const service = new OperationsService(
       {} as never,
-      { client: { outboxRecord: { findMany } } } as never,
+      { client: { outboxRecord: { count: vi.fn().mockResolvedValue(1), findMany } } } as never,
       {} as never,
       {} as never,
     );

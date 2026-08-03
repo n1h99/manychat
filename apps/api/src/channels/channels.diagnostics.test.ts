@@ -38,7 +38,7 @@ describe('ChannelsService inbound diagnostics', () => {
               type: 'TELEGRAM',
             }),
           },
-          rawWebhookEvent: { findMany },
+          rawWebhookEvent: { count: vi.fn().mockResolvedValue(1), findMany },
         },
       } as never,
       { record: vi.fn() } as never,
@@ -46,7 +46,12 @@ describe('ChannelsService inbound diagnostics', () => {
       {} as never,
     );
 
-    await expect(service.inboundEvents('project-a', 'connection-a')).resolves.toHaveLength(1);
+    await expect(
+      service.inboundEvents('project-a', 'connection-a', { page: 1, pageSize: 20 }),
+    ).resolves.toMatchObject({
+      total: 1,
+      items: [{ correlationId: 'correlation-a', status: 'RECEIVED' }],
+    });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         select: expect.not.objectContaining({ payload: true }),
@@ -75,7 +80,7 @@ describe('ChannelsService inbound diagnostics', () => {
               type: 'WHATSAPP',
             }),
           },
-          rawWebhookEvent: { findMany },
+          rawWebhookEvent: { count: vi.fn().mockResolvedValue(0), findMany },
         },
       } as never,
       { record: vi.fn() } as never,
@@ -83,7 +88,9 @@ describe('ChannelsService inbound diagnostics', () => {
       {} as never,
     );
 
-    await expect(service.inboundEvents('project-a', 'connection-whatsapp')).resolves.toEqual([]);
+    await expect(
+      service.inboundEvents('project-a', 'connection-whatsapp', { page: 1, pageSize: 20 }),
+    ).resolves.toMatchObject({ items: [] });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { connectionId: 'connection-whatsapp', projectId: 'project-a' },

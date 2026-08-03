@@ -39,6 +39,13 @@ export interface CrmOperation {
   updatedAt: string;
 }
 
+interface Paged<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 export function useCrmProjectConfig(projectId?: string) {
   const { accessToken } = useAuth();
   return useQuery({
@@ -108,13 +115,17 @@ export function useCrmConnectionMutations(projectId?: string) {
   };
 }
 
-export function useCrmOperations(projectId?: string) {
+export function useCrmOperations(projectId?: string, page = 1, pageSize = 10) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId),
     queryFn: () =>
-      apiRequest<CrmOperation[]>(`/api/v1/projects/${projectId}/crm-operations`, {}, accessToken),
-    queryKey: ['crm-operations', projectId],
+      apiRequest<Paged<CrmOperation>>(
+        `/api/v1/projects/${projectId}/crm-operations?page=${page}&pageSize=${pageSize}`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['crm-operations', projectId, page],
   });
 }
 

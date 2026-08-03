@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
 
 import { RequireProjectPermission } from '../access/access.decorators';
@@ -7,6 +7,7 @@ import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types'
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RetryCrmOperationDto } from './dto';
+import type { CrmOperationsQueryDto } from './dto';
 import { CrmService } from './crm.service';
 
 @ApiTags('crm')
@@ -18,8 +19,8 @@ export class CrmOperationsController {
 
   @Get()
   @RequireProjectPermission('integrations:manage')
-  async list(@Param('projectId') projectId: string) {
-    return { data: await this.crm.listOperations(projectId), meta: {} };
+  async list(@Param('projectId') projectId: string, @Query() query: CrmOperationsQueryDto) {
+    return { data: await this.crm.listOperations(projectId, query), meta: {} };
   }
 
   @Post(':operationId/retry')
