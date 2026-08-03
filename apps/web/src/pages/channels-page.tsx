@@ -1,5 +1,5 @@
-import { ApiOutlined, MessageOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Space, Spin, Table, Typography } from 'antd';
+import { ApiOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Spin, Table, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 
 import { channelAccountLabel, channelProviderLabel } from '../channel-provider';
@@ -25,21 +25,13 @@ export function ChannelsPage() {
           </Typography.Text>
         </div>
         {hasProjectPermission(access.data, 'channels:manage') ? (
-          <Space className="channel-create-actions" wrap>
-            <Button
-              icon={<ApiOutlined />}
-              onClick={() => navigate(`/projects/${projectId}/channels/new?type=telegram`)}
-            >
-              Connect Telegram
-            </Button>
-            <Button
-              icon={<MessageOutlined />}
-              onClick={() => navigate(`/projects/${projectId}/channels/new?type=whatsapp`)}
-              type="primary"
-            >
-              Connect WhatsApp
-            </Button>
-          </Space>
+          <Button
+            icon={<ApiOutlined />}
+            onClick={() => navigate(`/projects/${projectId}/channels/new`)}
+            type="primary"
+          >
+            Connect Channel
+          </Button>
         ) : null}
       </div>
       {query.isError ? (
