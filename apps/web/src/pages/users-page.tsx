@@ -206,14 +206,14 @@ export function UsersPage() {
                 </div>
               ),
               title: 'Name',
-              width: 220,
+              width: 180,
             },
             {
               dataIndex: 'email',
               ellipsis: true,
               render: (value: string) => <Typography.Text>{value}</Typography.Text>,
               title: 'Email',
-              width: 250,
+              width: 205,
             },
             {
               render: (_, row) => (
@@ -230,33 +230,35 @@ export function UsersPage() {
                 </Space>
               ),
               title: 'Roles',
-              width: 190,
+              width: 145,
             },
             {
               render: (_, row) => {
                 const location = locationLabel(row);
                 return location === 'Not set' ? (
-                  <Typography.Text type="secondary">{location}</Typography.Text>
+                  <Typography.Text className="user-location-cell" type="secondary">
+                    {location}
+                  </Typography.Text>
                 ) : (
-                  <Typography.Text>{location}</Typography.Text>
+                  <Typography.Text className="user-location-cell">{location}</Typography.Text>
                 );
               },
               title: 'Location',
+              width: 90,
             },
             {
               render: (_, row) => <StatusText status={row.status} />,
               title: 'Status',
-              width: 120,
+              width: 90,
             },
             {
               dataIndex: 'createdAt',
               render: (value: string) => new Intl.DateTimeFormat('en-GB').format(new Date(value)),
               title: 'Created',
-              width: 120,
+              width: 105,
             },
             {
               align: 'right',
-              fixed: 'right',
               render: (_, row) =>
                 canManage ? (
                   <Space size={8}>
@@ -318,7 +320,7 @@ export function UsersPage() {
                   </Space>
                 ) : null,
               title: 'Actions',
-              width: 180,
+              width: 208,
             },
           ]}
           dataSource={users.data ?? []}
@@ -330,7 +332,7 @@ export function UsersPage() {
           }}
           pagination={{ hideOnSinglePage: true, pageSize: 10, showSizeChanger: false }}
           rowKey="id"
-          scroll={{ x: 1220 }}
+          tableLayout="fixed"
         />
       </div>
 

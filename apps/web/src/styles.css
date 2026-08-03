@@ -1569,10 +1569,17 @@ button:disabled,
 }
 
 .users-table-card .ant-btn {
-  width: 40px;
-  min-width: 40px;
-  min-height: 40px;
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
   padding: 0;
+}
+
+.user-location-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .user-name-cell {
@@ -3532,15 +3539,19 @@ button:disabled,
   border-radius: 13px;
 }
 
-.project-information-item > span {
+.project-information-item > span:not(.status-text) {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.project-information-item .status-text {
+.project-information-item > .status-text {
   width: max-content;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: normal;
+  letter-spacing: normal;
 }
 
 .project-information-item strong {
