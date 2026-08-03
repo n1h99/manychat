@@ -17,6 +17,68 @@ interface HttpErrorResponse {
   message?: string | string[];
 }
 
+export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
+  AUTOMATION_IDEMPOTENCY_CONFLICT:
+    'This automation request reuses an idempotency key with different data',
+  AUTOMATION_RESUME_AT_NOT_ALLOWED: 'A resume time is allowed only for paused automation',
+  AUTOMATION_RESUME_AT_REQUIRED: 'Choose when the paused automation should resume',
+  AUTOMATION_REVISION_CONFLICT: 'Automation state changed. Refresh it before trying again',
+  BOT_COMMAND_INVALID: 'One or more bot commands are invalid',
+  BOT_COMMAND_SCOPE_INVALID: 'The selected bot command scope is invalid',
+  BOT_INTERFACE_REVISION_CONFLICT: 'Bot menu settings changed. Refresh them before saving again',
+  BOT_MENU_BUTTON_INVALID: 'One or more bot menu buttons are invalid',
+  CHANNEL_IDENTITY_NOT_FOUND: 'The Telegram identity is no longer available for this conversation',
+  CONNECTION_NOT_FOUND: 'The Telegram connection was not found',
+  CRM_BASE_URL_HTTPS_REQUIRED: 'Enter a public HTTPS CRM address',
+  CRM_BASE_URL_INVALID: 'Enter a valid CRM address',
+  CRM_CONNECTION_NOT_FOUND: 'The CRM connection was not found',
+  CRM_CONNECTION_NOT_PAIRED: 'Pair this CRM project before continuing',
+  CRM_CORRELATION_ID_REQUIRED: 'The CRM request is missing its correlation ID',
+  CRM_MEDIA_GROUP_NOT_FOUND: 'The requested media group was not found',
+  CRM_OPERATION_NOT_FOUND: 'The CRM operation was not found',
+  CRM_OPERATION_NOT_TERMINAL: 'Wait until the CRM operation reaches a final state',
+  CRM_OPERATION_STATE_CHANGED: 'The CRM operation changed. Refresh it before trying again',
+  CRM_PROJECT_ROUTE_NOT_FOUND: 'No active CRM route exists for this project',
+  CRM_RECURRENCE_END_INVALID: 'Choose a recurrence end after the first scheduled delivery',
+  CRM_RECURRENCE_INVALID: 'The recurring schedule settings are invalid',
+  CRM_REPLY_MARKUP_CONFLICT: 'Choose only one reply markup type for this message',
+  CRM_RICH_MESSAGE_INVALID: 'The rich Telegram message settings are invalid',
+  CRM_RICH_MESSAGE_MEDIA_INVALID: 'The selected rich-message media is invalid',
+  CRM_RICH_MESSAGE_MEDIA_REFERENCE_MISSING:
+    'The selected rich-message media is no longer available',
+  CRM_SCHEDULE_ALREADY_PROCESSING: 'This scheduled message is already being processed',
+  CRM_SCHEDULE_IDEMPOTENCY_CONFLICT:
+    'This scheduling request reuses an idempotency key with different data',
+  CRM_SCHEDULE_NOT_CANCELLABLE: 'This scheduled message can no longer be cancelled',
+  CRM_SCHEDULE_NOT_FOUND: 'The scheduled message was not found',
+  CRM_SCHEDULE_REVISION_CONFLICT: 'The scheduled message changed. Refresh it before saving again',
+  CRM_SCHEDULE_TIME_INVALID: 'Choose a valid future delivery time',
+  CRM_SCHEDULE_TIMEZONE_INVALID: 'Choose a valid timezone for the scheduled message',
+  CRM_STRUCTURED_MESSAGE_CONFLICT: 'Choose only one structured message type',
+  CRM_STRUCTURED_MESSAGE_INVALID: 'The structured Telegram message settings are invalid',
+  CRM_UNKNOWN_RETRY_CONFIRMATION_REQUIRED:
+    'Confirm the unknown delivery result before retrying this CRM operation',
+  DRAFT_CONTENT_CONFLICT: 'Choose only one draft content format',
+  IDEMPOTENCY_CONFLICT: 'This request reuses an idempotency key with different data',
+  MEDIA_GROUP_ASSET_NOT_FOUND: 'One or more media-group files are no longer available',
+  MEDIA_GROUP_ENTITIES_INVALID: 'The media-group caption formatting is invalid',
+  MEDIA_GROUP_KIND_COMBINATION_INVALID: 'These media types cannot be combined in one media group',
+  MEDIA_GROUP_SPOILER_INVALID: 'Spoiler mode is not supported for one or more selected files',
+  MESSAGE_ENTITIES_INVALID: 'The Telegram message formatting is invalid',
+  MESSAGE_MUTATION_INVALID: 'The requested message change is invalid',
+  MESSAGE_MUTATION_REQUIRED: 'Provide a message change before saving',
+  MESSAGE_NOT_EDITABLE: 'This Telegram message can no longer be edited',
+  MESSAGE_NOT_FOUND: 'The Telegram message was not found',
+  OPERATION_NOT_FAILED: 'Only a failed operation can be retried',
+  OPERATION_NOT_FOUND: 'The requested operation was not found',
+  OPERATION_PAYLOAD_INVALID: 'The saved operation data is invalid and cannot be retried safely',
+  RICH_DRAFT_INVALID: 'The rich draft settings are invalid',
+  RICH_DRAFT_MEDIA_INVALID: 'The selected rich-draft media is invalid',
+  RICH_DRAFT_MEDIA_NOT_REUSABLE: 'The selected media cannot be reused in this rich draft',
+  UNKNOWN_REQUIRES_RECONCILIATION:
+    'Reconcile the unknown delivery result before attempting a retry',
+};
+
 function isHttpErrorResponse(value: unknown): value is HttpErrorResponse {
   return typeof value === 'object' && value !== null;
 }
@@ -96,7 +158,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
         : 'An internal error occurred'
       : Array.isArray(rawMessage)
         ? 'Request validation failed'
-        : (rawMessage ?? 'Request failed');
+        : (rawMessage ?? SAFE_API_CODE_MESSAGES[structured?.code ?? ''] ?? 'Request failed');
     const details = serverError
       ? null
       : (structured?.details ?? (Array.isArray(rawMessage) ? { violations: rawMessage } : null));
