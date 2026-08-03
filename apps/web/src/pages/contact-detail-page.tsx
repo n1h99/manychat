@@ -21,6 +21,7 @@ import { useParams } from 'react-router';
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import type { Project } from './projects-page';
 
 interface Contact {
   id: string;
@@ -50,11 +51,51 @@ interface TagItem {
   color: string | null;
 }
 
+interface ContactSettingsLocale {
+  primaryContactIdLabel: string;
+  mergeInstruction: string;
+  mergeButtonLabel: string;
+  deleteInstruction: string;
+  deleteButtonLabel: string;
+}
+
+const CONTACT_SETTINGS_LOCALE_MAP: Record<'en' | 'ru', ContactSettingsLocale> = {
+  en: {
+    primaryContactIdLabel: 'Primary contact ID',
+    mergeInstruction:
+      'Move this record into another contact. This action cannot be undone from the UI.',
+    mergeButtonLabel: 'Merge contacts',
+    deleteInstruction:
+      'Delete this contact from the project. This action cannot be undone from the UI.',
+    deleteButtonLabel: 'Delete contact',
+  },
+  ru: {
+    primaryContactIdLabel:
+      '\u041e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0438\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u043a\u043e\u043d\u0442\u0430\u043a\u0442\u0430',
+    mergeInstruction:
+      '\u041f\u0435\u0440\u0435\u043d\u0435\u0441\u0438\u0442\u0435 \u044d\u0442\u0443 \u0437\u0430\u043f\u0438\u0441\u044c \u0432 \u0434\u0440\u0443\u0433\u043e\u0439 \u043a\u043e\u043d\u0442\u0430\u043a\u0442. \u042d\u0442\u043e \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043d\u0435\u043b\u044c\u0437\u044f \u043e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0438\u0437 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u043e\u0433\u043e \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430.',
+    mergeButtonLabel:
+      '\u041e\u0431\u044a\u0435\u0434\u0438\u043d\u0438\u0442\u044c \u043a\u043e\u043d\u0442\u0430\u043a\u0442\u044b',
+    deleteInstruction:
+      '\u0423\u0434\u0430\u043b\u0438\u0442\u0435 \u044d\u0442\u043e\u0442 \u043a\u043e\u043d\u0442\u0430\u043a\u0442 \u0438\u0437 \u043f\u0440\u043e\u0435\u043a\u0442\u0430. \u042d\u0442\u043e \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043d\u0435\u043b\u044c\u0437\u044f \u043e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0438\u0437 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u043e\u0433\u043e \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430.',
+    deleteButtonLabel:
+      '\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u043a\u043e\u043d\u0442\u0430\u043a\u0442',
+  },
+};
+function contactSettingsLocale(locale: string | undefined): ContactSettingsLocale {
+  return locale === 'ru' ? CONTACT_SETTINGS_LOCALE_MAP.ru : CONTACT_SETTINGS_LOCALE_MAP.en;
+}
+
 export function ContactDetailPage() {
   const { contactId, projectId } = useParams();
   const { accessToken } = useAuth();
   const cache = useQueryClient();
   const access = useProjectAccess(projectId);
+  const project = useQuery({
+    enabled: Boolean(projectId && accessToken),
+    queryFn: () => apiRequest<Project>(`/api/v1/projects/${projectId}`, {}, accessToken),
+    queryKey: ['project-locale', projectId, accessToken],
+  });
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingContact, setDeletingContact] = useState(false);
   const contact = useQuery({
@@ -82,6 +123,7 @@ export function ContactDetailPage() {
   const reload = async () =>
     cache.invalidateQueries({ queryKey: ['contact', projectId, contactId] });
   const value = contact.data;
+  const localeCopy = contactSettingsLocale(project.data?.locale);
   const statusLabel = `${value.status[0]}${value.status.slice(1).toLowerCase().replace('_', '-')}`;
   const automationLabel = value.automationMode === 'ENABLED' ? 'Enabled' : 'Disabled';
   const canUpdate = hasProjectPermission(access.data, 'contacts:update');
@@ -115,63 +157,78 @@ export function ContactDetailPage() {
       <Row className="balanced-card-row" gutter={[18, 18]}>
         <Col lg={9} xs={24}>
           <Card className="contact-summary-card" title="Contact summary">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="CRM lead">{value.crmLeadId ?? '\u2014'}</Descriptions.Item>
-              <Descriptions.Item label="Channel identities">
-                {value.channelIdentities.length
-                  ? value.channelIdentities.map((identity) => (
-                      <div className="identity-row" key={identity.id}>
-                        <span className="identity-channel">{identity.channel}</span>
-                        <span className="identity-name">{identity.username ? `@${identity.username}` : identity.externalUserId}</span>
-                      </div>
-                    ))
-                  : 'No identities'}
-                <div className="identity-metadata">
-                  <span>
-                    <span className="summary-status-label">Status:</span>
-                    <span>{statusLabel}</span>
-                  </span>
-                  <span>
-                    <span className="summary-status-label">Automation:</span>
-                    <span>{automationLabel}</span>
-                  </span>
+            <div className="contact-summary-grid">
+              <div className="contact-summary-row">
+                <div className="contact-summary-label">CRM lead:</div>
+                <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
+              </div>
+              <div className="contact-summary-row">
+                <div className="contact-summary-label">Channel identities:</div>
+                <div className="contact-summary-value">
+                  <div className="identity-list">
+                    {value.channelIdentities.length
+                      ? value.channelIdentities.map((identity) => (
+                          <div className="identity-row" key={identity.id}>
+                            <span className="identity-channel">{identity.channel}</span>
+                            <span className="identity-name">
+                              {identity.username
+                                ? `@${identity.username}`
+                                : identity.externalUserId}
+                            </span>
+                          </div>
+                        ))
+                      : 'No identities'}
+                  </div>
+                  <div className="identity-metadata">
+                    <span className="identity-metadata-item">
+                      <span className="summary-status-label">Status:</span>
+                      <span className="summary-value">{statusLabel}</span>
+                    </span>
+                    <span className="identity-metadata-item">
+                      <span className="summary-status-label">Automation:</span>
+                      <span className="summary-value">{automationLabel}</span>
+                    </span>
+                  </div>
                 </div>
-              </Descriptions.Item>
-              <Descriptions.Item label="Tags">
-                {value.tags.length
-                  ? value.tags.map((item) => (
-                      <Tag
-                        closable={canUpdate}
-                        {...(item.tag.color ? { color: item.tag.color } : {})}
-                        key={item.tag.id}
-                        onClose={(event) => {
-                          event.preventDefault();
-                          void (async () => {
-                            try {
-                              await apiRequest(
-                                `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
-                                { method: 'DELETE' },
-                                accessToken,
-                              );
-                              await reload();
-                              void message.success('Tag removed from contact.');
-                            } catch (error) {
-                              void message.error(
-                                getUserErrorMessage(
-                                  error,
-                                  'Tag could not be removed from contact.',
-                                ),
-                              );
-                            }
-                          })();
-                        }}
-                      >
-                        {item.tag.name}
-                      </Tag>
-                    ))
-                  : 'No tags'}
-              </Descriptions.Item>
-            </Descriptions>
+              </div>
+              <div className="contact-summary-row">
+                <div className="contact-summary-label">Tags:</div>
+                <div className="contact-summary-value contact-summary-tags">
+                  {value.tags.length
+                    ? value.tags.map((item) => (
+                        <Tag
+                          closable={canUpdate}
+                          {...(item.tag.color ? { color: item.tag.color } : {})}
+                          key={item.tag.id}
+                          onClose={(event) => {
+                            event.preventDefault();
+                            void (async () => {
+                              try {
+                                await apiRequest(
+                                  `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
+                                  { method: 'DELETE' },
+                                  accessToken,
+                                );
+                                await reload();
+                                void message.success('Tag removed from contact.');
+                              } catch (error) {
+                                void message.error(
+                                  getUserErrorMessage(
+                                    error,
+                                    'Tag could not be removed from contact.',
+                                  ),
+                                );
+                              }
+                            })();
+                          }}
+                        >
+                          {item.tag.name}
+                        </Tag>
+                      ))
+                    : 'No tags'}
+                </div>
+              </div>
+            </div>
             <Form
               className="contact-tag-form"
               layout="vertical"
@@ -193,11 +250,12 @@ export function ContactDetailPage() {
             >
               <Form.Item label="Add tag" name="tagId">
                 <Select
+                  className="contact-tag-select"
                   options={(tags.data ?? []).map((tag) => ({ label: tag.name, value: tag.id }))}
                   placeholder="Choose a tag"
                 />
               </Form.Item>
-              <Button block htmlType="submit">
+              <Button block className="contact-tag-button" htmlType="submit">
                 Add tag
               </Button>
             </Form>
@@ -353,21 +411,24 @@ export function ContactDetailPage() {
                 }}
               >
                 <Form.Item
-                  label="Primary contact ID"
+                  label={localeCopy.primaryContactIdLabel}
                   name="primaryContactId"
                   rules={[{ required: true }]}
                 >
                   <Input />
                 </Form.Item>
                 <div className="contact-settings-actions">
+                  <Typography.Paragraph className="contact-settings-note" type="secondary">
+                    {localeCopy.mergeInstruction}
+                  </Typography.Paragraph>
                   <Button block danger htmlType="submit">
-                    Merge contacts
+                    {localeCopy.mergeButtonLabel}
                   </Button>
-                  <Typography.Paragraph type="secondary">
-                    Move this record into another contact. This action cannot be undone from the UI.
+                  <Typography.Paragraph className="contact-settings-note" type="secondary">
+                    {localeCopy.deleteInstruction}
                   </Typography.Paragraph>
                   <Button block danger onClick={() => setDeleteOpen(true)}>
-                    Delete contact
+                    {localeCopy.deleteButtonLabel}
                   </Button>
                 </div>
               </Form>

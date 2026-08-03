@@ -133,24 +133,26 @@ export function TemplatesPage() {
         </div>
       </div>
       <div className="templates-header-actions">
-        <Segmented
-          className="channel-template-provider-switch segmented-switcher"
-          onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
-          options={[
-            { label: 'Telegram', value: 'OMNICUS' },
-            { label: 'WhatsApp', value: 'WHATSAPP' },
-          ]}
-          value={providerView}
-        />
-        <Segmented
-          className="archive-view-switch segmented-switcher"
-          onChange={(value) => setView(value as 'active' | 'archived')}
-          options={[
-            { label: 'Active templates', value: 'active' },
-            { label: 'Archived', value: 'archived' },
-          ]}
-          value={view}
-        />
+        <div className="templates-header-left-group">
+          <Segmented
+            className="channel-template-provider-switch segmented-switcher"
+            onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
+            options={[
+              { label: 'Telegram', value: 'OMNICUS' },
+              { label: 'WhatsApp', value: 'WHATSAPP' },
+            ]}
+            value={providerView}
+          />
+          <Segmented
+            className="archive-view-switch segmented-switcher"
+            onChange={(value) => setView(value as 'active' | 'archived')}
+            options={[
+              { label: 'Active templates', value: 'active' },
+              { label: 'Archived', value: 'archived' },
+            ]}
+            value={view}
+          />
+        </div>
         {canManage ? (
           <Button onClick={() => open()} type="primary">
             New Template
