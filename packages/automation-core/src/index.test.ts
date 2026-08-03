@@ -98,6 +98,21 @@ describe('automation graph validation', () => {
     expect(result.errors).toContain('Send Message node send requires message text');
   });
 
+  it('blocks unreachable nodes and requires a field for clear custom field', () => {
+    const result = validateScenarioGraph({
+      edges: [{ from: 'trigger', to: 'stop' }],
+      nodes: [
+        { id: 'trigger', type: 'INCOMING_MESSAGE' },
+        { id: 'stop', type: 'STOP' },
+        { config: {}, id: 'clear', type: 'CLEAR_CUSTOM_FIELD' },
+      ],
+    });
+
+    expect(result.errors).toContain('Node clear is unreachable');
+    expect(result.errors).toContain('Clear Custom Field node clear requires a custom field');
+    expect(result.warnings).toEqual([]);
+  });
+
   it('validates bounded Wait for Reply criteria while keeping legacy empty criteria compatible', () => {
     const valid = validateScenarioGraph({
       edges: [

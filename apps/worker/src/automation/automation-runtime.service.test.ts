@@ -105,6 +105,53 @@ describe('AutomationRuntimeService Wait for Reply criteria', () => {
     );
   });
 
+  it('clears a custom-field value and its typed projection in one transaction', async () => {
+    const contactUpdate = vi.fn();
+    const projectionDelete = vi.fn();
+    const context = {
+      connectionId: 'connection-a',
+      contactId: 'contact-a',
+      contactVariables: {},
+      conversationId: 'conversation-a',
+      customFields: { keep: 'yes', score: 42 },
+      eventPayload: { type: 'MESSAGE' },
+      normalizedEventId: 'event-a',
+      projectId: 'project-a',
+      subflowDepth: 0,
+    };
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      applyNode(
+        transaction: unknown,
+        node: unknown,
+        edges: unknown[],
+        runtimeContext: typeof context,
+        executionId: string,
+      ): Promise<unknown>;
+    };
+
+    await service.applyNode(
+      {
+        contact: { update: contactUpdate },
+        contactCustomFieldValue: { deleteMany: projectionDelete },
+        customFieldDefinition: {
+          findFirst: vi.fn().mockResolvedValue({ id: 'field-a', key: 'score' }),
+        },
+      },
+      { config: { key: 'score' }, id: 'clear-score', type: 'CLEAR_CUSTOM_FIELD' },
+      [],
+      context,
+      'execution-a',
+    );
+
+    expect(contactUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { customFields: { keep: 'yes' } } }),
+    );
+    expect(projectionDelete).toHaveBeenCalledWith({
+      where: { contactId: 'contact-a', definitionId: 'field-a', projectId: 'project-a' },
+    });
+    expect(context.customFields).toEqual({ keep: 'yes' });
+  });
+
   it('selects an AND branch deterministically and exposes a safe branch reason', async () => {
     const service = new AutomationRuntimeService({} as never) as unknown as {
       applyNode(

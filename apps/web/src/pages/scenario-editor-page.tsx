@@ -90,11 +90,14 @@ import {
 import { AutomationTestPanel, type AutomationTestInput } from '../automation-test-panel';
 import { ApiError } from '../api';
 import {
+  automationActionErrorMessage,
   automationEditorSignature,
   automationNodeDescription,
   automationNodeLabel,
   humanizeAutomationValidationIssue,
+  normalizeScenarioDescription,
   safeDiagnosticJson,
+  validateAutomationResources,
 } from '../automation-studio';
 import {
   useAutomationHttpMutations,
@@ -145,6 +148,7 @@ const paletteGroups = [
       ['ADD_TAG', 'Add tag'],
       ['REMOVE_TAG', 'Remove tag'],
       ['SET_CUSTOM_FIELD', 'Set custom field'],
+      ['CLEAR_CUSTOM_FIELD', 'Clear custom field'],
       ['PAUSE_AUTOMATION', 'Pause automation'],
       ['RESUME_AUTOMATION', 'Resume automation'],
     ],
@@ -164,7 +168,12 @@ function automationNodeIcon(type: string) {
   if (type === 'CONDITION') return <BranchesOutlined />;
   if (type === 'SEND_MESSAGE' || type === 'SEND_TEMPLATE') return <SendOutlined />;
   if (type === 'FORWARD_TO_CRM' || type === 'EXTERNAL_HTTP_REQUEST') return <ApiOutlined />;
-  if (type === 'CREATE_OR_UPDATE_LEAD' || type === 'SET_CUSTOM_FIELD') return <DatabaseOutlined />;
+  if (
+    type === 'CREATE_OR_UPDATE_LEAD' ||
+    type === 'SET_CUSTOM_FIELD' ||
+    type === 'CLEAR_CUSTOM_FIELD'
+  )
+    return <DatabaseOutlined />;
   if (type === 'ADD_TAG' || type === 'REMOVE_TAG') return <TagsOutlined />;
   if (type === 'DELAY' || type === 'WAIT_FOR_REPLY') return <ClockCircleOutlined />;
   if (type === 'PAUSE_AUTOMATION') return <PauseCircleOutlined />;
@@ -271,9 +280,17 @@ export function ScenarioEditorPage() {
   const scenarioDescription = Form.useWatch('description', form);
   const graph = flowToScenarioGraph(nodes, edges, configs);
   const validation = validateScenarioGraph(graph);
-  const validationErrors = validation.errors.map((issue) =>
-    humanizeAutomationValidationIssue(issue, graph.nodes),
-  );
+  const validationErrors = [
+    ...validation.errors.map((issue) => humanizeAutomationValidationIssue(issue, graph.nodes)),
+    ...validateAutomationResources(graph, {
+      ...(scenarioId ? { currentScenarioId: scenarioId } : {}),
+      ...(customFields.data ? { customFields: customFields.data } : {}),
+      ...(scenarios.data ? { scenarios: scenarios.data } : {}),
+      ...(automationSecrets.data ? { secrets: automationSecrets.data } : {}),
+      ...(tags.data ? { tags: tags.data } : {}),
+      ...(templates.data ? { templates: templates.data } : {}),
+    }),
+  ];
   const validationWarnings = validation.warnings.map((issue) =>
     humanizeAutomationValidationIssue(issue, graph.nodes),
   );
@@ -285,6 +302,7 @@ export function ScenarioEditorPage() {
   const draftDirty = scenarioQuery.data
     ? lastSavedSignature !== undefined && signature !== lastSavedSignature
     : signature !== newScenarioInitialSignature;
+  const hasBlockingValidation = validationErrors.length > 0;
   const filteredPaletteGroups = useMemo(() => {
     const query = paletteSearch.trim().toLowerCase();
     return paletteGroups
@@ -467,8 +485,8 @@ export function ScenarioEditorPage() {
   }, [draftDirty]);
 
   useEffect(() => {
-    if (draftDirty && saveStatus === 'saved') setSaveStatus('dirty');
-  }, [draftDirty, saveStatus]);
+    setSaveStatus((current) => (current === 'conflict' ? current : draftDirty ? 'dirty' : 'saved'));
+  }, [draftDirty]);
 
   useEffect(() => {
     if (!inspectedExecution) return;
@@ -577,17 +595,26 @@ export function ScenarioEditorPage() {
     setManualSavePending(true);
     try {
       if (scenarioQuery.data) {
+        const description = normalizeScenarioDescription(values.description, true);
         const updated = await mutations.update.mutateAsync({
           ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+          ...(description === undefined ? {} : { description }),
           id: scenarioQuery.data.id,
-          ...values,
           graph,
+          name: values.name,
         });
         setExpectedUpdatedAt(updated.updatedAt);
-        setLastSavedSignature(automationEditorSignature(graph, values.name, values.description));
+        setLastSavedSignature(
+          automationEditorSignature(graph, values.name, description ?? undefined),
+        );
         setSaveStatus('saved');
       } else {
-        const created = await mutations.create.mutateAsync({ ...values, graph });
+        const description = normalizeScenarioDescription(values.description, false);
+        const created = await mutations.create.mutateAsync({
+          ...(typeof description === 'string' ? { description } : {}),
+          graph,
+          name: values.name,
+        });
         void navigate(`/projects/${projectId}/scenarios/${created.id}`);
       }
       void message.success('Scenario draft saved.');
@@ -618,8 +645,18 @@ export function ScenarioEditorPage() {
         scenarioId: scenarioQuery.data?.id ?? 'new',
       });
       setTestResult(result);
-    } catch {
-      void message.error('Safe test run could not be completed.');
+    } catch (error) {
+      void message.error(automationActionErrorMessage(error));
+    }
+  };
+
+  const publish = async () => {
+    if (!scenarioQuery.data || hasBlockingValidation) return;
+    try {
+      await mutations.publish.mutateAsync(scenarioQuery.data.id);
+      void message.success('Scenario published.');
+    } catch (error) {
+      void message.error(automationActionErrorMessage(error));
     }
   };
 
@@ -648,7 +685,11 @@ export function ScenarioEditorPage() {
             {scenarioDescription ? <small>{scenarioDescription}</small> : null}
           </div>
           <Space wrap>
-            <Button icon={<ExperimentOutlined />} onClick={() => setTestOpen(true)}>
+            <Button
+              disabled={hasBlockingValidation}
+              icon={<ExperimentOutlined />}
+              onClick={() => setTestOpen(true)}
+            >
               Test run
             </Button>
             <Button
@@ -660,9 +701,9 @@ export function ScenarioEditorPage() {
             </Button>
             {scenarioQuery.data ? (
               <Button
-                disabled={validation.errors.length > 0}
+                disabled={hasBlockingValidation}
                 loading={mutations.publish.isPending}
-                onClick={() => void mutations.publish.mutateAsync(scenarioQuery.data!.id)}
+                onClick={() => void publish()}
               >
                 Publish
               </Button>
@@ -977,7 +1018,11 @@ export function ScenarioEditorPage() {
           </Col>
         </Row>
         <Space className="automation-actions" wrap>
-          <Button icon={<ExperimentOutlined />} onClick={() => setTestOpen(true)}>
+          <Button
+            disabled={hasBlockingValidation}
+            icon={<ExperimentOutlined />}
+            onClick={() => setTestOpen(true)}
+          >
             Test run
           </Button>
           <Button
@@ -989,9 +1034,9 @@ export function ScenarioEditorPage() {
           </Button>
           {scenarioQuery.data ? (
             <Button
-              disabled={validation.errors.length > 0}
+              disabled={hasBlockingValidation}
               loading={mutations.publish.isPending}
-              onClick={() => void mutations.publish.mutateAsync(scenarioQuery.data!.id)}
+              onClick={() => void publish()}
             >
               Publish
             </Button>
@@ -1030,9 +1075,17 @@ export function ScenarioEditorPage() {
                   className={`automation-validation-issue is-${issue.level}`}
                   key={`${issue.level}-${issue.message}-${index}`}
                   onClick={() => {
-                    if (!issue.nodeId) return;
-                    setSelectedId(issue.nodeId);
-                    setSelectedEdgeId(undefined);
+                    const edgeId =
+                      'edgeId' in issue && typeof issue.edgeId === 'string'
+                        ? issue.edgeId
+                        : undefined;
+                    if (edgeId) {
+                      setSelectedEdgeId(edgeId);
+                      setSelectedId(undefined);
+                    } else if (issue.nodeId) {
+                      setSelectedId(issue.nodeId);
+                      setSelectedEdgeId(undefined);
+                    }
                   }}
                   type="button"
                 >
@@ -1055,7 +1108,7 @@ export function ScenarioEditorPage() {
               {
                 key: 'preview',
                 title: 'Canvas',
-                width: 220,
+                width: 154,
                 render: (_, version) => (
                   <button
                     aria-label={`Preview version ${version.version}`}

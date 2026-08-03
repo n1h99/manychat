@@ -1644,9 +1644,15 @@ button:disabled,
   height: 12px !important;
   background: var(--surface) !important;
   border: 2px solid var(--node-accent) !important;
+  cursor: grab !important;
   transition:
     background 150ms ease,
     box-shadow 150ms ease;
+}
+
+.automation-node-handle:active,
+.scenario-canvas .react-flow__handle.connecting {
+  cursor: grabbing !important;
 }
 
 .automation-node-handle::after {
@@ -2070,7 +2076,7 @@ button:disabled,
 
 .automation-version-preview.is-compact {
   width: var(--preview-width);
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
 .automation-version-preview svg {
@@ -2101,7 +2107,35 @@ button:disabled,
 
 .automation-version-preview.is-compact .automation-version-node {
   padding: 0;
-  border-radius: 5px;
+  border-radius: 4px;
+}
+
+.automation-duration-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(108px, 0.85fr);
+  gap: 8px;
+}
+
+.automation-duration-control .ant-input-number,
+.automation-duration-control .ant-select {
+  width: 100%;
+}
+
+.automation-duration-control .ant-input-number,
+.automation-duration-control .ant-select-selector {
+  min-height: 38px !important;
+  border-radius: 9px !important;
+}
+
+.automation-duration-control .ant-input-number-input {
+  height: 36px;
+  font-variant-numeric: tabular-nums;
+}
+
+.automation-duration-control .ant-input-number-handler-wrap {
+  width: 24px;
+  border-start-end-radius: 8px;
+  border-end-end-radius: 8px;
 }
 
 .automation-delivery-status {

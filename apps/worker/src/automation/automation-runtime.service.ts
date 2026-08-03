@@ -598,6 +598,28 @@ export class AutomationRuntimeService {
         [key]: node.config.value as Prisma.JsonValue,
       };
     }
+    if (node.type === 'CLEAR_CUSTOM_FIELD') {
+      const key = typeof node.config.key === 'string' ? node.config.key : undefined;
+      if (!key) throw new Error('automation_custom_field_invalid');
+      const definition = await transaction.customFieldDefinition.findFirst({
+        where: { archivedAt: null, key, projectId: context.projectId },
+      });
+      if (!definition) throw new Error('automation_custom_field_invalid');
+      const customFields = { ...this.object(context.customFields) };
+      delete customFields[key];
+      await transaction.contact.update({
+        data: { customFields },
+        where: { projectId_id: { id: context.contactId, projectId: context.projectId } },
+      });
+      await transaction.contactCustomFieldValue.deleteMany({
+        where: {
+          contactId: context.contactId,
+          definitionId: definition.id,
+          projectId: context.projectId,
+        },
+      });
+      context.customFields = customFields;
+    }
     if (node.type === 'PAUSE_AUTOMATION' || node.type === 'RESUME_AUTOMATION') {
       await transaction.contact.update({
         data: { automationMode: node.type === 'PAUSE_AUTOMATION' ? 'DISABLED' : 'ENABLED' },

@@ -10,6 +10,7 @@ export const automationNodeTypes = [
   'CREATE_OR_UPDATE_LEAD',
   'FORWARD_TO_CRM',
   'SET_CUSTOM_FIELD',
+  'CLEAR_CUSTOM_FIELD',
   'DELAY',
   'WAIT_FOR_REPLY',
   'START_SUBFLOW',
@@ -322,10 +323,12 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
       );
     }
     if (
-      node.type === 'SET_CUSTOM_FIELD' &&
+      (node.type === 'SET_CUSTOM_FIELD' || node.type === 'CLEAR_CUSTOM_FIELD') &&
       (typeof node.config.key !== 'string' || node.config.key.length === 0)
     ) {
-      errors.push(`Set Custom Field node ${node.id} requires a custom field`);
+      errors.push(
+        `${node.type === 'SET_CUSTOM_FIELD' ? 'Set' : 'Clear'} Custom Field node ${node.id} requires a custom field`,
+      );
     }
     if (
       node.type === 'START_SUBFLOW' &&
@@ -369,7 +372,7 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
   };
   for (const trigger of triggers) visit(trigger.id);
   for (const node of graph.nodes) {
-    if (!reachable.has(node.id)) warnings.push(`Node ${node.id} is unreachable`);
+    if (!reachable.has(node.id)) errors.push(`Node ${node.id} is unreachable`);
   }
   if (hasUnguardedCycle(graph, outgoing, nodesById)) {
     errors.push('Graph contains an unguarded cycle');

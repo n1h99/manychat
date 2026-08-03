@@ -642,4 +642,12 @@ managers cannot enumerate another lead's schedule.
   scenario is excluded from Subflow choices, and canvas lock disables all edit
   actions.
 - Connection handles use stable positions and enlarged hit targets with
-  click-to-connect support.
+  click-to-connect support and a conventional grab/grabbing cursor.
+- Empty optional descriptions are omitted or cleared explicitly, saved-state
+  comparison ignores editor-only edge IDs and canonicalizes graph order, and
+  reverting exactly to the saved graph restores the **Saved** state.
+- Disconnected nodes and unavailable project resources block Test/Publish in
+  the editor while **Save draft** stays available. Validation issues focus the
+  affected node or connection and server race errors remain human-readable.
+- `CLEAR_CUSTOM_FIELD` clears one contact value transactionally from JSON and
+  typed projections without deleting the field definition.

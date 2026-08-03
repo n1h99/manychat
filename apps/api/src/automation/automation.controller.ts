@@ -101,8 +101,12 @@ export class AutomationController {
   @Post(':scenarioId/test-run')
   @RequireProjectPermission('automation:manage')
   @ApiBody({ type: TestScenarioDto })
-  async testRun(@Param('projectId') projectId: string, @Body() body: TestScenarioDto) {
-    return { data: await this.automation.testRun(projectId, body), meta: {} };
+  async testRun(
+    @Param('projectId') projectId: string,
+    @Param('scenarioId') scenarioId: string,
+    @Body() body: TestScenarioDto,
+  ) {
+    return { data: await this.automation.testRun(projectId, body, scenarioId), meta: {} };
   }
 
   @Post(':scenarioId/executions/:executionId/replay')

@@ -250,6 +250,25 @@ export function AutomationNodeConfig({
     );
   }
 
+  if (nodeType === 'CLEAR_CUSTOM_FIELD')
+    return (
+      <Form.Item
+        extra="The field definition stays available; only this contact's current value is cleared."
+        label="Custom field"
+      >
+        <Select
+          onChange={(key: string) => onChange({ key })}
+          options={customFields.map((field) => ({
+            label: `${field.name} (${field.type.toLowerCase()})`,
+            value: field.key,
+          }))}
+          placeholder="Select an active custom field"
+          showSearch
+          value={typeof config.key === 'string' ? config.key : null}
+        />
+      </Form.Item>
+    );
+
   if (nodeType === 'START_SUBFLOW')
     return (
       <Form.Item label="Published scenario">
@@ -846,21 +865,21 @@ function DurationField({
   const parts = durationParts(seconds);
   return (
     <Form.Item label={label}>
-      <Space.Compact block>
+      <div className="automation-duration-control">
         <InputNumber
+          className="automation-duration-value"
           min={1}
           onChange={(value) => onChange(durationSeconds(value, parts.unit))}
           precision={0}
-          style={{ width: '55%' }}
           value={parts.value}
         />
         <Select
+          className="automation-duration-unit"
           onChange={(unit: DurationUnit) => onChange(durationSeconds(parts.value, unit))}
           options={Object.keys(durationUnits).map((unit) => ({ label: unit, value: unit }))}
-          style={{ width: '45%' }}
           value={parts.unit}
         />
-      </Space.Compact>
+      </div>
     </Form.Item>
   );
 }

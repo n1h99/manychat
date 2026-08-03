@@ -4,6 +4,33 @@ import { describe, expect, it, vi } from 'vitest';
 import { AutomationService } from './automation.service';
 
 describe('AutomationService lifecycle', () => {
+  it('validates clear custom field references inside the active project', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = new AutomationService(
+      { record: vi.fn() } as never,
+      { client: { customFieldDefinition: { findMany } } } as never,
+    ) as unknown as {
+      assertReferencedResources(projectId: string, graph: unknown): Promise<void>;
+    };
+
+    await expect(
+      service.assertReferencedResources('project-a', {
+        edges: [
+          { from: 'incoming', to: 'clear' },
+          { from: 'clear', to: 'stop' },
+        ],
+        nodes: [
+          { id: 'incoming', type: 'INCOMING_MESSAGE' },
+          { config: { key: 'score' }, id: 'clear', type: 'CLEAR_CUSTOM_FIELD' },
+          { id: 'stop', type: 'STOP' },
+        ],
+      }),
+    ).rejects.toMatchObject({ response: { code: 'SCENARIO_CUSTOM_FIELD_INVALID' } });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ projectId: 'project-a' }) }),
+    );
+  });
+
   it('archives a scenario and records a safe audit event', async () => {
     const findUnique = vi.fn().mockResolvedValue({
       activeVersion: null,

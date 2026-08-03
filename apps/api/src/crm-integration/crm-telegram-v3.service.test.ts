@@ -233,7 +233,7 @@ describe('CrmTelegramV3Service', () => {
           expectedRevision: 0,
           mode: 'PAUSED',
           reasonCode: 'CRM_PAUSE',
-          resumeAt: '2026-08-03T00:00:00.000Z',
+          resumeAt: '2099-08-03T00:00:00.000Z',
         },
         'automation-state-a',
         'correlation-a',

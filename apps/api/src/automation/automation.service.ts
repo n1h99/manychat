@@ -157,9 +157,12 @@ export class AutomationService {
     }));
   }
 
-  async testRun(projectId: string, dto: TestScenarioDto) {
+  async testRun(projectId: string, dto: TestScenarioDto, sourceScenarioId = 'new') {
     this.assertValidGraph(dto.graph);
     await this.assertReferencedResources(projectId, dto.graph);
+    await this.assertPinnedTemplates(projectId, dto.graph);
+    await this.assertPinnedSubflows(projectId, sourceScenarioId, dto.graph);
+    await this.assertAutomationSecrets(projectId, dto.graph);
     return simulateScenarioGraph(dto.graph, {
       ...(dto.contact ? { contact: dto.contact } : {}),
       ...(dto.customFields ? { customFields: dto.customFields } : {}),
@@ -601,7 +604,7 @@ export class AutomationService {
     }
     const fieldPaths = [
       ...parsed.data.nodes.map((node) =>
-        node.type === 'SET_CUSTOM_FIELD'
+        node.type === 'SET_CUSTOM_FIELD' || node.type === 'CLEAR_CUSTOM_FIELD'
           ? node.config.key
           : node.type === 'CONDITION'
             ? node.config.field

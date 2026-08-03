@@ -1,12 +1,17 @@
 # Automation v2 runtime
 
-Status reviewed: 2026-08-02, including Automation Studio 2.2.
+Status reviewed: 2026-08-03, including Automation Studio 2.2.
 
 Automation v2 executes published, immutable `ScenarioVersion` graphs. The
 visual editor changes only a draft; publishing validates the graph and pins the
 graph for every execution. Saving is intentionally more permissive than
 publishing: disconnected nodes and empty paths remain valid draft work with
 stored validation issues.
+
+`SET_CUSTOM_FIELD` writes both the contact JSON value and its typed projection.
+`CLEAR_CUSTOM_FIELD` removes that value from both representations in the same
+project-scoped database transaction; it never archives or deletes the field
+definition. Both nodes require an active project field at publish/test time.
 
 ## Determinism
 
@@ -55,6 +60,12 @@ example `crm.leadId`); HTTP templates also expose the same values below
 `variables.*` plus safe `nodes.*` status metadata.
 Raw request/response content, rendered URLs and secret values are not written to
 the execution journal or outbox metadata.
+
+The editor checks active project resources before Test/Publish and selects the
+affected node or connection from a validation issue. Server validation remains
+authoritative for races, but its safe error codes are translated into operator
+messages. Draft saving deliberately remains available so an incomplete graph
+can be continued later.
 
 Retryable known failures use the node's bounded attempt budget. An ambiguous
 mutating transport result becomes `UNKNOWN`, pauses the execution and requires

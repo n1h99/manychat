@@ -10,11 +10,11 @@ export function AutomationGraphPreview({
   compact?: boolean;
   graph: ScenarioGraph;
 }) {
-  const width = compact ? 190 : 720;
-  const height = compact ? 92 : 380;
-  const nodeWidth = compact ? 54 : 132;
-  const nodeHeight = compact ? 18 : 44;
-  const padding = compact ? 9 : 28;
+  const width = compact ? 126 : 720;
+  const height = compact ? 64 : 380;
+  const nodeWidth = compact ? 38 : 132;
+  const nodeHeight = compact ? 13 : 44;
+  const padding = compact ? 7 : 28;
   const positioned = graph.nodes.map((node, index) => ({
     ...node,
     position: node.position ?? { x: (index % 3) * 260, y: Math.floor(index / 3) * 150 },
@@ -26,7 +26,7 @@ export function AutomationGraphPreview({
   const scale = Math.min(
     (width - padding * 2 - nodeWidth) / Math.max(1, maximumX - minimumX),
     (height - padding * 2 - nodeHeight) / Math.max(1, maximumY - minimumY),
-    compact ? 0.72 : 1.2,
+    compact ? 0.58 : 1.2,
   );
   const placement = new Map(
     positioned.map((node) => [

@@ -1,4 +1,5 @@
 import type { AutomationCustomField } from './automation-studio-api';
+import type { ScenarioGraph } from './automation-api';
 
 export const durationUnits = {
   days: 86_400,
@@ -50,15 +51,192 @@ export function safeDiagnosticJson(value: unknown): string | undefined {
 }
 
 export function automationEditorSignature(
-  graph: unknown,
+  graph: ScenarioGraph,
   name: string | undefined,
   description: string | undefined,
 ): string {
-  return JSON.stringify({ description: description ?? '', graph, name: name ?? '' });
+  const canonicalGraph = {
+    edges: graph.edges
+      .map(({ id: _editorOnlyId, ...edge }) => edge)
+      .sort((left, right) =>
+        `${left.from}\u0000${left.output ?? 'default'}\u0000${left.to}`.localeCompare(
+          `${right.from}\u0000${right.output ?? 'default'}\u0000${right.to}`,
+        ),
+      ),
+    nodes: [...graph.nodes].sort((left, right) => left.id.localeCompare(right.id)),
+  };
+  return stableJson({ description: description ?? '', graph: canonicalGraph, name: name ?? '' });
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+export function normalizeScenarioDescription(
+  description: string | undefined,
+  clearExisting: boolean,
+): string | null | undefined {
+  if (!description?.trim()) return clearExisting ? null : undefined;
+  return description;
+}
+
+export interface AutomationResourceValidationIssue {
+  edgeId?: string;
+  message: string;
+  nodeId?: string;
+}
+
+interface AutomationResourceCatalog {
+  currentScenarioId?: string;
+  customFields?: AutomationCustomField[];
+  scenarios?: Array<{ activeVersionId: string | null; id: string; status: string }>;
+  secrets?: Array<{ id: string }>;
+  tags?: Array<{ id: string }>;
+  templates?: Array<{ activeVersionId: string | null; id: string; status: string }>;
+}
+
+export function validateAutomationResources(
+  graph: ScenarioGraph,
+  resources: AutomationResourceCatalog,
+): AutomationResourceValidationIssue[] {
+  const issues: AutomationResourceValidationIssue[] = [];
+  const seen = new Set<string>();
+  const add = (issue: AutomationResourceValidationIssue) => {
+    const key = `${issue.nodeId ?? ''}:${issue.edgeId ?? ''}:${issue.message}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      issues.push(issue);
+    }
+  };
+
+  const fields = resources.customFields
+    ? new Map(resources.customFields.map((field) => [field.key, field]))
+    : undefined;
+  const validateFieldPath = (
+    fieldPath: unknown,
+    location: { edgeId?: string; nodeId?: string },
+  ) => {
+    if (!fields || typeof fieldPath !== 'string') return;
+    if (!fieldPath.startsWith('contact.customFields.')) return;
+    const key = fieldPath.slice('contact.customFields.'.length);
+    if (!fields.has(key))
+      add({ ...location, message: 'This condition uses an unavailable custom field.' });
+  };
+
+  for (const node of graph.nodes) {
+    const config = node.config ?? {};
+    if (resources.tags && (node.type === 'ADD_TAG' || node.type === 'REMOVE_TAG')) {
+      if (
+        typeof config.tagId === 'string' &&
+        !resources.tags.some((tag) => tag.id === config.tagId)
+      )
+        add({ message: 'Select an available project tag.', nodeId: node.id });
+    }
+    if (fields && (node.type === 'SET_CUSTOM_FIELD' || node.type === 'CLEAR_CUSTOM_FIELD')) {
+      const field = typeof config.key === 'string' ? fields.get(config.key) : undefined;
+      if (typeof config.key === 'string') {
+        if (!field) add({ message: 'Select an available custom field.', nodeId: node.id });
+        else if (node.type === 'SET_CUSTOM_FIELD' && !isCustomFieldValueValid(field, config.value))
+          add({ message: `Choose a valid value for ${field.name}.`, nodeId: node.id });
+      }
+    }
+    if (node.type === 'CONDITION') validateFieldPath(config.field, { nodeId: node.id });
+    if (resources.templates && node.type === 'SEND_TEMPLATE') {
+      const template = resources.templates.find((candidate) => candidate.id === config.templateId);
+      if (
+        typeof config.templateId === 'string' &&
+        typeof config.templateVersionId === 'string' &&
+        (!template ||
+          template.status !== 'PUBLISHED' ||
+          !template.activeVersionId ||
+          template.activeVersionId !== config.templateVersionId)
+      )
+        add({ message: 'Select an available published template.', nodeId: node.id });
+    }
+    if (resources.scenarios && node.type === 'START_SUBFLOW') {
+      const scenario = resources.scenarios.find(
+        (candidate) =>
+          candidate.id === config.scenarioId && candidate.id !== resources.currentScenarioId,
+      );
+      if (
+        typeof config.scenarioId === 'string' &&
+        typeof config.scenarioVersionId === 'string' &&
+        (!scenario ||
+          scenario.status !== 'PUBLISHED' ||
+          !scenario.activeVersionId ||
+          scenario.activeVersionId !== config.scenarioVersionId)
+      )
+        add({ message: 'Select an available published subflow.', nodeId: node.id });
+    }
+    if (resources.secrets && node.type === 'EXTERNAL_HTTP_REQUEST') {
+      const available = new Set(resources.secrets.map((secret) => secret.id));
+      const headers = Array.isArray(config.headers) ? config.headers : [];
+      if (
+        headers.some(
+          (header) =>
+            header &&
+            typeof header === 'object' &&
+            typeof (header as { secretId?: unknown }).secretId === 'string' &&
+            !available.has((header as { secretId: string }).secretId),
+        )
+      )
+        add({ message: 'Replace the unavailable HTTP secret.', nodeId: node.id });
+    }
+  }
+  for (const edge of graph.edges) {
+    const location = { ...(edge.id ? { edgeId: edge.id } : {}), nodeId: edge.from };
+    validateFieldPath(edge.condition?.field, location);
+    for (const rule of edge.conditionGroup?.rules ?? []) validateFieldPath(rule.field, location);
+  }
+  return issues;
+}
+
+function isCustomFieldValueValid(field: AutomationCustomField, value: unknown): boolean {
+  if (value === null) return true;
+  if (field.type === 'TEXT') return typeof value === 'string';
+  if (field.type === 'NUMBER') return typeof value === 'number' && Number.isFinite(value);
+  if (field.type === 'BOOLEAN') return typeof value === 'boolean';
+  if (field.type === 'DATE') return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (field.type === 'DATETIME')
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+  if (field.type === 'JSON') return value !== null && typeof value === 'object';
+  const options = field.options ?? [];
+  if (field.type === 'SELECT') return typeof value === 'string' && options.includes(value);
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => typeof entry === 'string' && options.includes(entry))
+  );
+}
+
+export function automationActionErrorMessage(error: unknown): string {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : '';
+  const messages: Record<string, string> = {
+    SCENARIO_AUTOMATION_SECRET_INVALID: 'Replace the unavailable HTTP secret before continuing.',
+    SCENARIO_CUSTOM_FIELD_INVALID: 'Select an available custom field before continuing.',
+    SCENARIO_CUSTOM_FIELD_VALUE_INVALID: 'A custom-field value no longer matches its definition.',
+    SCENARIO_GRAPH_INVALID: 'Fix the highlighted scenario connections before continuing.',
+    SCENARIO_GRAPH_SCHEMA_INVALID: 'Fix the highlighted scenario structure before continuing.',
+    SCENARIO_SUBFLOW_SELF_REFERENCE: 'A scenario cannot start itself as a subflow.',
+    SCENARIO_SUBFLOW_VERSION_INVALID: 'Select an available published subflow before continuing.',
+    SCENARIO_TAG_INVALID: 'Select an available project tag before continuing.',
+    SCENARIO_TEMPLATE_VERSION_INVALID: 'Select an available published template before continuing.',
+  };
+  return messages[code] ?? 'The automation action could not be completed safely.';
 }
 
 const automationNodeLabels: Record<string, string> = {
   ADD_TAG: 'Add tag',
+  CLEAR_CUSTOM_FIELD: 'Clear custom field',
   CONDITION: 'Condition',
   CREATE_OR_UPDATE_LEAD: 'Create or update lead',
   DELAY: 'Delay',
@@ -83,6 +261,7 @@ export function automationNodeLabel(nodeType: string): string {
 export function automationNodeDescription(nodeType: string): string {
   const descriptions: Record<string, string> = {
     ADD_TAG: 'Add a project tag to the contact.',
+    CLEAR_CUSTOM_FIELD: 'Clear one custom-field value for the current contact.',
     CONDITION: 'Route the contact through matching and fallback branches.',
     CREATE_OR_UPDATE_LEAD: 'Create or refresh the paired CRM lead.',
     DELAY: 'Continue after a durable delay.',

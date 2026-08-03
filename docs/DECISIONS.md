@@ -1204,3 +1204,31 @@ with no public address remains forbidden and redirects repeat the same check.
 visible immediately, and `Step completed` is distinct from Telegram delivery.
 No payload, rendered message, HTTP body, secret or credential is added to
 diagnostics. SSRF protections remain fail-closed when no public target exists.
+
+## ADR-049: Automation resource validation is proactive and custom-field clearing is explicit
+
+**Status:** Accepted, 2026-08-03.
+
+**Context:** A saved draft may outlive a tag, custom field, template, subflow or
+HTTP secret it references. Waiting for Publish to reject that stale reference
+leaves Test/Publish looking available and returns only a safe server code. A
+contact value also needs an explicit removal action distinct from changing or
+deleting the project field definition.
+
+**Decision:** Automation Studio validates loaded active project resources in
+addition to structural graph validation. Unreachable nodes and stale resource
+references block Test/Publish, focus the affected node or connection, and keep
+explicit draft saving available. The server repeats every project-scoped check
+as the authority for races. `CLEAR_CUSTOM_FIELD` identifies one active field by
+key and transactionally removes only the current contact's JSON value and typed
+projection.
+
+Editor dirty comparison is semantic: graph ordering and editor-only connection
+IDs do not change the saved signature. Empty optional descriptions are omitted
+on create and explicitly cleared on update.
+
+**Consequences:** Operators see actionable validation before a request, while
+stale clients cannot bypass server isolation. Clearing a value cannot archive a
+field definition or affect another contact/project. Incomplete drafts remain a
+supported authoring state; only execution and publication require a fully
+reachable, resource-valid graph.

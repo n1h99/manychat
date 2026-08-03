@@ -1,6 +1,6 @@
 # Omnicus documentation index
 
-Status reviewed: 2026-08-02, `main` at Automation Studio 2.2 and Telegram Chat
+Status reviewed: 2026-08-03, `main` at Automation Studio 2.2 and Telegram Chat
 v3.3.
 
 ## Current product status
@@ -31,6 +31,11 @@ v3.3.
   editor now hydrates one stable saved baseline, refreshes version history
   immediately, previews each immutable canvas, keeps connection handles stable,
   and exposes only graph-relevant Safe Test controls.
+- Automation authoring validates active tags, custom fields, templates,
+  subflows and HTTP secrets before Test/Publish. Incomplete drafts remain
+  saveable, while disconnected nodes are blocking issues. **Clear custom
+  field** removes one current-contact value without deleting its project field
+  definition.
 - Automation execution diagnostics distinguish node completion from actual
   Telegram delivery. Send steps persist only safe message/outbox references;
   missing content or channel identity fails the step instead of reporting a

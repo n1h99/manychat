@@ -195,7 +195,7 @@ export function useScenarioMutations(projectId?: string) {
         ...input
       }: {
         id: string;
-        description?: string;
+        description?: string | null;
         expectedUpdatedAt?: string;
         graph?: ScenarioGraph;
         name?: string;

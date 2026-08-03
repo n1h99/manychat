@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  automationActionErrorMessage,
+  automationEditorSignature,
   automationNodeLabel,
   conditionFieldType,
   durationParts,
   durationSeconds,
   externalHttpSafeErrorMessage,
   humanizeAutomationValidationIssue,
+  normalizeScenarioDescription,
   previewAutomationText,
   safeDiagnosticJson,
+  validateAutomationResources,
 } from './automation-studio';
 
 describe('Automation Studio helpers', () => {
@@ -51,6 +55,44 @@ describe('Automation Studio helpers', () => {
   it('maps external HTTP safety codes without exposing provider details', () => {
     expect(externalHttpSafeErrorMessage('external_http_target_forbidden')).toContain(
       'private or restricted',
+    );
+  });
+
+  it('uses a semantic editor signature and normalizes an empty optional description', () => {
+    const first = {
+      edges: [{ from: 'incoming', id: 'react-flow-a', output: 'default', to: 'stop' }],
+      nodes: [
+        { config: {}, id: 'stop', position: { x: 20, y: 20 }, type: 'STOP' },
+        { config: {}, id: 'incoming', position: { x: 0, y: 0 }, type: 'INCOMING_MESSAGE' },
+      ],
+    };
+    const second = {
+      edges: [{ from: 'incoming', id: 'server-hydrated-b', output: 'default', to: 'stop' }],
+      nodes: [...first.nodes].reverse(),
+    };
+
+    expect(automationEditorSignature(first, 'Test', '')).toBe(
+      automationEditorSignature(second, 'Test', undefined),
+    );
+    expect(normalizeScenarioDescription('', false)).toBeUndefined();
+    expect(normalizeScenarioDescription('   ', true)).toBeNull();
+  });
+
+  it('finds stale project resources before publish or safe test', () => {
+    const issues = validateAutomationResources(
+      {
+        edges: [{ from: 'incoming', id: 'edge-a', to: 'set' }],
+        nodes: [
+          { id: 'incoming', type: 'INCOMING_MESSAGE' },
+          { config: { key: 'archived' }, id: 'set', type: 'SET_CUSTOM_FIELD' },
+        ],
+      },
+      { customFields: [] },
+    );
+
+    expect(issues).toEqual([{ message: 'Select an available custom field.', nodeId: 'set' }]);
+    expect(automationActionErrorMessage({ code: 'SCENARIO_CUSTOM_FIELD_INVALID' })).toContain(
+      'available custom field',
     );
   });
 });
