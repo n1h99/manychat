@@ -244,7 +244,7 @@ export function UsersPage() {
                 );
               },
               title: 'Location',
-              width: 90,
+              width: 160,
             },
             {
               render: (_, row) => <StatusText status={row.status} />,
@@ -255,7 +255,7 @@ export function UsersPage() {
               dataIndex: 'createdAt',
               render: (value: string) => new Intl.DateTimeFormat('en-GB').format(new Date(value)),
               title: 'Created',
-              width: 105,
+              width: 90,
             },
             {
               align: 'right',

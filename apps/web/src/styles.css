@@ -1705,7 +1705,9 @@ button:disabled,
   margin-bottom: 0;
 }
 
+.account-profile-modal .ant-modal-container,
 .account-profile-modal .ant-modal-content,
+.user-editor-modal .ant-modal-container,
 .user-editor-modal .ant-modal-content {
   padding: 26px 28px;
 }
@@ -1976,6 +1978,7 @@ button:disabled,
   padding-bottom: 0;
 }
 
+.ant-modal .ant-modal-container,
 .ant-modal .ant-modal-content {
   display: flex;
   flex-direction: column;
@@ -1993,6 +1996,7 @@ button:disabled,
 }
 
 .ant-modal .ant-modal-body {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -3850,6 +3854,7 @@ button:disabled,
     padding-block: 10px;
   }
 
+  .ant-modal .ant-modal-container,
   .ant-modal .ant-modal-content {
     max-height: calc(100dvh - 20px);
     padding: 20px;
