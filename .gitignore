@@ -29,3 +29,6 @@ playwright-report/
 test-results/
 
 packages/database/src/generated/
+
+# Documentation (local only)
+docs/
