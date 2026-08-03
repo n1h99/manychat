@@ -154,11 +154,6 @@ export function ContactDetailPage() {
       <div className="entity-hero">
         <div className="entity-hero-copy">
           <Typography.Title level={2}>{value.displayName}</Typography.Title>
-          <Typography.Text type="secondary">
-            {value.username
-              ? `@${value.username}`
-              : value.email || value.phone || 'Customer record'}
-          </Typography.Text>
         </div>
       </div>
 
