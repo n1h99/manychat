@@ -2002,6 +2002,7 @@ button:disabled,
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: auto;
+  padding-right: 8px;
   overflow-wrap: anywhere;
 }
 
