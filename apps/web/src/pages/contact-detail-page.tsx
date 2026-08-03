@@ -21,7 +21,6 @@ import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { StatusText } from '../status-text';
-import type { Project } from './projects-page';
 
 interface Contact {
   id: string;
@@ -51,44 +50,6 @@ interface TagItem {
   color: string | null;
 }
 
-interface ContactSettingsLocale {
-  primaryContactIdLabel: string;
-  mergeInstruction: string;
-  mergeButtonLabel: string;
-  deleteInstruction: string;
-  deleteButtonLabel: string;
-}
-
-const CONTACT_SETTINGS_LOCALE_MAP: Record<'en' | 'ru', ContactSettingsLocale> = {
-  en: {
-    primaryContactIdLabel: 'Primary contact ID',
-    mergeInstruction:
-      'Move this record into another contact. This action cannot be undone from the UI.',
-    mergeButtonLabel: 'Merge contacts',
-    deleteInstruction:
-      'Delete this contact from the project. This action cannot be undone from the UI.',
-    deleteButtonLabel: 'Delete contact',
-  },
-  ru: {
-    primaryContactIdLabel:
-      '\u041e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0438\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u043a\u043e\u043d\u0442\u0430\u043a\u0442\u0430',
-    mergeInstruction:
-      '\u041f\u0435\u0440\u0435\u043d\u0435\u0441\u0438\u0442\u0435 \u044d\u0442\u0443 \u0437\u0430\u043f\u0438\u0441\u044c \u0432 \u0434\u0440\u0443\u0433\u043e\u0439 \u043a\u043e\u043d\u0442\u0430\u043a\u0442. \u042d\u0442\u043e \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043d\u0435\u043b\u044c\u0437\u044f \u043e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0438\u0437 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u043e\u0433\u043e \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430.',
-    mergeButtonLabel:
-      '\u041e\u0431\u044a\u0435\u0434\u0438\u043d\u0438\u0442\u044c \u043a\u043e\u043d\u0442\u0430\u043a\u0442\u044b',
-    deleteInstruction:
-      '\u0423\u0434\u0430\u043b\u0438\u0442\u0435 \u044d\u0442\u043e\u0442 \u043a\u043e\u043d\u0442\u0430\u043a\u0442 \u0438\u0437 \u043f\u0440\u043e\u0435\u043a\u0442\u0430. \u042d\u0442\u043e \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043d\u0435\u043b\u044c\u0437\u044f \u043e\u0442\u043c\u0435\u043d\u0438\u0442\u044c \u0438\u0437 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u043e\u0433\u043e \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430.',
-    deleteButtonLabel:
-      '\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u043a\u043e\u043d\u0442\u0430\u043a\u0442',
-  },
-};
-function contactSettingsLocale(locale: string | undefined): ContactSettingsLocale {
-  const normalizedLocale = locale?.trim().toLowerCase();
-  return normalizedLocale?.startsWith('ru')
-    ? CONTACT_SETTINGS_LOCALE_MAP.ru
-    : CONTACT_SETTINGS_LOCALE_MAP.en;
-}
-
 function formatIdentityValue(identity: Contact['channelIdentities'][number]): string {
   return identity.username ? `@${identity.username}` : (identity.externalUserId ?? '\u2014');
 }
@@ -98,11 +59,6 @@ export function ContactDetailPage() {
   const { accessToken } = useAuth();
   const cache = useQueryClient();
   const access = useProjectAccess(projectId);
-  const project = useQuery({
-    enabled: Boolean(projectId && accessToken),
-    queryFn: () => apiRequest<Project>(`/api/v1/projects/${projectId}`, {}, accessToken),
-    queryKey: ['project-locale', projectId, accessToken],
-  });
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingContact, setDeletingContact] = useState(false);
   const contact = useQuery({
@@ -130,7 +86,6 @@ export function ContactDetailPage() {
   const reload = async () =>
     cache.invalidateQueries({ queryKey: ['contact', projectId, contactId] });
   const value = contact.data;
-  const localeCopy = contactSettingsLocale(project.data?.locale);
   const canUpdate = hasProjectPermission(access.data, 'contacts:update');
   const telegramIdentity = value.channelIdentities.find(
     (identity) => identity.channel.toLowerCase() === 'telegram',

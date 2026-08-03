@@ -4098,6 +4098,10 @@ button:disabled,
   padding-top: 14px;
 }
 
+.contact-settings-note {
+  margin-bottom: 0;
+}
+
 .contact-summary-actions .contact-tag-form {
   margin: 0;
 }
