@@ -4104,24 +4104,16 @@ button:disabled,
 }
 
 .contact-summary-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-}
-
-.contact-summary-column {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-width: 0;
 }
 
 .contact-summary-row {
   align-items: flex-start;
   column-gap: 10px;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 130px minmax(0, 1fr);
 }
 
 .contact-summary-label {
@@ -4134,6 +4126,8 @@ button:disabled,
 .contact-summary-value {
   min-width: 0;
   width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .contact-summary-tags {
@@ -4156,12 +4150,6 @@ button:disabled,
 
 .contact-tag-button {
   width: 100%;
-}
-
-@media (max-width: 860px) {
-  .contact-summary-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .danger-card {
@@ -4199,8 +4187,21 @@ button:disabled,
 .contact-settings-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   align-items: stretch;
+}
+
+.contact-settings-action-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-settings-action-group:first-child,
+.contact-settings-action-group + .contact-settings-action-group {
+  margin-top: 16px;
+}
+
+.contact-settings-action-group .contact-settings-note + .ant-btn {
+  margin-top: 6px;
 }
 
 .contact-settings-note {

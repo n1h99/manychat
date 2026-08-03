@@ -89,16 +89,6 @@ function contactSettingsLocale(locale: string | undefined): ContactSettingsLocal
     : CONTACT_SETTINGS_LOCALE_MAP.en;
 }
 
-function formatChannelLabel(channel: string): string {
-  const value = channel.trim().toLowerCase();
-  if (!value) return '\u2014';
-  const words = value.split(/[\s_-]+/g).filter(Boolean);
-  const formatted = words
-    .map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1).toLowerCase()}`)
-    .join(' ');
-  return formatted || '\u2014';
-}
-
 function formatIdentityValue(identity: Contact['channelIdentities'][number]): string {
   return identity.username ? `@${identity.username}` : (identity.externalUserId ?? '\u2014');
 }
@@ -142,6 +132,9 @@ export function ContactDetailPage() {
   const value = contact.data;
   const localeCopy = contactSettingsLocale(project.data?.locale);
   const canUpdate = hasProjectPermission(access.data, 'contacts:update');
+  const telegramIdentity = value.channelIdentities.find(
+    (identity) => identity.channel.toLowerCase() === 'telegram',
+  );
   const deleteContact = async () => {
     try {
       await apiRequest(
@@ -174,73 +167,63 @@ export function ContactDetailPage() {
           <Card className="contact-summary-card" title="Contact summary">
             <div className="contact-summary-main">
               <div className="contact-summary-grid">
-                <div className="contact-summary-column">
-                  <div className="contact-summary-row">
-                    <div className="contact-summary-label">CRM lead:</div>
-                    <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
-                  </div>
-                  {value.channelIdentities.length
-                    ? value.channelIdentities.map((identity) => (
-                        <div className="contact-summary-row" key={identity.id}>
-                          <div className="contact-summary-label">
-                            {formatChannelLabel(identity.channel)}:
-                          </div>
-                          <div className="contact-summary-value">
-                            {formatIdentityValue(identity)}
-                          </div>
-                        </div>
-                      ))
-                    : null}
-                  <div className="contact-summary-row">
-                    <div className="contact-summary-label">Tags:</div>
-                    <div className="contact-summary-value contact-summary-tags">
-                      {value.tags.length
-                        ? value.tags.map((item) => (
-                            <Tag
-                              closable={canUpdate}
-                              {...(item.tag.color ? { color: item.tag.color } : {})}
-                              key={item.tag.id}
-                              onClose={(event) => {
-                                event.preventDefault();
-                                void (async () => {
-                                  try {
-                                    await apiRequest(
-                                      `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
-                                      { method: 'DELETE' },
-                                      accessToken,
-                                    );
-                                    await reload();
-                                    void message.success('Tag removed from contact.');
-                                  } catch (error) {
-                                    void message.error(
-                                      getUserErrorMessage(
-                                        error,
-                                        'Tag could not be removed from contact.',
-                                      ),
-                                    );
-                                  }
-                                })();
-                              }}
-                            >
-                              {item.tag.name}
-                            </Tag>
-                          ))
-                        : 'No tags'}
-                    </div>
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">CRM lead:</div>
+                  <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
+                </div>
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">Telegram:</div>
+                  <div className="contact-summary-value">
+                    {telegramIdentity ? formatIdentityValue(telegramIdentity) : '\u2014'}
                   </div>
                 </div>
-                <div className="contact-summary-column">
-                  <div className="contact-summary-row">
-                    <div className="contact-summary-label">Status:</div>
-                    <div className="contact-summary-value">
-                      <StatusText status={value.status} />
-                    </div>
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">Status:</div>
+                  <div className="contact-summary-value">
+                    <StatusText status={value.status} />
                   </div>
-                  <div className="contact-summary-row">
-                    <div className="contact-summary-label">Automation:</div>
-                    <div className="contact-summary-value">
-                      <StatusText status={value.automationMode} />
-                    </div>
+                </div>
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">Automation:</div>
+                  <div className="contact-summary-value">
+                    <StatusText status={value.automationMode} />
+                  </div>
+                </div>
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">Tags:</div>
+                  <div className="contact-summary-value contact-summary-tags">
+                    {value.tags.length
+                      ? value.tags.map((item) => (
+                          <Tag
+                            closable={canUpdate}
+                            {...(item.tag.color ? { color: item.tag.color } : {})}
+                            key={item.tag.id}
+                            onClose={(event) => {
+                              event.preventDefault();
+                              void (async () => {
+                                try {
+                                  await apiRequest(
+                                    `/api/v1/projects/${projectId}/contacts/${contactId}/tags/${item.tag.id}`,
+                                    { method: 'DELETE' },
+                                    accessToken,
+                                  );
+                                  await reload();
+                                  void message.success('Tag removed from contact.');
+                                } catch (error) {
+                                  void message.error(
+                                    getUserErrorMessage(
+                                      error,
+                                      'Tag could not be removed from contact.',
+                                    ),
+                                  );
+                                }
+                              })();
+                            }}
+                          >
+                            {item.tag.name}
+                          </Tag>
+                        ))
+                      : 'No tags'}
                   </div>
                 </div>
               </div>
@@ -436,18 +419,22 @@ export function ContactDetailPage() {
                   <Input />
                 </Form.Item>
                 <div className="contact-settings-actions">
-                  <Typography.Paragraph className="contact-settings-note" type="secondary">
-                    {localeCopy.mergeInstruction}
-                  </Typography.Paragraph>
-                  <Button block danger htmlType="submit">
-                    {localeCopy.mergeButtonLabel}
-                  </Button>
-                  <Typography.Paragraph className="contact-settings-note" type="secondary">
-                    {localeCopy.deleteInstruction}
-                  </Typography.Paragraph>
-                  <Button block danger onClick={() => setDeleteOpen(true)}>
-                    {localeCopy.deleteButtonLabel}
-                  </Button>
+                  <div className="contact-settings-action-group">
+                    <Typography.Paragraph className="contact-settings-note" type="secondary">
+                      {localeCopy.mergeInstruction}
+                    </Typography.Paragraph>
+                    <Button block danger htmlType="submit">
+                      {localeCopy.mergeButtonLabel}
+                    </Button>
+                  </div>
+                  <div className="contact-settings-action-group">
+                    <Typography.Paragraph className="contact-settings-note" type="secondary">
+                      {localeCopy.deleteInstruction}
+                    </Typography.Paragraph>
+                    <Button block danger onClick={() => setDeleteOpen(true)}>
+                      {localeCopy.deleteButtonLabel}
+                    </Button>
+                  </div>
                 </div>
               </Form>
             </Card>
