@@ -4079,6 +4079,7 @@ button:disabled,
 
 .contact-summary-card {
   display: flex;
+  flex-direction: column;
 }
 
 .contact-summary-card .ant-card-body {
@@ -4088,7 +4089,7 @@ button:disabled,
 }
 
 .contact-summary-card .contact-tag-form {
-  margin-top: auto;
+  margin-top: 10px;
   margin-bottom: 0;
 }
 
@@ -4097,6 +4098,13 @@ button:disabled,
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+}
+
+.identity-metadata {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .danger-card {
@@ -4133,6 +4141,7 @@ button:disabled,
 
 .contact-settings-actions {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   align-items: stretch;
 }

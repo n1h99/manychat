@@ -9,7 +9,6 @@ import {
   Input,
   Row,
   Select,
-  Space,
   Spin,
   Tag,
   Typography,
@@ -110,13 +109,6 @@ export function ContactDetailPage() {
               : value.email || value.phone || 'Customer record'}
           </Typography.Text>
         </div>
-        <Space className="entity-hero-statuses" wrap>
-          <StatusText status={value.status} />
-          <StatusText
-            label={`Automation ${value.automationMode.toLowerCase()}`}
-            status={value.automationMode}
-          />
-        </Space>
       </div>
 
       <Row className="balanced-card-row" gutter={[18, 18]}>
@@ -135,6 +127,13 @@ export function ContactDetailPage() {
                       </div>
                     ))
                   : 'No identities'}
+                <div className="identity-metadata">
+                  <StatusText status={value.status} />
+                  <StatusText
+                    label={`Automation ${value.automationMode.toLowerCase()}`}
+                    status={value.automationMode}
+                  />
+                </div>
               </Descriptions.Item>
               <Descriptions.Item label="Tags">
                 {value.tags.length
@@ -280,7 +279,7 @@ export function ContactDetailPage() {
 
       <Row className="balanced-card-row contact-secondary-row" gutter={[18, 18]}>
         <Col lg={hasProjectPermission(access.data, 'contacts:merge') ? 15 : 24} xs={24}>
-            <Card title="Custom field values">
+          <Card title="Custom field values">
             <Form
               initialValues={{ values: JSON.stringify(value.customFields, null, 2) }}
               layout="vertical"
@@ -328,9 +327,6 @@ export function ContactDetailPage() {
         {hasProjectPermission(access.data, 'contacts:merge') ? (
           <Col lg={9} xs={24}>
             <Card className="danger-card" title="Contact Settings">
-              <Typography.Paragraph type="secondary">
-                Move this record into another contact. This action cannot be undone from the UI.
-              </Typography.Paragraph>
               <Form
                 layout="vertical"
                 onFinish={async (values: { primaryContactId: string }) => {
@@ -361,19 +357,22 @@ export function ContactDetailPage() {
                 >
                   <Input />
                 </Form.Item>
-                  <div className="contact-settings-actions">
-                    <Button block danger htmlType="submit">
-                      Merge contacts
-                    </Button>
-                    <Button block danger onClick={() => setDeleteOpen(true)}>
-                      Delete Contact
-                    </Button>
-                  </div>
-                </Form>
-              </Card>
-            </Col>
-          ) : null}
-        </Row>
+                <div className="contact-settings-actions">
+                  <Button block danger htmlType="submit">
+                    Merge contacts
+                  </Button>
+                  <Typography.Paragraph type="secondary">
+                    Move this record into another contact. This action cannot be undone from the UI.
+                  </Typography.Paragraph>
+                  <Button block danger onClick={() => setDeleteOpen(true)}>
+                    Delete contact
+                  </Button>
+                </div>
+              </Form>
+            </Card>
+          </Col>
+        ) : null}
+      </Row>
 
       <Modal
         className="account-confirm-modal"
@@ -408,3 +407,4 @@ export function ContactDetailPage() {
     </section>
   );
 }
+
