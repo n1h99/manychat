@@ -1276,3 +1276,33 @@ execution/health signal only. Operations UI cannot leak stored payloads or turn
 an uncertain side effect into a blind retry. No Prisma schema change is required
 because the reviewed token, role, project, audit and operation models already
 contain the necessary durable state.
+
+## ADR-051: Automation Activity is a bounded read model over execution journals
+
+**Status:** Accepted, 2026-08-03.
+
+**Context:** Operators need to understand which contacts entered an automation,
+where each journey is now, how it ended and why it stopped without opening every
+scenario version or interpreting internal enum/error values. Product-level
+charts must not create a second analytics source of truth or expose stored event
+payloads and variables.
+
+**Decision:** Automation Activity reads existing project-owned
+`ScenarioExecution`, `NodeExecution`, `WaitState` and `DelayedAction` records.
+The route requires `automation:read`, applies the active `projectId` at the root
+query, limits the selected period to 7, 30 or 90 days and paginates at no more
+than 50 journeys. Exact counts use PostgreSQL aggregation. Trend and drop-off
+charts use a declared bounded sample of the latest 2,000 matching executions.
+
+The response contains contact display fields, scenario/version identity,
+human-safe status/reason categories and a step timeline. It never selects
+execution variables, trigger payloads, node input/output, provider responses,
+message text, secrets or credentials. Internal permission, audit, entity,
+status and error codes remain machine contracts but are translated before
+display. Accessible action names use `aria-label`; intrusive visual hover
+tooltips are not part of the operator UI.
+
+**Consequences:** PostgreSQL remains the only source of execution truth and no
+schema migration is required. The Board can refresh safely without touching
+runtime state. Exact totals remain reliable even when a high-volume chart is
+sampled, and a sampled chart is labelled as such in the UI.

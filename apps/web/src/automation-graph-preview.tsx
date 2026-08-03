@@ -74,7 +74,7 @@ export function AutomationGraphPreview({
               top: point.top,
               width: nodeWidth,
             }}
-            title={automationNodeLabel(node.type)}
+            aria-label={automationNodeLabel(node.type)}
           >
             {compact ? null : automationNodeLabel(node.type)}
           </span>

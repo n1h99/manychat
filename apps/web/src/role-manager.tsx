@@ -18,6 +18,7 @@ import { useMemo, useState } from 'react';
 
 import { apiRequest, getUserErrorMessage } from './api';
 import { useAuth } from './auth';
+import { humanizePermission, humanizePermissionGroup } from './humanize';
 
 interface Permission {
   code: string;
@@ -110,7 +111,7 @@ export function RoleManager({
             render: (_, row) => (
               <div className="role-name-cell">
                 <strong>{row.name}</strong>
-                <small>{row.normalizedName}</small>
+                <small>{row.system ? 'Built-in role' : 'Custom role'}</small>
               </div>
             ),
             title: 'Role',
@@ -119,7 +120,7 @@ export function RoleManager({
             render: (_, row) => (
               <Space size={[4, 4]} wrap>
                 {row.permissions.slice(0, 5).map(({ permission }) => (
-                  <Tag key={permission.code}>{permission.code}</Tag>
+                  <Tag key={permission.code}>{humanizePermission(permission.code)}</Tag>
                 ))}
                 {row.permissions.length > 5 ? <Tag>+{row.permissions.length - 5}</Tag> : null}
               </Space>
@@ -225,11 +226,13 @@ export function RoleManager({
             <Checkbox.Group className="permission-group-grid">
               {groups.map(([group, items]) => (
                 <div className="permission-group" key={group}>
-                  <Typography.Text strong>{group}</Typography.Text>
+                  <Typography.Text strong>{humanizePermissionGroup(group)}</Typography.Text>
                   {items.map((permission) => (
                     <Checkbox key={permission.code} value={permission.code}>
-                      <span>{permission.code}</span>
-                      <small>{permission.description}</small>
+                      <span>{humanizePermission(permission.code)}</span>
+                      <small>
+                        Allow this role to {humanizePermission(permission.code).toLowerCase()}.
+                      </small>
                     </Checkbox>
                   ))}
                 </div>

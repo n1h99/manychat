@@ -34,6 +34,8 @@ Pilot и утверждённые post-pilot slices реализованы и р
   rich messages и live-verified user reaction events;
 - Operations & Audit Center, account invitations/password recovery, custom
   global/project roles, safe project cloning и permission-guarded System Health;
+- project-scoped Automation Activity с контактными путями, bounded charts и
+  понятными причинами завершения или остановки execution;
 - Railway web/API/worker deployment с automatic deploy из `main`.
 
 Исторические этапы в `docs/IMPLEMENTATION_PLAN.md` не ограничивают уже

@@ -79,7 +79,7 @@ export function MediaAssetsPage() {
           {file ? (
             <div className="media-selected-file">
               <FileOutlined />
-              <span title={file.name}>{file.name}</span>
+              <span>{file.name}</span>
               <small>{Math.ceil(file.size / 1024)} KB</small>
               <Button
                 aria-label="Remove selected file"

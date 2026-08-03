@@ -375,3 +375,17 @@ relaxing network policy. Private, loopback, link-local and cloud metadata
 addresses are intentionally blocked. Rotating a project secret creates a new
 write-only value; old values must not be recovered from logs or operation
 metadata.
+
+## Automation Activity diagnostics
+
+Automation Activity is a read-only project view over durable execution
+journals. A missing journey should first be checked against the selected
+7/30/90-day period, status, automation and contact search filters. The table is
+paginated and exact summary counts come from PostgreSQL.
+
+Trend and drop-off charts use at most the latest 2,000 matching executions. The
+UI labels a sampled chart; do not treat a sampled daily bar as an exact export.
+Use the journey drawer for the safe step timeline and the existing Automation
+execution diagnostics or Operations Center for deeper recovery work. Never add
+variables, normalized event payloads, node input/output, message content or
+provider errors to the Board to diagnose an incident.

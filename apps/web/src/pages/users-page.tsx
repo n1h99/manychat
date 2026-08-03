@@ -20,7 +20,6 @@ import {
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -264,72 +263,61 @@ export function UsersPage() {
               render: (_, row) =>
                 canManage ? (
                   <Space size={8}>
-                    <Tooltip placement="bottom" title="Edit account">
-                      <Button
-                        aria-label={`Edit ${fullName(row)}`}
-                        icon={<EditOutlined />}
-                        onClick={() => openEdit(row)}
-                      />
-                    </Tooltip>
-                    <Tooltip placement="bottom" title="Revoke all sessions">
-                      <Button
-                        aria-label={`Revoke sessions for ${fullName(row)}`}
-                        icon={<SafetyCertificateOutlined />}
-                        onClick={async () => {
-                          try {
-                            await apiRequest(
-                              `/api/v1/users/${row.id}/revoke-sessions`,
-                              { method: 'POST' },
-                              accessToken,
-                            );
-                            void message.success('User sessions revoked.');
-                          } catch (error) {
-                            void message.error(
-                              getUserErrorMessage(error, 'User sessions could not be revoked.'),
-                            );
-                          }
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip placement="bottom" title="Create one-time password reset link">
-                      <Button
-                        aria-label={`Reset password for ${fullName(row)}`}
-                        icon={<LinkOutlined />}
-                        onClick={async () => {
-                          try {
-                            const result = await apiRequest<{
-                              expiresAt: string;
-                              resetUrl: string;
-                            }>(
-                              `/api/v1/users/${row.id}/password-reset-link`,
-                              { method: 'POST' },
-                              accessToken,
-                            );
-                            setSecureLink({
-                              expiresAt: result.expiresAt,
-                              title: 'Password reset link',
-                              url: result.resetUrl,
-                            });
-                          } catch (error) {
-                            void message.error(
-                              getUserErrorMessage(error, 'The reset link could not be created.'),
-                            );
-                          }
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip
-                      placement="bottom"
-                      title={row.status === 'ACTIVE' ? 'Disable account' : 'Account disabled'}
-                    >
-                      <Button
-                        aria-label={`Disable ${fullName(row)}`}
-                        danger
-                        disabled={row.status !== 'ACTIVE'}
-                        icon={<StopOutlined />}
-                        onClick={() => setDisableTarget(row)}
-                      />
-                    </Tooltip>
+                    <Button
+                      aria-label={`Edit ${fullName(row)}`}
+                      icon={<EditOutlined />}
+                      onClick={() => openEdit(row)}
+                    />
+                    <Button
+                      aria-label={`Revoke sessions for ${fullName(row)}`}
+                      icon={<SafetyCertificateOutlined />}
+                      onClick={async () => {
+                        try {
+                          await apiRequest(
+                            `/api/v1/users/${row.id}/revoke-sessions`,
+                            { method: 'POST' },
+                            accessToken,
+                          );
+                          void message.success('User sessions revoked.');
+                        } catch (error) {
+                          void message.error(
+                            getUserErrorMessage(error, 'User sessions could not be revoked.'),
+                          );
+                        }
+                      }}
+                    />
+                    <Button
+                      aria-label={`Reset password for ${fullName(row)}`}
+                      icon={<LinkOutlined />}
+                      onClick={async () => {
+                        try {
+                          const result = await apiRequest<{
+                            expiresAt: string;
+                            resetUrl: string;
+                          }>(
+                            `/api/v1/users/${row.id}/password-reset-link`,
+                            { method: 'POST' },
+                            accessToken,
+                          );
+                          setSecureLink({
+                            expiresAt: result.expiresAt,
+                            title: 'Password reset link',
+                            url: result.resetUrl,
+                          });
+                        } catch (error) {
+                          void message.error(
+                            getUserErrorMessage(error, 'The reset link could not be created.'),
+                          );
+                        }
+                      }}
+                    />
+                    <Button
+                      aria-label={`Disable ${fullName(row)}`}
+                      danger
+                      disabled={row.status !== 'ACTIVE'}
+                      icon={<StopOutlined />}
+                      onClick={() => setDisableTarget(row)}
+                    />
                   </Space>
                 ) : null,
               title: 'Actions',

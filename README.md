@@ -9,6 +9,11 @@ operator-delivered invitations/password recovery, custom roles, safe project
 cloning and permission-guarded System Health. PostgreSQL is the source of truth;
 Redis/BullMQ accelerates recoverable jobs and never owns business state.
 
+Project workspaces also include Automation Activity: a project-scoped view of
+contact journeys, current steps, completion/drop-off reasons, timelines and
+bounded operational charts. User-facing access, audit, status and alert copy is
+translated from internal codes into plain language.
+
 WhatsApp and Instagram are intentionally deferred until dedicated test accounts
 and a separately approved provider scope are available.
 

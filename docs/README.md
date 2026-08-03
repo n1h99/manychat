@@ -1,7 +1,7 @@
 # Omnicus documentation index
 
 Status reviewed: 2026-08-03, `main` at Automation Studio 2.2, Telegram Chat
-v3.3 and platform operations completion.
+v3.3, platform operations completion and Automation Activity.
 
 ## Current product status
 
@@ -26,6 +26,14 @@ v3.3 and platform operations completion.
   queue pressure, durable terminal-operation counts and global audit history.
   Alerts are derived from authoritative state. Sentry is not used and Railway
   backup configuration remains operator-owned.
+- Every project with `automation:read` exposes Automation Activity in the
+  sidebar. It provides paginated contact journeys, current steps, safe reasons,
+  per-step timelines, exact status totals and bounded trend/scenario/drop-off
+  charts from existing execution journals. It never selects contact variables,
+  event payloads or raw provider errors.
+- Permission, audit, health, operation and status codes are translated into
+  plain-language UI labels. Action buttons keep accessible names without
+  rendering intrusive hover tooltips.
 - Telegram and Cyber Pulse CRM are the active live integration slice.
 - Every normalized Telegram inbound message is queued to an active paired CRM
   independently of Automation Studio. Inbound replies keep a same-conversation

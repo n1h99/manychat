@@ -9,7 +9,7 @@ export function ProjectRolesPage() {
   return (
     <RoleManager
       canManage={hasProjectPermission(access.data, 'members:manage')}
-      description="Create project-specific roles and choose exactly which workspace actions they allow."
+      description="Choose what project members can see and manage inside this workspace."
       permissionsPath={`/api/v1/projects/${projectId}/role-permissions`}
       queryKey={`project-role-manager-${projectId}`}
       rolesPath={`/api/v1/projects/${projectId}/roles`}

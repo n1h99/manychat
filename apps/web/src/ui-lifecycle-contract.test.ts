@@ -140,8 +140,19 @@ describe('workspace lifecycle UI contracts', () => {
     expect(settings).toContain('Contacts, channels, credentials');
     expect(settings).toContain('canClone');
     expect(users).toContain('Create invitation');
-    expect(users).toContain('Create one-time password reset link');
+    expect(users).toContain('password-reset-link');
     expect(health).toContain('System health');
-    expect(health).toContain('No Sentry dependency');
+    expect(health).toContain('Everything is working normally');
+    expect(health).not.toContain('No Sentry dependency');
+  });
+
+  it('keeps automation activity and action controls human-facing', () => {
+    const activity = source('./pages/automation-activity-page.tsx');
+    const roles = source('./role-manager.tsx');
+    const users = source('./pages/users-page.tsx');
+    expect(activity).toContain('Contact journeys');
+    expect(activity).toContain('Why runs stopped or paused');
+    expect(roles).toContain('humanizePermission');
+    expect(users).not.toContain('<Tooltip');
   });
 });

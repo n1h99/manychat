@@ -49,6 +49,68 @@ export interface ScenarioExecution {
   }>;
   status: string;
 }
+
+export type AutomationActivityStatus =
+  'QUEUED' | 'RUNNING' | 'WAITING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+
+export interface AutomationActivityFilters {
+  page: number;
+  pageSize: number;
+  periodDays: 7 | 30 | 90;
+  query: string | undefined;
+  scenarioId: string | undefined;
+  status: AutomationActivityStatus | undefined;
+}
+
+export interface AutomationActivitySnapshot {
+  breakdown: {
+    reasons: Array<{ count: number; label: string }>;
+    scenarios: Array<{
+      active: number;
+      completed: number;
+      id: string;
+      name: string;
+      problems: number;
+      total: number;
+    }>;
+    statuses: Array<{ count: number; label: string; status: AutomationActivityStatus }>;
+  };
+  items: Array<{
+    completedAt: string | null;
+    contact: {
+      displayName: string | null;
+      email: string | null;
+      id: string;
+      phone: string | null;
+      username: string | null;
+    };
+    createdAt: string;
+    currentStep: { label: string; type: string } | null;
+    durationMs: number | null;
+    id: string;
+    reason: string;
+    scenario: { id: string; name: string; version: number };
+    startedAt: string | null;
+    status: AutomationActivityStatus;
+    statusLabel: string;
+    timeline: Array<{
+      completedAt: string | null;
+      label: string;
+      nodeId: string;
+      reason: string | null;
+      startedAt: string | null;
+      status: string;
+    }>;
+    updatedAt: string;
+  }>;
+  page: number;
+  pageSize: number;
+  periodDays: number;
+  summary: { active: number; completed: number; problems: number; total: number; waiting: number };
+  total: number;
+  trend: Array<{ completed: number; date: string; problems: number; started: number }>;
+  trendSampled: boolean;
+}
 export interface AutomationSimulationResult {
   completed: boolean;
   steps: Array<{
@@ -124,6 +186,32 @@ export function useScenarioExecutions(projectId?: string, scenarioId?: string) {
         accessToken,
       ),
     queryKey: ['scenario-executions', projectId, scenarioId],
+  });
+}
+
+export function useAutomationActivity(
+  projectId: string | undefined,
+  filters: AutomationActivityFilters,
+) {
+  const { accessToken } = useAuth();
+  const params = new URLSearchParams({
+    page: String(filters.page),
+    pageSize: String(filters.pageSize),
+    periodDays: String(filters.periodDays),
+  });
+  if (filters.query) params.set('query', filters.query);
+  if (filters.scenarioId) params.set('scenarioId', filters.scenarioId);
+  if (filters.status) params.set('status', filters.status);
+  return useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () =>
+      apiRequest<AutomationActivitySnapshot>(
+        `/api/v1/projects/${projectId}/automation-activity?${params.toString()}`,
+        {},
+        accessToken,
+      ),
+    queryKey: ['automation-activity', projectId, filters, accessToken],
+    refetchInterval: 15_000,
   });
 }
 

@@ -24,6 +24,13 @@ import { useParams } from 'react-router';
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import {
+  humanizeAuditAction,
+  humanizeEntity,
+  humanizeOperationSource,
+  humanizeReason,
+  humanizeStatus,
+} from '../humanize';
 
 interface OperationRow {
   attempts?: number;
@@ -204,7 +211,7 @@ export function OperationsPage() {
                       setSource(value);
                     }}
                     options={['INBOX', 'OUTBOX', 'AUTOMATION', 'BROADCAST'].map((value) => ({
-                      label: value,
+                      label: humanizeOperationSource(value),
                       value,
                     }))}
                     placeholder="Source"
@@ -226,7 +233,7 @@ export function OperationsPage() {
                       'DEAD_LETTER',
                       'UNKNOWN',
                       'PAUSED',
-                    ].map((value) => ({ label: value, value }))}
+                    ].map((value) => ({ label: humanizeStatus(value), value }))}
                     placeholder="Status"
                     value={status}
                   />
@@ -266,14 +273,14 @@ export function OperationsPage() {
                   columns={[
                     {
                       dataIndex: 'source',
-                      render: (value) => <Tag>{value}</Tag>,
+                      render: (value) => <Tag>{humanizeOperationSource(value)}</Tag>,
                       title: 'Source',
                       width: 120,
                     },
                     {
                       render: (_, row) => (
                         <div className="operation-entity-cell">
-                          <strong>{row.entityType}</strong>
+                          <strong>{humanizeEntity(row.entityType)}</strong>
                           <small>{row.id}</small>
                         </div>
                       ),
@@ -281,14 +288,16 @@ export function OperationsPage() {
                     },
                     {
                       dataIndex: 'status',
-                      render: (value) => <Tag color={statusColor(value)}>{value}</Tag>,
+                      render: (value) => (
+                        <Tag color={statusColor(value)}>{humanizeStatus(value)}</Tag>
+                      ),
                       title: 'Status',
                       width: 135,
                     },
                     {
                       dataIndex: 'errorCode',
-                      render: (value) => value ?? '—',
-                      title: 'Safe error',
+                      render: (value) => (value ? humanizeReason(value) : 'No error'),
+                      title: 'What needs attention',
                       width: 220,
                     },
                     {
@@ -360,18 +369,26 @@ export function OperationsPage() {
             children: (
               <Table<AuditRow>
                 columns={[
-                  { dataIndex: 'action', title: 'Action' },
+                  {
+                    dataIndex: 'action',
+                    render: (value) => humanizeAuditAction(value),
+                    title: 'What happened',
+                  },
                   {
                     dataIndex: 'actorEmailSnapshot',
-                    render: (value, row) => value ?? row.actorType,
-                    title: 'Actor',
+                    render: (value, row) => value ?? humanizeEntity(row.actorType),
+                    title: 'Who',
                   },
                   {
                     render: (_, row) =>
-                      `${row.entityType}${row.entityId ? ` · ${row.entityId}` : ''}`,
-                    title: 'Entity',
+                      `${humanizeEntity(row.entityType)}${row.entityId ? ` · ${row.entityId}` : ''}`,
+                    title: 'Item',
                   },
-                  { dataIndex: 'reason', render: (value) => value ?? '—', title: 'Reason' },
+                  {
+                    dataIndex: 'reason',
+                    render: (value) => humanizeReason(value),
+                    title: 'Why',
+                  },
                   { dataIndex: 'correlationId', ellipsis: true, title: 'Correlation' },
                   {
                     dataIndex: 'createdAt',
@@ -467,7 +484,9 @@ export function OperationsPage() {
       >
         {auditDetails ? (
           <Descriptions column={1} size="small">
-            <Descriptions.Item label="Action">{auditDetails.action}</Descriptions.Item>
+            <Descriptions.Item label="What happened">
+              {humanizeAuditAction(auditDetails.action)}
+            </Descriptions.Item>
             <Descriptions.Item label="Correlation">{auditDetails.correlationId}</Descriptions.Item>
             <Descriptions.Item label="Before">
               <pre className="safe-json-view">

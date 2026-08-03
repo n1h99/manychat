@@ -76,21 +76,21 @@ export function AcceptInvitationPage() {
             >
               <Alert
                 className="form-alert"
-                description="For an existing Omnicus account, enter its current password and leave the profile fields empty. For a new account, enter your name and create a password."
-                message="Secure account confirmation"
+                description="Already have an Omnicus account? Enter your current password and leave the name fields empty. First time here? Enter your name and create a password."
+                message="Confirm your account"
                 showIcon
                 type="info"
               />
               <div className="account-form-grid account-form-grid--two">
-                <Form.Item label="First name (new accounts)" name="firstName">
+                <Form.Item label="First name" name="firstName">
                   <Input autoComplete="given-name" />
                 </Form.Item>
-                <Form.Item label="Last name (new accounts)" name="lastName">
+                <Form.Item label="Last name" name="lastName">
                   <Input autoComplete="family-name" />
                 </Form.Item>
               </div>
               <Form.Item
-                extra="Current password for an existing account; a new password for a new account."
+                extra="Use your current password, or create one if this is your first invitation."
                 label="Password"
                 name="password"
                 rules={[{ min: 12, required: true }]}

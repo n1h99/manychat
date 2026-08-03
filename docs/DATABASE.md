@@ -1446,3 +1446,18 @@ reuses these existing records:
 Raw webhook payloads, outbox payloads, message content, password/reset/invite
 tokens and encrypted credentials are never selected into the new list APIs.
 Because the Prisma schema is unchanged, this slice has no migration.
+
+## Automation Activity projection
+
+Automation Activity introduces no table, column or migration. PostgreSQL remains
+authoritative through the existing `ScenarioExecution`, `NodeExecution`,
+`WaitState`, `DelayedAction`, `ScenarioVersion`, `Scenario` and `Contact`
+relations. The API applies `projectId` to the root execution query, supports a
+bounded 7/30/90-day period and paginates journeys at no more than 50 rows.
+
+Exact summary and scenario counts use database aggregation. Trend and safe
+drop-off-reason charts inspect at most the most recent 2,000 matching
+executions and explicitly report when that chart source is sampled. Responses
+exclude execution variables, normalized event payloads, node input/output,
+provider payloads, message content and credentials. Only allow-listed contact
+display fields and human-safe error categories leave the API.

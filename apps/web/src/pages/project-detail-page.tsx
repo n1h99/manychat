@@ -14,6 +14,7 @@ import {
   ToolOutlined,
   TagsOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
@@ -118,6 +119,13 @@ export function ProjectDetailPage() {
       icon: <RobotOutlined />,
       label: 'Automation',
       path: `/projects/${project.id}/scenarios`,
+      visible: hasProjectPermission(access.data, 'automation:read'),
+    },
+    {
+      description: 'Live journeys, outcomes and drop-off reasons',
+      icon: <ThunderboltOutlined />,
+      label: 'Automation activity',
+      path: `/projects/${project.id}/automation-activity`,
       visible: hasProjectPermission(access.data, 'automation:read'),
     },
     {

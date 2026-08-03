@@ -5,6 +5,7 @@ import {
   MenuUnfoldOutlined,
   RightOutlined,
   SettingOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Breadcrumb, Button, Drawer, Grid, Layout, Menu, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
@@ -15,8 +16,9 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useAuth } from './auth';
 import { apiRequest } from './api';
 import { breadcrumbsFor } from './breadcrumbs';
-import { navigationItems } from './navigation';
+import { navigationItems, type NavigationItem } from './navigation';
 import { ProfileSettingsModal } from './profile-settings-modal';
+import { hasProjectPermission, useProjectAccess } from './project-access';
 import { shellActions, type AppDispatch, type RootState } from './store';
 
 const { Content, Header, Sider } = Layout;
@@ -48,16 +50,27 @@ export function AppShell() {
   const isMobile = screens.lg === false;
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const availableNavigation = useMemo(
-    () =>
-      navigationItems.filter(
-        (item) =>
-          !item.permission ||
-          identity?.globalRoleNames.includes('super-admin') ||
-          identity?.globalPermissions.includes(item.permission),
-      ),
-    [identity],
-  );
+  const projectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
+  const projectAccess = useProjectAccess(projectId);
+  const availableNavigation = useMemo(() => {
+    const contextual: NavigationItem[] =
+      projectId && hasProjectPermission(projectAccess.data, 'automation:read')
+        ? [
+            {
+              icon: <ThunderboltOutlined />,
+              key: 'automation-activity',
+              label: 'Automation activity',
+              path: `/projects/${projectId}/automation-activity`,
+            },
+          ]
+        : [];
+    return [...contextual, ...navigationItems].filter(
+      (item) =>
+        !item.permission ||
+        identity?.globalRoleNames.includes('super-admin') ||
+        identity?.globalPermissions.includes(item.permission),
+    );
+  }, [identity, projectAccess.data, projectId]);
   const selectedKey = useMemo(
     () =>
       availableNavigation.find((item) => location.pathname.startsWith(item.path))?.key ??
@@ -72,7 +85,6 @@ export function AppShell() {
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(' ');
   const menuItems = availableNavigation.map(({ icon, key, label }) => ({ icon, key, label }));
-  const projectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
   const project = useQuery({
     enabled: Boolean(projectId),
     queryFn: () => apiRequest<{ name: string }>(`/api/v1/projects/${projectId}`, {}, accessToken),

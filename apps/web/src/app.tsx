@@ -57,6 +57,10 @@ const ScenarioEditorPage = lazyPage(
   'ScenarioEditorPage',
 );
 const ScenariosPage = lazyPage(() => import('./pages/scenarios-page'), 'ScenariosPage');
+const AutomationActivityPage = lazyPage(
+  () => import('./pages/automation-activity-page'),
+  'AutomationActivityPage',
+);
 const CrmConfigPage = lazyPage(() => import('./pages/crm-config-page'), 'CrmConfigPage');
 const SegmentsPage = lazyPage(() => import('./pages/segments-page'), 'SegmentsPage');
 const BroadcastsPage = lazyPage(() => import('./pages/broadcasts-page'), 'BroadcastsPage');
@@ -116,6 +120,10 @@ export function App() {
             <Route element={<SegmentsPage />} path="/projects/:projectId/segments" />
             <Route element={<ProjectPermissionRoute permission="automation:read" />}>
               <Route element={<ScenariosPage />} path="/projects/:projectId/scenarios" />
+              <Route
+                element={<AutomationActivityPage />}
+                path="/projects/:projectId/automation-activity"
+              />
               <Route element={<ProjectPermissionRoute permission="automation:manage" />}>
                 <Route
                   element={<ScenarioEditorPage />}

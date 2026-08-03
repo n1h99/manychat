@@ -12,6 +12,7 @@ const sectionLabels: Record<string, string> = {
   'media-assets': 'Media',
   members: 'Members',
   operations: 'Operations & audit',
+  'automation-activity': 'Automation activity',
   roles: 'Roles',
   scenarios: 'Automation',
   segments: 'Segments',
