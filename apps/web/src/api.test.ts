@@ -81,6 +81,23 @@ describe('authenticated API requests', () => {
         'The template could not be saved.',
       ),
     ).toBe('The template could not be saved. Review description.');
+    expect(
+      getUserErrorMessage(
+        new ApiError('PROJECT_SLUG_EXISTS', 'Project slug is already in use', 409),
+        'Project could not be created.',
+      ),
+    ).toBe(
+      'Project could not be created. This slug is already used by another active or archived project.',
+    );
+  });
+
+  it('prefers a safe product explanation over a generic HTTP status', () => {
+    expect(
+      getUserErrorMessage(
+        new ApiError('RESOURCE_STATE_INVALID', 'This resource must be paused first', 409),
+        'The resource could not be changed.',
+      ),
+    ).toBe('The resource could not be changed. This resource must be paused first.');
   });
 
   it('does not expose internal server messages and keeps a safe support reference', () => {

@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { apiRequest, getUserErrorMessage } from '../api';
+import { ApiError, apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 
 export interface Project {
@@ -129,6 +129,14 @@ export function ProjectsPage() {
               await refresh();
               void message.success('Project created.');
             } catch (error) {
+              if (error instanceof ApiError && error.code === 'PROJECT_SLUG_EXISTS') {
+                form.setFields([
+                  {
+                    errors: ['This slug is already used by another active or archived project.'],
+                    name: 'slug',
+                  },
+                ]);
+              }
               void message.error(getUserErrorMessage(error, 'Project could not be created.'));
             }
           }}

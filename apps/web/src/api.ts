@@ -44,6 +44,7 @@ const codeReasons: Record<string, string> = {
   MEDIA_USED_BY_PUBLISHED_TEMPLATE: 'This file is used by a published template.',
   MESSAGE_TEMPLATE_NAME_EXISTS: 'A template with this name already exists.',
   OPERATION_NOT_FAILED: 'Only a failed operation can be retried.',
+  PROJECT_SLUG_EXISTS: 'This slug is already used by another active or archived project.',
   SCENARIO_DRAFT_CONFLICT: 'This draft changed in another session. Reload it before saving.',
   SEGMENT_NAME_EXISTS: 'A segment with this name already exists.',
   TAG_NAME_EXISTS: 'A tag with this name already exists.',
@@ -68,6 +69,13 @@ function validationReason(details: unknown): string | undefined {
   return `Review ${unique.slice(0, 3).join(', ')}${unique.length > 3 ? ' and the other fields' : ''}.`;
 }
 
+function safeApiReason(message: string): string | undefined {
+  const normalized = message.trim();
+  if (!normalized || ['Request failed', 'Request validation failed'].includes(normalized))
+    return undefined;
+  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
 export function getUserErrorMessage(
   error: unknown,
   fallback = 'The action could not be completed.',
@@ -80,10 +88,8 @@ export function getUserErrorMessage(
   const reason =
     codeReasons[error.code] ??
     (error.code === 'VALIDATION_ERROR' ? validationReason(error.details) : undefined) ??
-    statusReasons[error.status] ??
-    (error.status < 500 && !['Request failed', 'Request validation failed'].includes(error.message)
-      ? error.message
-      : undefined);
+    (error.status < 500 ? safeApiReason(error.message) : undefined) ??
+    statusReasons[error.status];
   const reference =
     error.status >= 500 && error.correlationId && error.correlationId !== 'unavailable'
       ? ` Reference: ${error.correlationId}.`
