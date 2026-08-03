@@ -30,6 +30,7 @@ function createDatabase() {
     normalizedEvent: null,
     normalizedEventId: null,
     outbox: { attempts: 1, maxAttempts: 3 },
+    inputSafe: { connectionId: 'connection-a' },
     project: { crmConfig: { crmProjectId: 'crm-a', enabled: true } },
     projectId: 'project-a',
     type: 'CREATE_OR_UPDATE_LEAD' as const,

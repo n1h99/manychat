@@ -148,9 +148,28 @@ export function validateAutomationResources(
       }
     }
     if (node.type === 'CONDITION') validateFieldPath(config.field, { nodeId: node.id });
-    if (resources.templates && node.type === 'SEND_TEMPLATE') {
-      const template = resources.templates.find((candidate) => candidate.id === config.templateId);
+    if (node.type === 'SEND_TEMPLATE') {
+      const whatsAppTemplate =
+        config.whatsAppTemplate &&
+        typeof config.whatsAppTemplate === 'object' &&
+        !Array.isArray(config.whatsAppTemplate)
+          ? (config.whatsAppTemplate as Record<string, unknown>)
+          : undefined;
       if (
+        whatsAppTemplate &&
+        (typeof whatsAppTemplate.name !== 'string' ||
+          !whatsAppTemplate.name.trim() ||
+          typeof whatsAppTemplate.languageCode !== 'string' ||
+          !whatsAppTemplate.languageCode.trim())
+      ) {
+        add({
+          message: 'Select an approved WhatsApp template.',
+          nodeId: node.id,
+        });
+      }
+      const template = resources.templates?.find((candidate) => candidate.id === config.templateId);
+      if (
+        resources.templates &&
         typeof config.templateId === 'string' &&
         typeof config.templateVersionId === 'string' &&
         (!template ||
@@ -271,8 +290,9 @@ export function automationNodeDescription(nodeType: string): string {
     PAUSE_AUTOMATION: 'Pause automation for this contact.',
     REMOVE_TAG: 'Remove a project tag from the contact.',
     RESUME_AUTOMATION: 'Resume automation for this contact.',
-    SEND_MESSAGE: 'Queue a Telegram message with optional contact variables.',
-    SEND_TEMPLATE: 'Queue one immutable published template version.',
+    SEND_MESSAGE:
+      'Reply through the conversation channel with portable text and optional contact variables.',
+    SEND_TEMPLATE: 'Queue one approved, channel-compatible template version.',
     SET_CUSTOM_FIELD: 'Set a typed custom-field value on the contact.',
     START_SUBFLOW: 'Run a pinned published version of another scenario.',
     STOP: 'Finish this path without another action.',

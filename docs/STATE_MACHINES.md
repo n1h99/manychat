@@ -143,6 +143,20 @@ Status до Message сохраняется как `OrphanMessageStatus` и пр�
 транзакционно при появлении Message. Status regression не изменяет итоговый
 status, но raw status fact сохраняется.
 
+Для WhatsApp успешный Graph response с `wamid` сразу означает product-state
+`sent`; отдельный внутренний `submitted` наружу не публикуется. Только
+подписанный webhook может продвинуть ту же запись в `delivered` или `read`.
+`failed` не перезаписывает уже подтверждённый `delivered/read`, а старый
+`sent/delivered` не понижает `read`.
+
+WhatsApp customer-service window не является Redis timer state. Она выводится
+из `Conversation.lastInboundAt` и `serviceWindowExpiresAt`, которые обновляет
+только авторитетное входящее пользовательское сообщение. Outbound, provider
+status, mark-as-read и automation state не продлевают окно. Free-form intent
+проверяет окно при создании и повторно под outbound lease; закрытое окно без
+APPROVED connection-scoped template завершается безопасным `failed` с
+`TEMPLATE_REQUIRED` до provider call.
+
 ## Broadcast
 
 Broadcasts не входят в pilot; state machine фиксирует последующий контракт.

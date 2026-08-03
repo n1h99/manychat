@@ -44,7 +44,7 @@ v3.3, platform operations completion and Automation Activity.
 - Permission, audit, health, operation and status codes are translated into
   plain-language UI labels. Action buttons keep accessible names without
   rendering intrusive hover tooltips.
-- Telegram and Cyber Pulse CRM are the active live integration slice.
+- Telegram and Cyber Pulse CRM remain the live-verified integration slice.
 - Every normalized Telegram inbound message is queued to an active paired CRM
   independently of Automation Studio. Inbound replies keep a same-conversation
   Omnicus message reference through contract 3.2.3.
@@ -81,8 +81,14 @@ v3.3, platform operations completion and Automation Activity.
   a public resolved address when a platform resolver also returns restricted
   addresses. Private, loopback, mapped, reserved and redirect targets remain
   blocked.
-- WhatsApp and Instagram are deliberately deferred until test accounts and a
-  separately approved scope exist.
+- WhatsApp Business Cloud API is implemented through the same durable
+  inbox/outbox, CRM and automation boundaries. It includes manual and Meta
+  Embedded Signup setup, signed app-level webhooks, normalized message/status
+  processing, customer-service-window enforcement, approved templates,
+  WhatsApp broadcasts and channel-aware CRM chat. Live Meta verification stays
+  explicitly pending until the Meta app and test business phone exist.
+- Instagram remains deliberately deferred until its test account and separate
+  provider scope exist.
 
 The Telegram channel-detail cache refresh issue found during the current
 verification cycle is resolved: disable/connect mutations update the active
@@ -103,6 +109,7 @@ into the final verification stage.
 | Railway topology                       | [RAILWAY.md](RAILWAY.md)                                               |
 | Test gates                             | [TESTING.md](TESTING.md)                                               |
 | Cyber Pulse integration                | [CRM_INTEGRATION.md](CRM_INTEGRATION.md)                               |
+| WhatsApp Business Cloud API            | [WHATSAPP_CLOUD_API.md](WHATSAPP_CLOUD_API.md)                         |
 | CRM-to-Omnicus OpenAPI                 | [OMNICUS_CRM_OUTBOUND_OPENAPI.yaml](OMNICUS_CRM_OUTBOUND_OPENAPI.yaml) |
 | Omnicus-to-CRM OpenAPI                 | [OMNICUS_TO_CRM_OPENAPI.yaml](OMNICUS_TO_CRM_OPENAPI.yaml)             |
 | Pairing OpenAPI                        | [CRM_PAIRING_OPENAPI.yaml](CRM_PAIRING_OPENAPI.yaml)                   |

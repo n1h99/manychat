@@ -9,13 +9,13 @@ Omnicus is a pnpm/Turborepo monorepo deployed to Railway as three services:
 - `apps/web`: React/Vite SPA plus a hardened Node static server and same-origin
   `/api` reverse proxy;
 - `apps/api`: NestJS API, authenticated management endpoints, CRM service API
-  and Telegram webhook;
+  and signed Telegram/WhatsApp webhooks;
 - `apps/worker`: BullMQ consumers and a small readiness/liveness HTTP server.
 
 Shared business boundaries live in packages. Applications import public
 package exports and never another application's source. Important packages are
 `database`, `contracts`, `automation-core`, `automation-http`,
-`channel-telegram`, `crm-core` and `media-core`.
+`channel-telegram`, `channel-whatsapp`, `crm-core` and `media-core`.
 
 ## Durable processing model
 
@@ -36,10 +36,13 @@ Stable idempotency keys prevent duplicate logical effects. A confirmed safe
 failure may retry according to policy. `UNKNOWN` is never retried blindly and
 requires reconciliation or an audited operator decision.
 
-Telegram webhooks acknowledge after durable inbox commit and do not wait for
-automation, CRM or outbound delivery. Scenario waits, delays, schedules and
-external HTTP continuations are stored in PostgreSQL, so worker restarts do not
-lose them.
+Telegram and WhatsApp webhooks acknowledge after durable inbox commit and do
+not wait for automation, CRM or outbound delivery. WhatsApp verifies the exact
+request bytes with the global Meta app secret before it resolves a tenant from
+the WABA and phone-number identifiers. A multi-account envelope is split into
+one connection-owned raw/inbox item per message or status before persistence.
+Scenario waits, delays, schedules and external HTTP continuations are stored in
+PostgreSQL, so worker restarts do not lose them.
 
 ## Tenant and secret boundaries
 
@@ -48,13 +51,30 @@ application guards prevent cross-project contact, channel, scenario, message
 and operation references.
 
 Server and browser configuration use separate package exports. Browser bundles
-accept only reviewed `VITE_*` values. Telegram tokens, CRM credentials and
-project HTTP secrets are encrypted or one-way hashed as appropriate, never
-returned after creation, and excluded from logs, audit metadata and runtime
-artifacts.
+accept only reviewed `VITE_*` values. Telegram tokens, WhatsApp access tokens,
+CRM credentials and project HTTP secrets are encrypted or one-way hashed as
+appropriate, never returned after creation, and excluded from logs, audit
+metadata and runtime artifacts. The Meta app secret and webhook verify token
+are application-level server configuration; only the public app/configuration
+IDs needed by Embedded Signup may cross the authenticated setup boundary.
 
 CRM inbound and outbound credentials are independent. Provider payloads pass
 runtime validation and are normalized before business logic sees them.
+
+## WhatsApp provider boundary
+
+WhatsApp uses the official Meta-hosted Cloud API only. Every connection stores
+an explicit Graph API version and safe WABA/phone-number identifiers; Omnicus
+does not infer a version from provider examples. New Embedded Signup numbers
+are validated against their WABA, registered with a write-only six-digit PIN,
+subscribed to the app and only then activated.
+
+The last authoritative inbound user message advances the persisted customer
+service window. Free-form text, media and interactive messages re-check that
+window immediately before the provider call. An approved connection-scoped
+Meta template is required outside the window. Delivery callbacks are
+idempotent and monotonic: accepted/SENT evidence cannot claim DELIVERED or READ,
+and an older callback cannot regress a newer status.
 
 ## Automation and external HTTP
 

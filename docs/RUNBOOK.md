@@ -1,6 +1,6 @@
 # Omnicus operations runbook
 
-Status reviewed: 2026-08-02 for the deployed Railway `main` environment.
+Status reviewed: 2026-08-03 for the deployed Railway `main` environment.
 
 ## One-time production administrator bootstrap
 
@@ -164,6 +164,40 @@ recoverable and delivery is not lost. `UNKNOWN` delivery is terminal: reconcile
 the provider outcome before any manual resend, because a timeout can occur after
 Telegram accepted the request. Do not expose, log, or copy channel credentials
 while investigating a record.
+
+## WhatsApp Cloud API recovery
+
+WhatsApp uses separate `whatsapp-inbound` and `whatsapp-outbound` BullMQ queues,
+but PostgreSQL `InboxRecord` and `OutboxRecord` rows remain authoritative. The
+worker recovery scans re-enqueue due or expired-leased rows by stable record ID.
+Never create a second send to compensate for a missing queue job.
+
+For inbound incidents, first confirm that Meta reached the app-level
+`/webhooks/whatsapp` callback. An invalid `X-Hub-Signature-256` intentionally
+creates no raw or inbox record. A valid event for an unknown or disabled
+WABA/phone route is acknowledged and ignored rather than assigned to a guessed
+project. Do not paste raw webhook content into support notes.
+
+For outbound incidents, `SENT` means Meta returned a `wamid`; only webhook
+evidence advances the same message to `DELIVERED` or `READ`. Delivery statuses
+are monotonic, and duplicate/out-of-order events are safe. A transport timeout
+after a possible provider call is `UNKNOWN` and must not be resent blindly.
+Use the stable outbox/message identifiers and provider evidence for
+reconciliation.
+
+The persisted customer service window comes only from an authoritative inbound
+user message. If free-form delivery is rejected as template-required, sync the
+connection's Meta templates and select an `APPROVED` template; do not alter the
+timestamp or bypass the worker check. Mark-as-read, media upload/download,
+reactions and template sends are also project/connection-scoped durable side
+effects.
+
+Disabling one WhatsApp phone is a local routing action. Do not manually remove
+the WABA app subscription while another phone under that WABA is active. Meta
+app secrets, verify tokens, phone registration PINs and access tokens must not
+appear in logs, audit JSON, browser storage or CRM responses. The complete
+provider setup and live acceptance procedure is in
+[WHATSAPP_CLOUD_API.md](WHATSAPP_CLOUD_API.md).
 
 ## Telegram broadcasts
 

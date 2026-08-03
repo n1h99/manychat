@@ -932,6 +932,7 @@ export function ScenarioEditorPage() {
                           captureHistory();
                           setConfigs((current) => ({ ...current, [selected.id]: config }));
                         }}
+                        projectId={projectId}
                         scenarios={(scenarios.data ?? []).filter(
                           (candidate) => candidate.id !== scenarioId,
                         )}
@@ -1268,7 +1269,7 @@ export function ScenarioEditorPage() {
                       >
                         <strong>{automationDeliveryStatus(node.delivery.messageStatus)}</strong>
                         <small>
-                          Telegram delivery · outbox {node.delivery.outboxStatus.toLowerCase()}
+                          Channel delivery · outbox {node.delivery.outboxStatus.toLowerCase()}
                         </small>
                       </div>
                     ) : null}
@@ -1492,9 +1493,9 @@ function automationDeliveryStatus(status: string): string {
   const labels: Record<string, string> = {
     CANCELLED: 'Delivery cancelled',
     FAILED: 'Delivery failed',
-    PROCESSING: 'Sending to Telegram',
-    QUEUED: 'Queued for Telegram',
-    SENT: 'Sent by Telegram',
+    PROCESSING: 'Sending to the channel',
+    QUEUED: 'Queued for channel delivery',
+    SENT: 'Sent by the channel provider',
     UNKNOWN: 'Delivery outcome unknown',
   };
   return labels[status] ?? `Delivery ${status.toLowerCase().replaceAll('_', ' ')}`;

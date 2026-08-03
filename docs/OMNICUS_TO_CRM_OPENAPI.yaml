@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Omnicus to CRM messaging contract
-  version: 3.2.3
-  description: Exact contract implemented by Omnicus for normalized Telegram messages, edits, contact shares, automation state and confirmed outbound history.
+  version: 4.0.0
+  description: Exact channel-aware contract implemented by CRM for normalized Telegram and WhatsApp messages, WhatsApp delivery status, edits, contact shares, automation state and confirmed outbound history.
 security:
   - serviceBearer: []
 paths:
@@ -48,6 +48,28 @@ paths:
           description: Invalid service credential.
         '409':
           description: Idempotency or project mapping conflict.
+  /integrations/v1/omnicus/messages/status:
+    post:
+      operationId: receiveOmnicusWhatsAppMessageStatus
+      summary: Update the existing CRM message bubble from a normalized WhatsApp status event
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WhatsAppMessageStatusEvent'
+      responses:
+        '200':
+          description: Same-bubble status update, ignored monotonic replay, or idempotent duplicate.
+        '400':
+          description: Safe validation error.
+        '401':
+          description: Invalid service credential.
+        '409':
+          description: Idempotency, provider-message identity, or conversation isolation conflict.
   /integrations/v1/omnicus/reactions/inbound:
     post:
       operationId: receiveOmnicusInboundReaction
@@ -180,6 +202,7 @@ components:
           type: string
           enum:
             - telegram
+            - whatsapp
         channelIdentityId:
           type: string
           minLength: 1
@@ -239,6 +262,16 @@ components:
         downloadUrlExpiresAt:
           type: string
           format: date-time
+        availability:
+          type: string
+          enum: [available, unavailable]
+          description: Optional normalized materialization state; omission preserves Telegram v3 compatibility.
+        unavailableReason:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_.:-]+$'
+          description: Safe machine code present only when availability is unavailable.
         hasSpoiler:
           type: boolean
           description: Original Telegram spoiler presentation flag for photo, video or animation.
@@ -253,12 +286,13 @@ components:
       additionalProperties: false
       required:
         - type
-        - callbackQueryId
       properties:
         type:
           type: string
           enum:
             - callback_query
+            - button_reply
+            - list_reply
         callbackQueryId:
           type: string
           minLength: 1
@@ -272,6 +306,17 @@ components:
           type: string
           format: uuid
           description: Omnicus UUID of the outbound message whose button was pressed.
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 512
     InlineKeyboardButton:
       type: object
       additionalProperties: false
@@ -491,6 +536,260 @@ components:
         reasonCode: { type: string, maxLength: 128 }
         revision: { type: integer, minimum: 1 }
         changedAt: { type: string, format: date-time }
+    WhatsAppContactValue:
+      type: object
+      additionalProperties: false
+      required: [formattedName, phones]
+      properties:
+        type: { const: whatsapp_contact }
+        formattedName: { type: string, minLength: 1, maxLength: 256 }
+        firstName: { type: string, minLength: 1, maxLength: 128 }
+        lastName: { type: string, minLength: 1, maxLength: 128 }
+        phones:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [phone]
+            properties:
+              phone: { type: string, minLength: 1, maxLength: 64 }
+              type: { type: string, maxLength: 32 }
+              waId: { type: string, maxLength: 64 }
+        emails:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [email]
+            properties:
+              email: { type: string, format: email }
+              type: { type: string, maxLength: 32 }
+    WhatsAppContactMessage:
+      allOf:
+        - $ref: '#/components/schemas/WhatsAppContactValue'
+        - type: object
+          required: [type]
+          properties:
+            type: { const: whatsapp_contact }
+    WhatsAppLocationMessage:
+      type: object
+      additionalProperties: false
+      required: [type, latitude, longitude]
+      properties:
+        type: { const: whatsapp_location }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        name: { type: string, maxLength: 1000 }
+        address: { type: string, maxLength: 1000 }
+    WhatsAppOutboundStructuredMessage:
+      oneOf:
+        - $ref: '#/components/schemas/WhatsAppContactMessage'
+        - $ref: '#/components/schemas/WhatsAppLocationMessage'
+    StructuredMessageV4:
+      description: >-
+        Normalized inbound WhatsApp content. Meta may deliver one provider
+        message containing multiple contacts; CRM stores that bounded array in
+        one message bubble and never creates one bubble per contact.
+      oneOf:
+        - $ref: '#/components/schemas/WhatsAppContactMessage'
+        - type: object
+          additionalProperties: false
+          required: [type, contacts]
+          properties:
+            type: { const: whatsapp_contacts }
+            contacts:
+              type: array
+              minItems: 1
+              maxItems: 20
+              items: { $ref: '#/components/schemas/WhatsAppContactValue' }
+        - $ref: '#/components/schemas/WhatsAppLocationMessage'
+    WhatsAppTemplateParameter:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, text]
+          properties:
+            type: { const: text }
+            text: { type: string, minLength: 1, maxLength: 4096 }
+        - type: object
+          additionalProperties: false
+          required: [type, mediaAssetId]
+          properties:
+            type: { type: string, enum: [image, video, document] }
+            mediaAssetId: { type: string, format: uuid }
+        - type: object
+          additionalProperties: false
+          required: [type, payload]
+          properties:
+            type: { const: payload }
+            payload: { type: string, minLength: 1, maxLength: 256 }
+        - type: object
+          additionalProperties: false
+          required: [type, currency]
+          properties:
+            type: { const: currency }
+            currency:
+              type: object
+              additionalProperties: false
+              required: [fallbackValue, code, amount1000]
+              properties:
+                fallbackValue: { type: string, minLength: 1, maxLength: 64 }
+                code: { type: string, pattern: '^[A-Z]{3}$' }
+                amount1000: { type: integer }
+        - type: object
+          additionalProperties: false
+          required: [type, dateTime]
+          properties:
+            type: { const: date_time }
+            dateTime:
+              type: object
+              additionalProperties: false
+              required: [fallbackValue]
+              properties:
+                fallbackValue: { type: string, minLength: 1, maxLength: 128 }
+    WhatsAppTemplateSend:
+      type: object
+      additionalProperties: false
+      required: [name, languageCode]
+      properties:
+        name: { type: string, pattern: '^[a-z0-9_]+$', maxLength: 512 }
+        languageCode: { type: string, minLength: 2, maxLength: 32 }
+        components:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, parameters]
+            properties:
+              type: { type: string, enum: [header, body, button] }
+              subType: { type: string, enum: [quick_reply, url] }
+              index: { type: integer, minimum: 0, maximum: 9 }
+              parameters:
+                type: array
+                maxItems: 10
+                items: { $ref: '#/components/schemas/WhatsAppTemplateParameter' }
+    WhatsAppInteractiveOutbound:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, body, action]
+          properties:
+            type: { const: button }
+            body:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 1024 } }
+            footer:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 60 } }
+            action:
+              type: object
+              additionalProperties: false
+              required: [buttons]
+              properties:
+                buttons:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [id, title]
+                    properties:
+                      id: { type: string, minLength: 1, maxLength: 256 }
+                      title: { type: string, minLength: 1, maxLength: 20 }
+        - type: object
+          additionalProperties: false
+          required: [type, body, action]
+          properties:
+            type: { const: list }
+            body:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 1024 } }
+            action:
+              type: object
+              additionalProperties: false
+              required: [button, sections]
+              properties:
+                button: { type: string, minLength: 1, maxLength: 20 }
+                sections:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [rows]
+                    properties:
+                      title: { type: string, maxLength: 24 }
+                      rows:
+                        type: array
+                        minItems: 1
+                        maxItems: 10
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [id, title]
+                          properties:
+                            id: { type: string, minLength: 1, maxLength: 200 }
+                            title: { type: string, minLength: 1, maxLength: 24 }
+                            description: { type: string, maxLength: 72 }
+    WhatsAppMessageStatusEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - normalizedEventId
+        - messageId
+        - status
+        - occurredAt
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity:
+          allOf:
+            - $ref: '#/components/schemas/Identity'
+            - type: object
+              properties:
+                channel: { const: whatsapp }
+        normalizedEventId: { type: string, format: uuid }
+        messageId:
+          type: string
+          format: uuid
+          description: Stable Omnicus Message UUID used to locate the existing CRM bubble.
+        providerMessageId:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Opaque WhatsApp message identifier; never interpreted or logged as a raw provider payload.
+        status:
+          type: string
+          enum: [SENT, DELIVERED, READ, FAILED, UNKNOWN, DELETED]
+        occurredAt: { type: string, format: date-time }
+        errorCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_.:-]+$'
+      allOf:
+        - if:
+            properties:
+              status: { enum: [SENT, DELIVERED, READ, DELETED] }
+          then:
+            required: [providerMessageId]
     InboundMessage:
       type: object
       additionalProperties: false
@@ -521,6 +820,10 @@ components:
         normalizedEventId:
           type: string
           format: uuid
+        providerMessageId:
+          type: string
+          minLength: 1
+          maxLength: 512
         occurredAt:
           type: string
           format: date-time
@@ -536,6 +839,8 @@ components:
           $ref: '#/components/schemas/Media'
         interactive:
           $ref: '#/components/schemas/Interactive'
+        structured:
+          $ref: '#/components/schemas/StructuredMessageV4'
       anyOf:
         - required:
             - text
@@ -543,6 +848,8 @@ components:
             - media
         - required:
             - interactive
+        - required:
+            - structured
     OutboundMessage:
       type: object
       additionalProperties: false
@@ -577,8 +884,8 @@ components:
         providerMessageId:
           type: string
           minLength: 1
-          maxLength: 32
-          pattern: '^[1-9]\d*$'
+          maxLength: 512
+          description: Telegram IDs are numeric; WhatsApp IDs are opaque and must not be interpreted.
         occurredAt:
           type: string
           format: date-time
@@ -588,6 +895,12 @@ components:
           type: string
         media:
           $ref: '#/components/schemas/Media'
+        structured:
+          $ref: '#/components/schemas/WhatsAppOutboundStructuredMessage'
+        interactive:
+          $ref: '#/components/schemas/WhatsAppInteractiveOutbound'
+        template:
+          $ref: '#/components/schemas/WhatsAppTemplateSend'
         inlineKeyboard:
           $ref: '#/components/schemas/InlineKeyboard'
         entities:
@@ -645,3 +958,9 @@ components:
             - text
         - required:
             - media
+        - required:
+            - structured
+        - required:
+            - interactive
+        - required:
+            - template

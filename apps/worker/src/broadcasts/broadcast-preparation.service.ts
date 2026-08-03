@@ -9,13 +9,21 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@omnicus/database';
 import {
+  assertWhatsAppTemplateComponents,
+  WHATSAPP_OUTBOUND_JOB_NAME,
+  WHATSAPP_OUTBOUND_QUEUE_NAME,
+  whatsAppTemplateDisabledReason,
+  whatsappOutboundJobIdFor,
+  type WhatsAppOutboundJob,
+} from '@omnicus/channel-whatsapp';
+import {
   TELEGRAM_OUTBOUND_JOB_NAME,
   TELEGRAM_OUTBOUND_QUEUE_NAME,
   telegramOutboundJobIdFor,
   type TelegramOutboundJob,
 } from '@omnicus/channel-telegram';
 import type { WorkerEnvironment } from '@omnicus/config/server';
-import { renderMessageTemplateContent } from '@omnicus/media-core';
+import { renderMessageTemplateContent, renderTemplate } from '@omnicus/media-core';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
@@ -34,7 +42,8 @@ type Audience = {
 export class BroadcastPreparationService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(BroadcastPreparationService.name);
   private readonly workerId = `broadcast-preparation-${process.pid}-${randomUUID()}`;
-  private readonly queue: Queue<TelegramOutboundJob>;
+  private readonly telegramQueue: Queue<TelegramOutboundJob>;
+  private readonly whatsAppQueue: Queue<WhatsAppOutboundJob>;
   private timer: NodeJS.Timeout | undefined;
   private scanning = false;
 
@@ -42,13 +51,16 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
     @Inject(ConfigService) private readonly config: ConfigService<WorkerEnvironment, true>,
     @Inject(DatabaseService) private readonly database: DatabaseService,
   ) {
-    this.queue = new Queue(TELEGRAM_OUTBOUND_QUEUE_NAME, {
+    this.telegramQueue = new Queue(TELEGRAM_OUTBOUND_QUEUE_NAME, {
+      connection: redisConnectionFromUrl(config.get('REDIS_URL', { infer: true })),
+    });
+    this.whatsAppQueue = new Queue(WHATSAPP_OUTBOUND_QUEUE_NAME, {
       connection: redisConnectionFromUrl(config.get('REDIS_URL', { infer: true })),
     });
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    await this.queue.waitUntilReady();
+    await Promise.all([this.telegramQueue.waitUntilReady(), this.whatsAppQueue.waitUntilReady()]);
     this.timer = setInterval(() => void this.runScheduledScan(), 5_000);
     this.timer.unref();
     void this.runScheduledScan();
@@ -56,7 +68,7 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
 
   async onApplicationShutdown(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
-    await this.queue.close();
+    await Promise.all([this.telegramQueue.close(), this.whatsAppQueue.close()]);
   }
 
   async scanOnce(now = new Date()): Promise<void> {
@@ -112,17 +124,44 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
       });
       if (!broadcast || broadcast.status !== 'PREPARING' || broadcast.preparationLockedBy !== lease)
         return;
+      const connection = await this.database.client.channelConnection.findUnique({
+        where: { projectId_id: { id: broadcast.connectionId, projectId } },
+        select: { status: true, type: true },
+      });
+      const channelType =
+        connection?.type === 'WHATSAPP'
+          ? ('WHATSAPP' as const)
+          : connection?.type === 'TELEGRAM'
+            ? ('TELEGRAM' as const)
+            : undefined;
+      if (!connection || connection.status !== 'ACTIVE' || !channelType) {
+        await this.failBroadcastChannel(projectId, broadcastId, lease);
+        return;
+      }
+      if (
+        channelType === 'WHATSAPP' &&
+        !(await this.whatsAppTemplateApproved(projectId, broadcast.connectionId, broadcast.content))
+      ) {
+        await this.failBroadcast(
+          projectId,
+          broadcastId,
+          lease,
+          'broadcast_whatsapp_template_not_approved',
+        );
+        return;
+      }
       const identities = await this.identities(
         projectId,
         broadcast.connectionId,
         broadcast.audience as unknown as Audience,
+        channelType,
       );
       await this.database.client.$transaction(async (tx) => {
         const active = await tx.channelConnection.findUnique({
           where: { projectId_id: { id: broadcast.connectionId, projectId } },
           select: { status: true, type: true },
         });
-        if (!active || active.status !== 'ACTIVE' || active.type !== 'TELEGRAM') {
+        if (!active || active.status !== 'ACTIVE' || active.type !== channelType) {
           await tx.broadcast.updateMany({
             where: { id: broadcastId, projectId, preparationLockedBy: lease, status: 'PREPARING' },
             data: {
@@ -165,9 +204,11 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
       for (const recipient of pending) {
         const identity = identityById.get(recipient.channelIdentityId);
         if (!identity) continue;
-        const rendered = renderMessageTemplateContent(broadcast.content, {
-          contact: identity.contact,
-        });
+        const rendered = this.renderBroadcastContent(
+          broadcast.content,
+          identity.contact,
+          channelType,
+        );
         if (rendered.missing.length) {
           await this.database.client.broadcastRecipient.updateMany({
             data: {
@@ -213,6 +254,7 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
               status: 'QUEUED',
               content: rendered.content as Prisma.InputJsonValue,
               metadata: {
+                source: 'broadcast',
                 broadcastId,
                 broadcastRecipientId: recipient.id,
                 templateVersionId: current.templateVersionId,
@@ -223,7 +265,7 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
             data: {
               projectId,
               connectionId: broadcast.connectionId,
-              kind: 'TELEGRAM',
+              kind: channelType,
               idempotencyKey: `broadcast-recipient-${recipient.id}`,
               nextAttemptAt: new Date(),
               payload: { messageId: message.id, channelIdentityId: recipient.channelIdentityId },
@@ -240,7 +282,7 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
           });
           return linked.count ? outbox.id : undefined;
         });
-        if (outboxId) await this.enqueue(outboxId);
+        if (outboxId) await this.enqueue(outboxId, channelType);
       }
       await this.completeIfTerminal(projectId, broadcastId);
     } catch {
@@ -256,25 +298,40 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
     }
   }
 
-  private async enqueue(outboxRecordId: string): Promise<void> {
+  private async enqueue(
+    outboxRecordId: string,
+    channelType: 'TELEGRAM' | 'WHATSAPP',
+  ): Promise<void> {
     try {
-      await this.queue.add(
-        TELEGRAM_OUTBOUND_JOB_NAME,
-        { outboxRecordId },
-        {
-          attempts: 8,
-          backoff: { delay: 1_000, type: 'exponential' },
-          jobId: telegramOutboundJobIdFor(outboxRecordId),
-          removeOnComplete: true,
-          removeOnFail: true,
-        },
-      );
+      const options = {
+        attempts: 8,
+        backoff: { delay: 1_000, type: 'exponential' as const },
+        removeOnComplete: true,
+        removeOnFail: true,
+      };
+      if (channelType === 'WHATSAPP')
+        await this.whatsAppQueue.add(
+          WHATSAPP_OUTBOUND_JOB_NAME,
+          { outboxRecordId },
+          { ...options, jobId: whatsappOutboundJobIdFor(outboxRecordId) },
+        );
+      else
+        await this.telegramQueue.add(
+          TELEGRAM_OUTBOUND_JOB_NAME,
+          { outboxRecordId },
+          { ...options, jobId: telegramOutboundJobIdFor(outboxRecordId) },
+        );
     } catch {
       this.logger.warn({ outboxRecordId, message: 'Broadcast outbound enqueue deferred' });
     }
   }
 
-  private async identities(projectId: string, connectionId: string, audience: Audience) {
+  private async identities(
+    projectId: string,
+    connectionId: string,
+    audience: Audience,
+    channelType: 'TELEGRAM' | 'WHATSAPP',
+  ) {
     const contact: Prisma.ContactWhereInput = { projectId, status: 'ACTIVE' };
     if (audience.mode === 'CONTACTS') contact.id = { in: audience.contactIds ?? [] };
     if (audience.mode === 'SEGMENT') {
@@ -299,7 +356,7 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
       where: {
         projectId,
         connectionId,
-        channel: 'TELEGRAM',
+        channel: channelType,
         status: 'ACTIVE',
         contact: { is: contact },
       },
@@ -335,6 +392,125 @@ export class BroadcastPreparationService implements OnApplicationBootstrap, OnAp
         data: { completedAt: new Date(), status: 'COMPLETED' },
         where: { id: broadcastId, projectId, status: 'RUNNING' },
       });
+  }
+
+  private async failBroadcastChannel(
+    projectId: string,
+    broadcastId: string,
+    lease: string,
+  ): Promise<void> {
+    await this.failBroadcast(projectId, broadcastId, lease, 'broadcast_channel_not_active');
+  }
+
+  private async failBroadcast(
+    projectId: string,
+    broadcastId: string,
+    lease: string,
+    errorCode: string,
+  ): Promise<void> {
+    await this.database.client.broadcast.updateMany({
+      where: { id: broadcastId, projectId, preparationLockedBy: lease, status: 'PREPARING' },
+      data: {
+        errorCode,
+        failedAt: new Date(),
+        preparationLockedAt: null,
+        preparationLockedBy: null,
+        status: 'FAILED',
+      },
+    });
+  }
+
+  private whatsAppTemplate(value: Prisma.JsonValue):
+    | {
+        components?: Prisma.JsonArray;
+        languageCode: string;
+        name: string;
+        templateId: string;
+      }
+    | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    const candidate = (value as Prisma.JsonObject).whatsAppTemplate;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return;
+    const template = candidate as Prisma.JsonObject;
+    if (
+      typeof template.templateId !== 'string' ||
+      typeof template.name !== 'string' ||
+      typeof template.languageCode !== 'string'
+    )
+      return;
+    return {
+      ...(Array.isArray(template.components) ? { components: template.components } : {}),
+      languageCode: template.languageCode,
+      name: template.name,
+      templateId: template.templateId,
+    };
+  }
+
+  private async whatsAppTemplateApproved(
+    projectId: string,
+    connectionId: string,
+    content: Prisma.JsonValue,
+  ): Promise<boolean> {
+    const template = this.whatsAppTemplate(content);
+    if (!template) return false;
+    const approved = await this.database.client.whatsAppMessageTemplate.findFirst({
+      where: {
+        connectionId,
+        id: template.templateId,
+        languageCode: template.languageCode,
+        name: template.name,
+        projectId,
+        status: 'APPROVED',
+      },
+    });
+    if (!approved || whatsAppTemplateDisabledReason(approved)) return false;
+    try {
+      assertWhatsAppTemplateComponents(approved.components, template.components);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private renderBroadcastContent(
+    content: Prisma.JsonValue,
+    contact: Readonly<Record<string, unknown>>,
+    channelType: 'TELEGRAM' | 'WHATSAPP',
+  ): { content: Record<string, unknown>; missing: string[] } {
+    if (channelType === 'TELEGRAM') return renderMessageTemplateContent(content, { contact });
+    const template = this.whatsAppTemplate(content);
+    if (!template) throw new Error('broadcast_whatsapp_template_invalid');
+    const missing = new Set<string>();
+    const components = template.components?.map((candidate) => {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return candidate;
+      const component = candidate as Prisma.JsonObject;
+      const parameters = Array.isArray(component.parameters)
+        ? component.parameters.map((candidateParameter) => {
+            if (
+              !candidateParameter ||
+              typeof candidateParameter !== 'object' ||
+              Array.isArray(candidateParameter)
+            )
+              return candidateParameter;
+            const parameter = candidateParameter as Prisma.JsonObject;
+            if (parameter.type !== 'text' || typeof parameter.text !== 'string') return parameter;
+            const rendered = renderTemplate(parameter.text, { contact });
+            rendered.missing.forEach((item) => missing.add(item));
+            return { ...parameter, text: rendered.output };
+          })
+        : [];
+      return { ...component, parameters };
+    });
+    return {
+      content: {
+        whatsAppTemplate: {
+          ...(components ? { components } : {}),
+          languageCode: template.languageCode,
+          name: template.name,
+        },
+      },
+      missing: [...missing],
+    };
   }
 
   private mediaAssetId(content: unknown): string | null {

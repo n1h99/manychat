@@ -49,4 +49,16 @@ describe('channel mutation cache synchronization', () => {
     expect(cache.getQueryData(['channel', 'project-1', disabled.id])).toEqual(connected);
     expect(cache.getQueryData<Channel[]>(['channels', 'project-1'])).toEqual([connected]);
   });
+
+  it('adds a newly created channel to an already loaded list without a reload', async () => {
+    const cache = new QueryClient();
+    const first = channel('ACTIVE', 'CONNECTED');
+    const created = { ...channel('DRAFT', 'NOT_CONNECTED'), id: 'connection-2' };
+    cache.setQueryData(['channels', 'project-1'], [first]);
+
+    await syncChannelCache(cache, 'project-1', created);
+
+    expect(cache.getQueryData<Channel[]>(['channels', 'project-1'])).toEqual([created, first]);
+    expect(cache.getQueryData(['channel', 'project-1', created.id])).toEqual(created);
+  });
 });

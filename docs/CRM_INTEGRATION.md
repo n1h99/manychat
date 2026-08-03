@@ -1,18 +1,20 @@
 # Cyber Pulse CRM integration
 
-Status reviewed: 2026-08-02. Telegram Chat v3.2 live acceptance is complete;
-the v3.3 contract and implementation add the remaining approved Telegram UI,
-recurrence and rich-content scope.
+Status reviewed: 2026-08-03. Telegram Chat v3.3 is implemented and its core
+live acceptance is complete. Channel-aware contract 4.0.0 adds WhatsApp Cloud
+API in both directions. Automated acceptance is part of the repository; live
+Meta acceptance remains an external gate until a Meta app and test business
+phone are supplied.
 
 ## Verified contract
 
-The production adapter is based on the Cyber Pulse staging backend contract:
+The checked-in OpenAPI files are the authoritative integration boundary:
 
-- backend commit: `48c0d6b98aef09bd051a340e091078963014558b`;
-- authoritative source: `cyber-pulse-back/docs/omnicus-openapi.yaml`;
-- staging origin: `https://cyber-pulse-back-staging.up.railway.app`;
-- public CRM project identifier: `cyber-pulse-staging`;
-- reviewed on: 2026-07-29.
+- `docs/OMNICUS_TO_CRM_OPENAPI.yaml` mirrors the version-controlled Cyber
+  Pulse inbound contract;
+- `docs/OMNICUS_CRM_OUTBOUND_OPENAPI.yaml` defines CRM calls into Omnicus;
+- both directions use contract 4.0.0 for WhatsApp while preserving Telegram
+  v3 compatibility where the channel field was historically omitted.
 
 Omnicus calls only these CRM endpoints:
 
@@ -20,13 +22,19 @@ Omnicus calls only these CRM endpoints:
 POST /integrations/v1/omnicus/leads/upsert
 POST /integrations/v1/omnicus/messages/inbound
 POST /integrations/v1/omnicus/messages/outbound
+POST /integrations/v1/omnicus/messages/status
+POST /integrations/v1/omnicus/reactions/inbound
+POST /integrations/v1/omnicus/messages/edited
+POST /integrations/v1/omnicus/contacts/shared
+POST /integrations/v1/omnicus/conversations/automation-state
 GET  /integrations/v1/omnicus/operations?crmProjectId=...&idempotencyKey=...
 ```
 
 The exact normalized inbound message extension is documented in
 `docs/OMNICUS_TO_CRM_OPENAPI.yaml`. It preserves the provider-independent
-category in `media.type`, the exact Telegram kind in `media.kind`, and callback
-choices in `interactive`. Contract 3.2.3 also carries an optional normalized
+category in `media.type`, the exact channel media kind in `media.kind`, and
+provider-neutral callback choices in `interactive`. Contract 3.2.3 also
+carries an optional normalized
 `replyToMessageId`, which is an Omnicus UUID resolved inside the same project,
 connection and conversation rather than a Telegram provider ID.
 
@@ -36,21 +44,22 @@ CRM implementation and deployment requirements for outbound history are in
 Every request uses service Bearer authentication and a correlation ID. Mutating
 requests also include the durable Omnicus outbox ID as `Idempotency-Key`.
 
-The adapter sends normalized Omnicus data, never Telegram webhook payloads,
-provider credentials or encrypted secret envelopes. When an inbound Telegram
+The adapter sends normalized Omnicus data, never Telegram/Meta webhook payloads,
+provider credentials or encrypted secret envelopes. When an inbound channel
 file can be materialized, `media.downloadUrl` is a private signed URL with a
 short expiry. It exists only in the outbound request and is never persisted by
 Omnicus. CRM must download it immediately and store its own copy.
 
-Automation, broadcast and other Omnicus-originated Telegram messages are sent
-to the outbound history endpoint only after Telegram confirms `SENT`.
+Automation, broadcast and other Omnicus-originated messages are sent to the
+outbound history endpoint only after the channel worker confirms `SENT`.
 CRM-originated messages are not echoed back. The history operation carries the
-stable Omnicus message UUID and Telegram provider message ID, allowing a
-callback that arrived first to resolve its `sourceMessageId` later. Telegram
+stable Omnicus message UUID and opaque provider message ID, allowing a
+callback that arrived first to resolve its `sourceMessageId` later. Channel
 delivery success is not rolled back if CRM history synchronization is delayed.
 History creation and recovery additionally require a matching `SUCCEEDED`
-Telegram outbox, and `providerMessageId` is a positive decimal Telegram `message_id`;
-synthetic E2E identifiers are never published as customer-visible history.
+channel outbox. Telegram provider IDs are positive decimal `message_id`
+values; WhatsApp provider IDs are opaque strings. Synthetic E2E identifiers
+are never published as customer-visible history.
 
 ## Direction: Omnicus to CRM
 
@@ -93,9 +102,9 @@ its SHA-256 hash. `CRM_INBOUND_AUTH_TOKEN` remains a bounded compatibility
 credential for the already deployed legacy connection.
 
 The API validates the configured `crmProjectId` to `omnicusProjectId` mapping,
-contact, channel identity and connection before creating a Telegram
+contact, channel identity and connection before creating a channel-specific
 `Message`/`OutboxRecord` transaction. Redis enqueue failure does not remove the
-PostgreSQL intent. The existing Telegram outbound recovery worker eventually
+PostgreSQL intent. The matching Telegram or WhatsApp recovery worker eventually
 enqueues it.
 
 The create response means `QUEUED`, not `SENT`. Cyber Pulse reconciles the
@@ -107,7 +116,7 @@ The machine-readable credential exchange is documented in
 CRM uploads outbound files first through
 `POST /integrations/v1/crm/media`, then references the returned
 `mediaAssetId` from `POST /integrations/v1/crm/messages/outbound`. Replies use
-an Omnicus message UUID, not a Telegram provider message ID. Inline keyboard
+an Omnicus message UUID, never a provider message ID. Inline keyboard
 callbacks are provider-independent `{text, callbackData}` values.
 
 The version 3 extension adds capability discovery, formatted entities, quote
@@ -164,6 +173,42 @@ sticker UI on `stickers.supported` and spoiler UI on
 still use the media-group endpoint rather than emulate an album with repeated
 single-message sends.
 
+## WhatsApp contract 4.0.0
+
+CRM selects WhatsApp with `identity.channel=whatsapp`; omission remains the
+backward-compatible Telegram path only where the v3 contract allowed it.
+Capabilities are resolved against the exact project, connection, identity and
+contact route. They publish the effective 24-hour customer-service window,
+provider API version and media limits. CRM must not infer a capability that is
+absent or has `supported=false`.
+
+Inside an open service window CRM can send text, same-conversation replies,
+validated media, one normalized contact or location, button/list interactive
+messages and one standard Unicode reaction. Outside that window only a stored,
+synced and `APPROVED` Meta template is accepted. The API checks the window
+before creating the intent and the WhatsApp worker checks it again immediately
+before the provider call.
+
+WhatsApp media is validated with WhatsApp-specific signatures and effective
+limits. The released subset is JPEG/PNG photos, the documented audio/document/
+video formats, OGG/Opus voice and static 512x512 WEBP stickers. Animated
+stickers, format guessing and server-side transcoding are not supported. Media
+responses expose only normalized `validationChannel`; raw provider metadata and
+temporary Meta download URLs are never returned or persisted.
+
+`PUT /messages/{messageId}/read`, reactions and ordinary sends create durable,
+idempotent WhatsApp outbox operations. `QUEUED` never means delivered. A
+definitive `FAILED` operation may be retried with a new stable
+`retryRequestId`; `UNKNOWN` remains reconciliation-only and must never be
+blindly resent. Project, connection, contact and source-message isolation is
+rechecked for every mutation and reply.
+
+Scheduling, recurring schedules, media groups, message edit/delete/pin,
+streaming drafts, chat actions, bot menus, Telegram quote fragments, formatting
+entities, reply keyboards, link-preview controls and message effects are
+explicitly unsupported for WhatsApp. The CRM UI must hide or disable them from
+the capability response rather than emulate them.
+
 ## Live acceptance status
 
 The core Telegram/CRM path and Chat v3.2 acceptance scenarios have passed live
@@ -177,3 +222,11 @@ E2E on 2026-08-02. The retained checklist is the regression gate:
 6. Available media is downloaded from its short-lived URL and stored by CRM;
    expired/unavailable files remain metadata-only with a safe status.
 7. Neither service logs either service token or message payload.
+
+WhatsApp production/live acceptance is intentionally deferred until Meta
+credentials exist. The final gate is: Embedded Signup, app-secret webhook
+verification, one inbound text/media/contact/location/interactive response,
+open-window text/reply/media, closed-window approved template, SENT → DELIVERED
+→ READ progression, FAILED retry, UNKNOWN reconciliation, reaction add/remove,
+duplicate delivery and cross-project/contact/connection rejection. No code or
+contract change is required merely to supply those credentials.

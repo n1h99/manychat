@@ -7,18 +7,40 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { firstHeaderValue, type AuthenticatedRequest } from '../auth/auth.types';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { ChannelsService } from './channels.service';
+import type { CompleteWhatsAppSetupDto } from './dto';
 import { CreateTelegramChannelDto, TestTelegramMessageDto, UpdateTelegramChannelDto } from './dto';
+import { WhatsAppChannelsService } from './whatsapp-channels.service';
 
 @ApiTags('channels')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('api/v1/projects/:projectId/channels')
 export class ChannelsController {
-  constructor(@Inject(ChannelsService) private readonly channels: ChannelsService) {}
+  constructor(
+    @Inject(ChannelsService) private readonly channels: ChannelsService,
+    @Inject(WhatsAppChannelsService) private readonly whatsApp: WhatsAppChannelsService,
+  ) {}
   @Get() @RequireProjectPermission('channels:read') async list(
     @Param('projectId') projectId: string,
   ) {
     return { data: await this.channels.list(projectId), meta: {} };
+  }
+  @Get('whatsapp/setup')
+  @RequireProjectPermission('channels:read')
+  async whatsAppSetup() {
+    return { data: this.whatsApp.setup(), meta: {} };
+  }
+  @Post('whatsapp/setup/complete')
+  @RequireProjectPermission('channels:manage')
+  async completeWhatsAppSetup(
+    @Param('projectId') projectId: string,
+    @Body() dto: CompleteWhatsAppSetupDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      data: await this.whatsApp.complete(projectId, dto, request.auth!, this.context(request)),
+      meta: {},
+    };
   }
   @Post()
   @RequireProjectPermission('channels:manage')
@@ -71,6 +93,22 @@ export class ChannelsController {
       data: await this.channels.identities(projectId, connectionId),
       meta: {},
     };
+  }
+  @Get(':connectionId/whatsapp/templates')
+  @RequireProjectPermission('channels:read')
+  async whatsAppTemplates(
+    @Param('projectId') projectId: string,
+    @Param('connectionId') connectionId: string,
+  ) {
+    return { data: await this.whatsApp.templates(projectId, connectionId), meta: {} };
+  }
+  @Post(':connectionId/whatsapp/templates/sync')
+  @RequireProjectPermission('channels:manage')
+  async syncWhatsAppTemplates(
+    @Param('projectId') projectId: string,
+    @Param('connectionId') connectionId: string,
+  ) {
+    return { data: await this.whatsApp.syncTemplates(projectId, connectionId), meta: {} };
   }
   @Patch(':connectionId')
   @RequireProjectPermission('channels:manage')

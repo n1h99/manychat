@@ -40,7 +40,7 @@ describe('workspace lifecycle UI contracts', () => {
     );
     expect(editor).toContain('candidate.id !== scenarioId');
     expect(editor).toContain('<AutomationGraphPreview compact graph={version.graph} />');
-    expect(editor).toContain('Telegram delivery');
+    expect(editor).toContain('Channel delivery');
     expect(testPanel).toContain("nodeTypes.includes('WAIT_FOR_REPLY')");
     expect(testPanel).toContain("nodeTypes.includes('EXTERNAL_HTTP_REQUEST')");
     expect(testPanel).toContain('Fix the graph before testing');
@@ -124,14 +124,22 @@ describe('workspace lifecycle UI contracts', () => {
 
   it('uses a full-width connection overview and stacked channel controls', () => {
     const channel = source('./pages/channel-detail-page.tsx');
+    const channelApi = source('./channels-api.ts');
+    const provider = source('./channel-provider.ts');
     const styles = source('./styles.css');
     expect(channel).toContain('className="channel-overview-card"');
     expect(channel).toContain('className="channel-management-grid"');
     expect(channel).toContain('className="channel-management-stack"');
     expect(channel).toContain('className="channel-actions-card"');
     expect(channel).toContain('className="channel-test-message-card"');
-    expect(channel).toContain('Telegram delivery has an unknown result');
-    expect(channel).toContain('Telegram inbound processing failed');
+    expect(provider).toContain('delivery has an unknown result');
+    expect(provider).toContain('inbound processing failed');
+    expect(channel).toContain('WhatsApp account settings');
+    expect(channel).toContain('Connect WhatsApp');
+    expect(channel).toContain(
+      "connection.status !== 'ACTIVE' || connection.webhookStatus !== 'CONNECTED'",
+    );
+    expect(channelApi).toContain('onError: (_error, id) => refresh(id)');
     expect(channel.indexOf('Replace bot token')).toBeLessThan(
       channel.indexOf('Connection actions'),
     );
@@ -139,6 +147,40 @@ describe('workspace lifecycle UI contracts', () => {
     expect(styles).toContain('grid-template-rows: auto 1fr');
     expect(styles).toContain('align-items: stretch');
     expect(styles).toMatch(/\.channel-management-grid\s*\{\s*grid-template-columns: 1fr;/);
+  });
+
+  it('keeps WhatsApp onboarding official, capability-gated and provider-aware', () => {
+    const channelsApi = source('./channels-api.ts');
+    const create = source('./pages/channel-create-page.tsx');
+    const detail = source('./pages/channel-detail-page.tsx');
+    const embedded = source('./whatsapp-embedded-signup.ts');
+    const broadcasts = source('./pages/broadcast-create-page.tsx');
+    const automation = source('./automation-node-config.tsx');
+    const composer = source('./whatsapp-template-composer.ts');
+    const templates = source('./whatsapp-templates-panel.tsx');
+
+    expect(channelsApi).toContain("type: 'WHATSAPP'");
+    expect(channelsApi).toContain("'/whatsapp/setup/complete'");
+    expect(channelsApi).toContain('connectionId?: string');
+    expect(create).toContain('Continue with Meta');
+    expect(create).toContain('6-digit two-step verification PIN');
+    expect(create).not.toContain('name="appSecret"');
+    expect(create).not.toContain('name="verifyToken"');
+    expect(detail).toContain('const ready = channel.setupReady');
+    expect(detail).toContain('connectionId: connection.id');
+    expect(detail).toContain('activate this existing draft without creating a duplicate');
+    expect(embedded).toContain("script.src = 'https://connect.facebook.net/en_US/sdk.js'");
+    expect(embedded).toContain('preloadWhatsAppEmbeddedSignup');
+    expect(embedded).toContain('session.cancel()');
+    expect(embedded).toContain("window.removeEventListener('message', listener)");
+    expect(broadcasts).toContain('WHATSAPP_TEMPLATE');
+    expect(composer).toContain("image: 'PHOTO'");
+    expect(broadcasts).toContain('whatsAppTemplateComposerIssue');
+    expect(automation).toContain('whatsAppTemplate');
+    expect(automation).not.toContain('whatsAppConnectionId');
+    expect(automation).not.toContain('whatsAppTemplateId');
+    expect(automation).toContain('It is not saved in the scenario');
+    expect(templates).toContain('Sync from Meta');
   });
 
   it('does not show internal unknown-delivery guidance as a page banner', () => {

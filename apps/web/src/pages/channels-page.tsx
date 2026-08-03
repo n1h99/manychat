@@ -1,7 +1,8 @@
-import { PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Spin, Table, Typography } from 'antd';
+import { ApiOutlined, MessageOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Space, Spin, Table, Typography } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 
+import { channelAccountLabel, channelProviderLabel } from '../channel-provider';
 import { type Channel, useChannels } from '../channels-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { StatusText } from '../status-text';
@@ -20,17 +21,25 @@ export function ChannelsPage() {
         <div>
           <Typography.Title level={2}>Channels</Typography.Title>
           <Typography.Text type="secondary">
-            Telegram connections for the current project.
+            Connect and monitor Telegram bots and WhatsApp Business numbers.
           </Typography.Text>
         </div>
         {hasProjectPermission(access.data, 'channels:manage') ? (
-          <Button
-            icon={<PlusOutlined />}
-            onClick={() => navigate(`/projects/${projectId}/channels/new`)}
-            type="primary"
-          >
-            Connect Telegram
-          </Button>
+          <Space className="channel-create-actions" wrap>
+            <Button
+              icon={<ApiOutlined />}
+              onClick={() => navigate(`/projects/${projectId}/channels/new?type=telegram`)}
+            >
+              Connect Telegram
+            </Button>
+            <Button
+              icon={<MessageOutlined />}
+              onClick={() => navigate(`/projects/${projectId}/channels/new?type=whatsapp`)}
+              type="primary"
+            >
+              Connect WhatsApp
+            </Button>
+          </Space>
         ) : null}
       </div>
       {query.isError ? (
@@ -44,18 +53,25 @@ export function ChannelsPage() {
       <Table<Channel>
         columns={[
           { dataIndex: 'name', title: 'Name' },
-          { dataIndex: 'type', title: 'Type' },
           {
-            dataIndex: 'botUsername',
-            render: (value) => (value ? `@${value}` : '—'),
-            title: 'Bot',
+            dataIndex: 'type',
+            render: (value: Channel['type']) => channelProviderLabel(value),
+            title: 'Provider',
+          },
+          {
+            render: (_, channel) => channelAccountLabel(channel),
+            title: 'Account',
           },
           {
             dataIndex: 'status',
             render: (value) => <StatusText status={value} />,
             title: 'Status',
           },
-          { dataIndex: 'webhookStatus', title: 'Webhook' },
+          {
+            dataIndex: 'webhookStatus',
+            render: (value) => <StatusText status={value} />,
+            title: 'Webhook',
+          },
           {
             dataIndex: 'updatedAt',
             render: (value) => new Date(value).toLocaleString(),

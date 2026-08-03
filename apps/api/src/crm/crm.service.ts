@@ -31,7 +31,8 @@ type SafeCrmOperation = {
     | 'FORWARD_REACTION_EVENT'
     | 'FORWARD_MESSAGE_EDIT'
     | 'FORWARD_CONTACT_SHARE'
-    | 'FORWARD_AUTOMATION_STATE';
+    | 'FORWARD_AUTOMATION_STATE'
+    | 'FORWARD_MESSAGE_STATUS';
   updatedAt: Date;
 };
 
@@ -450,7 +451,8 @@ export class CrmService {
       | 'FORWARD_REACTION_EVENT'
       | 'FORWARD_MESSAGE_EDIT'
       | 'FORWARD_CONTACT_SHARE'
-      | 'FORWARD_AUTOMATION_STATE';
+      | 'FORWARD_AUTOMATION_STATE'
+      | 'FORWARD_MESSAGE_STATUS';
     updatedAt: Date;
     outbox: {
       attempts: number;

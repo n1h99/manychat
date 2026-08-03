@@ -55,6 +55,7 @@ describe('ChannelsService outbound diagnostics', () => {
       } as never,
       { record: vi.fn() } as never,
       { enqueue: vi.fn() } as never,
+      {} as never,
     );
 
     const [result] = await service.outboundEvents('project-a', 'connection-a');

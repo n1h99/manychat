@@ -1313,3 +1313,85 @@ sampled, and a sampled chart is labelled as such in the UI.
 Automation Activity is presented as a project workspace tool only. The global
 sidebar does not duplicate it or require a project-selection detour; the protected
 project route and its permission boundary remain unchanged.
+
+## ADR-052: WhatsApp Cloud API reuses the durable channel journal and enforces the service window
+
+**Status:** Accepted, 2026-08-03.
+
+**Context:** WhatsApp differs from Telegram in credential/onboarding shape,
+batched signed webhooks, delivery/read receipts, approved templates and the
+customer-service window. Treating it as a renamed Telegram bot would bypass
+Meta policy or lose provider status facts. A Meta App and test WABA are not yet
+available, so a live signup result cannot be invented.
+
+**Decision:** Omnicus integrates only the official WhatsApp Business Platform
+Cloud API. The provider adapter was reviewed against Meta's official Cloud API,
+Webhook Payload Reference, Media, Templates and Embedded Signup Postman
+collections on 2026-08-03. Those official collections use a `{{Version}}`
+placeholder rather than proving a current numeric version. Graph API version is
+therefore explicit configuration required before WhatsApp connection and is
+never guessed or sent as an unversioned Graph URL.
+
+Meta owns one app-level `GET/POST /webhooks/whatsapp` callback rather than a
+callback per phone connection. Valid POST webhooks require the exact raw bytes
+and a timing-safe `X-Hub-Signature-256` HMAC-SHA256 match using the global Meta
+App secret. GET verification uses the independent global verify token. Both
+values are server-only environment configuration. Invalid bodies create no
+raw/inbox record.
+
+Only after signature verification does the API resolve
+`value.metadata.phone_number_id` and entry WABA ID against unique indexed
+connection fields. A multi-account envelope is split into bounded exact
+individual message/status/reaction items; one project's raw table never
+receives another project's change. Unknown phone IDs are acknowledged without
+payload storage. Each matched item gets one raw event and one inbox record with
+a stable provider-derived key before the 200 response.
+
+All inbound messages, outbound sends, media fetch/upload and status updates
+reuse project/connection-scoped PostgreSQL inbox/outbox/message records.
+Outbound provider calls use `/{phone-number-id}/messages`; media uses the
+official media endpoints. Timeouts after a possible side effect become
+`UNKNOWN` and are not blindly retried. Meta `sent`, `delivered`, `read` and
+`failed` status callbacks are stored as safe facts and update the message
+projection monotonically.
+
+Free-form messages are allowed only while the persisted WhatsApp service
+window is open. Outside that window the request must reference a currently
+approved, connection-scoped Meta template. Template sync stores only an
+allow-listed normalized projection; Meta remains the status authority.
+
+This accepted post-pilot decision supersedes the earlier provisional WhatsApp
+notes that limited onboarding to manual setup, placed a callback in each
+connection URL, stored app-level webhook secrets per connection, or named a
+`SUBMITTED` state without provider evidence. Those shapes do not match the
+approved product request and the verified Meta app-level boundary.
+
+Connection setup supports a safe manual DRAFT path immediately. Embedded
+Signup setup/complete endpoints are capability-gated by server-side Meta App
+ID, app secret and configuration ID. Until those authoritative values exist,
+the API returns `WHATSAPP_META_CONFIGURATION_REQUIRED`; it never fabricates an
+OAuth URL, authorization code, WABA, phone number or successful subscription.
+Per-connection access tokens are write-only encrypted values. The app secret
+and webhook verify token remain server-only deployment configuration and are
+never returned by the API.
+
+WABA subscription is shared by every phone number under that WABA. Disabling a
+single connection stops its local processing but does not unconditionally call
+`DELETE /subscribed_apps`; Omnicus may unsubscribe only when no other active
+connection depends on that WABA. Repeated or out-of-order status callbacks are
+deduplicated by connection, provider message ID, status and provider timestamp.
+The current projection advances `SENT < DELIVERED < READ`; `FAILED` cannot
+overwrite later delivery/read evidence. A successful messages response with a
+`wamid` is accepted/sent evidence only, never delivered/read evidence.
+
+Cyber Pulse contract `4.0.0` extends the existing routes with discriminated
+`identity.channel = telegram | whatsapp`. Every CRM-originated send verifies
+project, contact, connection and identity together. WhatsApp inbound/outbound
+history and normalized status events use the existing independent CRM
+credential, transactional outbox and idempotency/reconciliation boundaries.
+
+**Consequences:** Telegram behavior remains backward-compatible. WhatsApp can
+be implemented and automatically tested without live credentials, while real
+signup, template approval and delivery/read acceptance remain explicit final
+external gates. Provider payloads, temporary media URLs and secrets do not
+enter business records or CRM contracts.

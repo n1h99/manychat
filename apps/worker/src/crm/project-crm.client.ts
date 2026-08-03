@@ -16,6 +16,7 @@ import {
   type ForwardMessageEditInput,
   type ForwardContactShareInput,
   type ForwardAutomationStateInput,
+  type ForwardMessageStatusInput,
 } from '@omnicus/crm-core';
 import { DatabaseService } from '../database/database.service';
 
@@ -88,6 +89,16 @@ export class ProjectCrmClient implements CrmClient {
     if (!client.forwardAutomationState)
       throw new CrmClientError('PERMANENT_FAILURE', 'crm_automation_state_unsupported');
     return client.forwardAutomationState(context, input);
+  }
+
+  async forwardMessageStatus(
+    context: CrmCallContext,
+    input: ForwardMessageStatusInput,
+  ): Promise<CrmResult> {
+    const client = await this.resolve(context);
+    if (!client.forwardMessageStatus)
+      throw new CrmClientError('PERMANENT_FAILURE', 'crm_message_status_unsupported');
+    return client.forwardMessageStatus(context, input);
   }
 
   async reconcile(context: CrmCallContext): Promise<CrmReconciliationResult> {

@@ -4,6 +4,7 @@ import {
   IsArray,
   IsDateString,
   IsIn,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -13,6 +14,18 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+
+export class WhatsAppBroadcastTemplateDto {
+  @ApiProperty()
+  @IsUUID()
+  templateId!: string;
+
+  @ApiPropertyOptional({ type: [Object] })
+  @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  components?: Record<string, unknown>[];
+}
 
 export class BroadcastAudienceDto {
   @ApiProperty({ enum: ['ALL_ACTIVE', 'SEGMENT', 'CONTACTS'] })
@@ -51,11 +64,16 @@ export class CreateBroadcastDto {
   @Type(() => BroadcastAudienceDto)
   audience!: BroadcastAudienceDto;
   @ApiPropertyOptional()
-  @ValidateIf((value: CreateBroadcastDto) => !value.templateVersionId)
+  @ValidateIf((value: CreateBroadcastDto) => !value.templateVersionId && !value.whatsAppTemplate)
   @IsString()
   @Length(1, 4096)
   text?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() templateVersionId?: string;
+  @ApiPropertyOptional({ type: WhatsAppBroadcastTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WhatsAppBroadcastTemplateDto)
+  whatsAppTemplate?: WhatsAppBroadcastTemplateDto;
   @ApiPropertyOptional({ format: 'date-time' })
   @IsOptional()
   @IsDateString()
@@ -71,6 +89,11 @@ export class UpdateBroadcastDto {
   audience?: BroadcastAudienceDto;
   @ApiPropertyOptional() @IsOptional() @IsString() @Length(1, 4096) text?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() templateVersionId?: string;
+  @ApiPropertyOptional({ type: WhatsAppBroadcastTemplateDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WhatsAppBroadcastTemplateDto)
+  whatsAppTemplate?: WhatsAppBroadcastTemplateDto;
   @ApiPropertyOptional({ format: 'date-time' })
   @IsOptional()
   @IsDateString()

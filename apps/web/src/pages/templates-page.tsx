@@ -26,6 +26,7 @@ import {
   useTemplateMutations,
   useTemplates,
 } from '../templates-api';
+import { WhatsAppTemplatesPanel } from '../whatsapp-templates-panel';
 
 type TemplateFormInput = Omit<TemplateInput, 'inlineKeyboard'> & {
   buttonRows?: Array<{ buttons?: TelegramInlineKeyboardButton[] }>;
@@ -34,6 +35,7 @@ type TemplateFormInput = Omit<TemplateInput, 'inlineKeyboard'> & {
 export function TemplatesPage() {
   const { projectId } = useParams();
   const [view, setView] = useState<'active' | 'archived'>('active');
+  const [providerView, setProviderView] = useState<'OMNICUS' | 'WHATSAPP'>('OMNICUS');
   const templates = useTemplates(projectId, view === 'archived');
   const assets = useMediaAssets(projectId);
   const access = useProjectAccess(projectId);
@@ -95,13 +97,38 @@ export function TemplatesPage() {
     }
   };
 
+  if (providerView === 'WHATSAPP') {
+    return (
+      <section>
+        <div className="page-heading-row">
+          <div>
+            <Typography.Title level={2}>Message templates</Typography.Title>
+            <Typography.Text type="secondary">
+              Reusable content for Telegram and Meta-approved WhatsApp conversations.
+            </Typography.Text>
+          </div>
+        </div>
+        <Segmented
+          className="channel-template-provider-switch"
+          onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
+          options={[
+            { label: 'Omnicus · Telegram', value: 'OMNICUS' },
+            { label: 'Meta · WhatsApp', value: 'WHATSAPP' },
+          ]}
+          value={providerView}
+        />
+        <WhatsAppTemplatesPanel canManage={canManage} projectId={projectId} />
+      </section>
+    );
+  }
+
   return (
     <section>
       <div className="page-heading-row">
         <div>
           <Typography.Title level={2}>Message templates</Typography.Title>
           <Typography.Text type="secondary">
-            Reusable, versioned content for scenarios and broadcasts.
+            Reusable content for Telegram and Meta-approved WhatsApp conversations.
           </Typography.Text>
         </div>
         {canManage ? (
@@ -110,6 +137,15 @@ export function TemplatesPage() {
           </Button>
         ) : null}
       </div>
+      <Segmented
+        className="channel-template-provider-switch"
+        onChange={(value) => setProviderView(value as 'OMNICUS' | 'WHATSAPP')}
+        options={[
+          { label: 'Omnicus · Telegram', value: 'OMNICUS' },
+          { label: 'Meta · WhatsApp', value: 'WHATSAPP' },
+        ]}
+        value={providerView}
+      />
       <Segmented
         className="archive-view-switch"
         onChange={(value) => setView(value as 'active' | 'archived')}
@@ -386,7 +422,7 @@ export function TemplatesPage() {
         title="Template preview"
       >
         <Typography.Paragraph type="secondary">
-          Provide JSON variables. Preview never sends a Telegram message.
+          Provide JSON variables. Preview never sends a provider message.
         </Typography.Paragraph>
         <Input.TextArea
           aria-label="Preview variables"

@@ -29,9 +29,9 @@ export class CrmOutboundIdentityDto {
   @Length(1, 128)
   connectionId!: string;
 
-  @ApiProperty({ enum: ['telegram'] })
-  @IsIn(['telegram'])
-  channel!: 'telegram';
+  @ApiProperty({ enum: ['telegram', 'whatsapp'] })
+  @IsIn(['telegram', 'whatsapp'])
+  channel!: 'telegram' | 'whatsapp';
 }
 
 const crmOutboundMediaKinds = [
@@ -60,6 +60,15 @@ export class CrmMediaUploadDto {
   @IsString()
   @Length(1, 128)
   crmProjectId!: string;
+
+  @ApiPropertyOptional({
+    default: 'telegram',
+    description: 'Required by contract 4.0.0; omission preserves Telegram v3 compatibility',
+    enum: ['telegram', 'whatsapp'],
+  })
+  @IsOptional()
+  @IsIn(['telegram', 'whatsapp'])
+  channel?: 'telegram' | 'whatsapp';
 
   @ApiProperty({ enum: crmOutboundMediaKinds })
   @IsIn(crmOutboundMediaKinds)
@@ -182,6 +191,16 @@ export class CrmOutboundMessageDto {
   @IsOptional()
   @IsObject()
   structured?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  interactive?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  template?: Record<string, unknown>;
 }
 
 export class CrmScheduledMessageDto extends CrmOutboundMessageDto {
@@ -393,6 +412,11 @@ export class CrmCapabilitiesQueryDto {
   @Length(1, 128)
   connectionId!: string;
 
+  @ApiPropertyOptional({ default: 'telegram', enum: ['telegram', 'whatsapp'] })
+  @IsOptional()
+  @IsIn(['telegram', 'whatsapp'])
+  channel?: 'telegram' | 'whatsapp';
+
   @ApiPropertyOptional({ type: String })
   @IsOptional()
   @IsString()
@@ -422,14 +446,22 @@ export class CrmChatActionDto extends CrmTelegramScopeDto {
 }
 
 export class CrmReactionDto extends CrmTelegramScopeDto {
-  @ApiProperty({ enum: ['emoji', 'custom_emoji'] })
+  @ApiPropertyOptional({ enum: ['emoji', 'custom_emoji'] })
+  @IsOptional()
   @IsIn(['emoji', 'custom_emoji'])
-  type!: 'custom_emoji' | 'emoji';
+  type?: 'custom_emoji' | 'emoji';
 
-  @ApiProperty({ type: String })
+  @ApiPropertyOptional({ type: String })
+  @IsOptional()
   @IsString()
   @Length(1, 128)
-  value!: string;
+  value?: string;
+
+  @ApiPropertyOptional({ description: 'WhatsApp standard emoji', type: String })
+  @IsOptional()
+  @IsString()
+  @Length(1, 32)
+  emoji?: string;
 
   @ApiPropertyOptional({ type: Boolean })
   @IsOptional()
@@ -538,6 +570,11 @@ export class CrmAutomationStateQueryDto {
   @IsString()
   @Length(1, 128)
   channelIdentityId!: string;
+
+  @ApiPropertyOptional({ default: 'telegram', enum: ['telegram', 'whatsapp'] })
+  @IsOptional()
+  @IsIn(['telegram', 'whatsapp'])
+  channel?: 'telegram' | 'whatsapp';
 }
 
 export class CrmAutomationStateDto extends CrmTelegramScopeDto {
@@ -572,4 +609,42 @@ export class CrmOperationQueryDto {
   @IsString()
   @Length(1, 128)
   omnicusProjectId!: string;
+}
+
+export class CrmWhatsAppTemplateQueryDto {
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  crmProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  omnicusProjectId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  connectionId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  omnicusContactId!: string;
+
+  @ApiProperty({ type: String })
+  @IsString()
+  @Length(1, 128)
+  channelIdentityId!: string;
+
+  @ApiProperty({ enum: ['whatsapp'] })
+  @IsIn(['whatsapp'])
+  channel!: 'whatsapp';
+
+  @ApiPropertyOptional({
+    enum: ['APPROVED', 'PENDING', 'REJECTED', 'PAUSED', 'DISABLED', 'UNKNOWN'],
+  })
+  @IsOptional()
+  @IsIn(['APPROVED', 'PENDING', 'REJECTED', 'PAUSED', 'DISABLED', 'UNKNOWN'])
+  status?: 'APPROVED' | 'DISABLED' | 'PAUSED' | 'PENDING' | 'REJECTED' | 'UNKNOWN';
 }

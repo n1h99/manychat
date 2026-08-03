@@ -2,7 +2,7 @@ import 'reflect-metadata';
 
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { CrmIntegrationController } from './crm-integration.controller';
 import { CrmMediaUploadDto } from './dto';
@@ -25,5 +25,36 @@ describe('CrmIntegrationController DTO metadata', () => {
         }),
       ),
     ).toHaveLength(0);
+  });
+
+  it('dispatches explicit retry to the WhatsApp worker for a WhatsApp operation', async () => {
+    const outbound = { operationKind: vi.fn().mockResolvedValue('WHATSAPP') };
+    const telegram = { retry: vi.fn() };
+    const whatsapp = { retry: vi.fn().mockResolvedValue({ status: 'QUEUED' }) };
+    const controller = new CrmIntegrationController(
+      outbound as never,
+      {} as never,
+      telegram as never,
+      whatsapp as never,
+    );
+    await expect(
+      controller.retryOperation(
+        'operation-a',
+        {
+          crmProjectId: 'cyber-pulse-staging',
+          omnicusProjectId: 'project-a',
+          retryRequestId: 'retry-a',
+        },
+        'correlation-a',
+        { crmIntegration: { projectId: 'project-a' } } as never,
+      ),
+    ).resolves.toEqual({ status: 'QUEUED' });
+    expect(whatsapp.retry).toHaveBeenCalledWith(
+      'operation-a',
+      expect.objectContaining({ retryRequestId: 'retry-a' }),
+      'correlation-a',
+      'project-a',
+    );
+    expect(telegram.retry).not.toHaveBeenCalled();
   });
 });

@@ -327,6 +327,9 @@ describe('AutomationRuntimeService Wait for Reply criteria', () => {
     await expect(
       service.applyNode(
         {
+          channelConnection: {
+            findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', type: 'TELEGRAM' }),
+          },
           channelIdentity: { findFirst: vi.fn().mockResolvedValue({ id: 'identity-a' }) },
           message: { create: vi.fn().mockResolvedValue({ id: 'message-a' }) },
           outboxRecord: {
@@ -374,6 +377,9 @@ describe('AutomationRuntimeService Wait for Reply criteria', () => {
     await expect(
       service.applyNode(
         {
+          channelConnection: {
+            findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', type: 'TELEGRAM' }),
+          },
           channelIdentity: { findFirst: vi.fn().mockResolvedValue(null) },
         },
         { config: { text: 'Hello' }, id: 'send-a', type: 'SEND_MESSAGE' },
@@ -393,5 +399,166 @@ describe('AutomationRuntimeService Wait for Reply criteria', () => {
         'execution-a',
       ),
     ).rejects.toThrow('automation_channel_identity_unavailable');
+  });
+
+  it('queues WhatsApp freeform text only inside the persisted service window', async () => {
+    const outboxCreate = vi.fn().mockResolvedValue({ id: 'outbox-wa' });
+    const messageCreate = vi.fn().mockResolvedValue({ id: 'message-wa' });
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      applyNode(
+        transaction: unknown,
+        node: unknown,
+        edges: unknown[],
+        context: unknown,
+        executionId: string,
+      ): Promise<unknown>;
+    };
+
+    await service.applyNode(
+      {
+        channelConnection: {
+          findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', type: 'WHATSAPP' }),
+        },
+        channelIdentity: { findFirst: vi.fn().mockResolvedValue({ id: 'identity-wa' }) },
+        conversation: {
+          findUnique: vi.fn().mockResolvedValue({
+            serviceWindowExpiresAt: new Date(Date.now() + 60_000),
+          }),
+        },
+        message: { create: messageCreate },
+        outboxRecord: {
+          create: outboxCreate,
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      },
+      { config: { text: 'Hello {{contact.firstName}}' }, id: 'send-wa', type: 'SEND_MESSAGE' },
+      [],
+      {
+        connectionId: 'connection-wa',
+        contactId: 'contact-a',
+        contactVariables: { firstName: 'Alex' },
+        conversationId: 'conversation-a',
+        customFields: {},
+        eventPayload: { type: 'MESSAGE' },
+        normalizedEventId: 'event-a',
+        projectId: 'project-a',
+        subflowDepth: 0,
+        variables: {},
+      },
+      'execution-a',
+    );
+
+    expect(outboxCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ kind: 'WHATSAPP' }),
+    });
+    expect(messageCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ content: { text: 'Hello Alex' } }),
+    });
+  });
+
+  it('rejects WhatsApp freeform automation when the service window is closed', async () => {
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      queueMessage(
+        transaction: unknown,
+        node: unknown,
+        context: unknown,
+        executionId: string,
+      ): Promise<unknown>;
+    };
+    await expect(
+      service.queueMessage(
+        {
+          channelConnection: {
+            findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', type: 'WHATSAPP' }),
+          },
+          channelIdentity: { findFirst: vi.fn().mockResolvedValue({ id: 'identity-wa' }) },
+          conversation: {
+            findUnique: vi.fn().mockResolvedValue({ serviceWindowExpiresAt: new Date(0) }),
+          },
+        },
+        { config: { text: 'Hello' }, id: 'send-wa', type: 'SEND_MESSAGE' },
+        {
+          connectionId: 'connection-wa',
+          contactId: 'contact-a',
+          contactVariables: {},
+          conversationId: 'conversation-a',
+          eventPayload: {},
+          projectId: 'project-a',
+          variables: {},
+        },
+        'execution-a',
+      ),
+    ).rejects.toThrow('automation_whatsapp_service_window_closed');
+  });
+
+  it('resolves a portable WhatsApp template against the active connection', async () => {
+    const messageCreate = vi.fn().mockResolvedValue({ id: 'message-wa' });
+    const outboxCreate = vi.fn().mockResolvedValue({ id: 'outbox-wa' });
+    const service = new AutomationRuntimeService({} as never) as unknown as {
+      queueMessage(
+        transaction: unknown,
+        node: unknown,
+        context: unknown,
+        executionId: string,
+      ): Promise<unknown>;
+    };
+    await service.queueMessage(
+      {
+        channelConnection: {
+          findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', type: 'WHATSAPP' }),
+        },
+        channelIdentity: { findFirst: vi.fn().mockResolvedValue({ id: 'identity-wa' }) },
+        message: { create: messageCreate },
+        outboxRecord: {
+          create: outboxCreate,
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+        whatsAppMessageTemplate: {
+          findUnique: vi.fn().mockResolvedValue({
+            languageCode: 'en_US',
+            name: 'welcome',
+            status: 'APPROVED',
+            components: [{ text: 'Hello {{1}}', type: 'BODY' }],
+          }),
+        },
+      },
+      {
+        config: {
+          whatsAppTemplate: {
+            components: [
+              { parameters: [{ text: '{{contact.firstName}}', type: 'text' }], type: 'body' },
+            ],
+            languageCode: 'en_US',
+            name: 'welcome',
+          },
+        },
+        id: 'template-wa',
+        type: 'SEND_TEMPLATE',
+      },
+      {
+        connectionId: 'connection-wa',
+        contactId: 'contact-a',
+        contactVariables: { firstName: 'Alex' },
+        conversationId: 'conversation-a',
+        eventPayload: {},
+        projectId: 'project-a',
+        variables: {},
+      },
+      'execution-a',
+    );
+    expect(messageCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        content: {
+          whatsAppTemplate: {
+            components: [{ parameters: [{ text: 'Alex', type: 'text' }], type: 'body' }],
+            languageCode: 'en_US',
+            name: 'welcome',
+          },
+        },
+      }),
+    });
+    expect(outboxCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ kind: 'WHATSAPP' }),
+    });
   });
 });

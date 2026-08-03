@@ -25,6 +25,7 @@ describe('ChannelsService identity picker', () => {
       } as never,
       { record: vi.fn() } as never,
       { enqueue: vi.fn() } as never,
+      {} as never,
     );
 
     await expect(service.identities('project-a', 'connection-a')).resolves.toEqual([]);

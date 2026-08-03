@@ -36,12 +36,43 @@ const codeReasons: Record<string, string> = {
   BROADCAST_CANNOT_LAUNCH: 'This broadcast is not ready to launch.',
   BROADCAST_CANNOT_PAUSE: 'Only a running broadcast can be paused.',
   BROADCAST_CANNOT_RESUME: 'Only a paused broadcast can be resumed.',
+  BROADCAST_CONTACTS_REQUIRED: 'Choose at least one contact for this broadcast.',
+  BROADCAST_CONTENT_CHANNEL_MISMATCH:
+    'Choose content that matches the selected Telegram or WhatsApp channel.',
+  BROADCAST_CONTENT_INVALID: 'Choose exactly one valid message format for this broadcast.',
+  BROADCAST_COPY_NAME_UNAVAILABLE: 'Choose a different name for the broadcast copy.',
+  BROADCAST_MUST_BE_STOPPED: 'Stop this broadcast before making that change.',
   BROADCAST_NAME_EXISTS: 'A broadcast with this name already exists.',
+  BROADCAST_NOT_ARCHIVED: 'Only an archived broadcast can be restored.',
+  BROADCAST_NOT_EDITABLE: 'This broadcast can no longer be edited.',
+  BROADCAST_NOT_FOUND: 'This broadcast no longer exists or is outside this project.',
+  BROADCAST_NOT_RUNNING: 'Only a running broadcast can be paused.',
+  BROADCAST_NOT_TERMINAL: 'Wait until the broadcast finishes before archiving it.',
   BROADCAST_SCHEDULE_MUST_BE_FUTURE: 'Choose a future delivery time.',
-  CHANNEL_NOT_ACTIVE: 'Activate the Telegram channel before continuing.',
+  BROADCAST_SEGMENT_REQUIRED: 'Choose a saved segment for this audience.',
+  BROADCAST_STATE_CHANGED: 'The broadcast changed in another session. Refresh and try again.',
+  BROADCAST_TAGS_INVALID: 'Review the selected audience tags.',
+  BROADCAST_TEMPLATE_VERSION_INVALID: 'Choose a currently published Telegram template.',
+  BROADCAST_WHATSAPP_COMPONENTS_INVALID:
+    'Complete every required WhatsApp template value and review its format.',
+  BROADCAST_WHATSAPP_TEMPLATE_NOT_APPROVED:
+    'Choose a WhatsApp template that is still approved for this business number.',
+  BROADCAST_WHATSAPP_TEMPLATE_REQUIRED: 'WhatsApp broadcasts must use an approved Meta template.',
+  CHANNEL_NOT_ACTIVE: 'Activate this channel before continuing.',
   CRM_CONNECTION_NOT_PAIRED: 'Pair this CRM project before continuing.',
   CUSTOM_FIELD_KEY_EXISTS: 'A custom field with this key already exists.',
   GLOBAL_ROLE_NOT_FOUND: 'The selected global role is no longer available.',
+  MEDIA_ASSET_NOT_FOUND: 'This media file no longer exists in the project library.',
+  MEDIA_CANNOT_MATERIALIZE: 'This provider media file cannot be downloaded safely.',
+  MEDIA_CHANNEL_INVALID: 'Choose whether this file is for Telegram or WhatsApp.',
+  MEDIA_CONNECTION_NOT_FOUND: 'The channel that owns this media file is no longer available.',
+  MEDIA_FILE_REQUIRED: 'Choose a file before uploading.',
+  MEDIA_IDEMPOTENCY_CONFLICT:
+    'This upload request was already used for a different file. Choose the file again.',
+  MEDIA_KIND_INVALID: 'Choose a supported media type.',
+  MEDIA_NOT_AVAILABLE: 'This media file is not ready yet.',
+  MEDIA_STORAGE_NOT_CONFIGURED: 'Private media storage is not configured for this environment.',
+  MEDIA_STORAGE_UNAVAILABLE: 'Private media storage is temporarily unavailable. Try again.',
   MEDIA_USED_BY_PUBLISHED_TEMPLATE: 'This file is used by a published template.',
   MESSAGE_TEMPLATE_NAME_EXISTS: 'A template with this name already exists.',
   OPERATION_NOT_FAILED: 'Only a failed operation can be retried.',
@@ -69,6 +100,34 @@ const codeReasons: Record<string, string> = {
   TELEGRAM_CONNECTION_TEST_FAILED: 'Telegram did not confirm this connection.',
   TELEGRAM_TOKEN_INVALID: 'Telegram rejected this bot token.',
   TELEGRAM_WEBHOOK_CONNECT_FAILED: 'Telegram could not connect the webhook.',
+  WHATSAPP_CONFIGURATION_INCOMPLETE:
+    'Finish the Meta app, business account, phone number and access-token setup first.',
+  WHATSAPP_CONFIGURATION_INVALID:
+    'Review the WhatsApp Business Account ID, Phone Number ID, token and Graph API version.',
+  WHATSAPP_META_CONFIGURATION_REQUIRED:
+    'The Meta app is not configured on the server yet. You can keep this channel as a draft.',
+  WHATSAPP_PHONE_IDENTITY_CONFLICT:
+    'This WhatsApp phone number is already connected to another Omnicus project.',
+  WHATSAPP_SETUP_STATE_CHANGED:
+    'This WhatsApp draft changed while Meta setup was open. Refresh it before trying again.',
+  WHATSAPP_SETUP_TARGET_MISMATCH:
+    'The WhatsApp number selected in Meta does not match this prepared connection.',
+  WHATSAPP_ACCESS_TOKEN_INVALID:
+    'Meta rejected the access token. Check the token and its WhatsApp permissions.',
+  WHATSAPP_ACCOUNT_VALIDATION_FAILED:
+    'Meta could not confirm that this business account owns the selected phone number.',
+  WHATSAPP_CONNECTION_TEST_FAILED: 'Meta did not confirm this WhatsApp connection.',
+  WHATSAPP_CONNECTION_FAILED: 'Meta could not validate and connect this WhatsApp business number.',
+  WHATSAPP_EMBEDDED_SIGNUP_FAILED:
+    'Meta signup did not finish. Reopen the setup window and try again.',
+  WHATSAPP_SERVICE_WINDOW_CLOSED:
+    'This contact is outside the customer service window. Use an approved WhatsApp template.',
+  WHATSAPP_TEMPLATE_REQUIRED:
+    'Choose an approved WhatsApp template for recipients outside their customer service window.',
+  WHATSAPP_TEMPLATE_SYNC_FAILED:
+    'Meta templates could not be synced. Check the channel token and try again.',
+  WHATSAPP_MEDIA_UNAVAILABLE: 'This WhatsApp media file is no longer available from Meta.',
+  WHATSAPP_WEBHOOK_CONNECT_FAILED: 'Meta could not connect this WhatsApp business account.',
   USER_EMAIL_EXISTS: 'A user with this email already exists.',
   USER_NOT_FOUND: 'The selected user is no longer available.',
 };

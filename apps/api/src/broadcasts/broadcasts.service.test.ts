@@ -7,10 +7,96 @@ function service(client: Record<string, unknown> = {}) {
     { record: vi.fn() } as never,
     { client } as never,
     { enqueue: vi.fn() } as never,
+    { enqueue: vi.fn() } as never,
   );
 }
 
 describe('BroadcastsService', () => {
+  it('stores an approved connection-scoped WhatsApp template snapshot', async () => {
+    const create = vi.fn().mockImplementation(({ data }) => ({
+      ...data,
+      _count: { recipients: 0 },
+      cancelledAt: null,
+      completedAt: null,
+      connection: { botUsername: null, type: 'WHATSAPP' },
+      createdAt: new Date(),
+      errorCode: null,
+      failedAt: null,
+      id: 'broadcast-wa',
+      pausedAt: null,
+      scheduledAt: null,
+      startedAt: null,
+      status: 'DRAFT',
+      updatedAt: new Date(),
+    }));
+    const instance = service({
+      broadcast: { create },
+      channelConnection: {
+        findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', type: 'WHATSAPP' }),
+      },
+      whatsAppMessageTemplate: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: '22222222-2222-4222-8222-222222222222',
+          languageCode: 'en_US',
+          name: 'welcome',
+          status: 'APPROVED',
+        }),
+      },
+    });
+
+    await expect(
+      instance.create(
+        'project-a',
+        {
+          audience: { mode: 'ALL_ACTIVE' },
+          connectionId: 'connection-wa',
+          name: 'WhatsApp campaign',
+          whatsAppTemplate: {
+            templateId: '22222222-2222-4222-8222-222222222222',
+          },
+        },
+        { actorEmail: 'operator@example.test', actorUserId: 'user-a', correlationId: 'test' },
+      ),
+    ).resolves.toMatchObject({
+      channelType: 'WHATSAPP',
+      whatsAppTemplate: { languageCode: 'en_US', name: 'welcome' },
+    });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: {
+            kind: 'WHATSAPP_TEMPLATE',
+            whatsAppTemplate: expect.objectContaining({
+              languageCode: 'en_US',
+              name: 'welcome',
+            }),
+          },
+          templateVersionId: null,
+        }),
+      }),
+    );
+  });
+
+  it('rejects freeform content for a WhatsApp broadcast', async () => {
+    const instance = service({
+      channelConnection: {
+        findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', type: 'WHATSAPP' }),
+      },
+    });
+    await expect(
+      instance.create(
+        'project-a',
+        {
+          audience: { mode: 'ALL_ACTIVE' },
+          connectionId: 'connection-wa',
+          name: 'Unsafe campaign',
+          text: 'Freeform',
+        },
+        { actorEmail: 'operator@example.test', actorUserId: 'user-a', correlationId: 'test' },
+      ),
+    ).rejects.toMatchObject({ response: { code: 'BROADCAST_WHATSAPP_TEMPLATE_REQUIRED' } });
+  });
+
   it('rejects a selected-contact audience without contacts before persistence', async () => {
     await expect(
       service().create(

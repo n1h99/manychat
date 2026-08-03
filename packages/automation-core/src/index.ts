@@ -193,6 +193,80 @@ export const graphNodeSchema = z.object({
   type: z.enum(automationNodeTypes),
 });
 
+const whatsAppTemplateTextParameterSchema = z
+  .object({ text: z.string().min(1).max(4_096), type: z.literal('text') })
+  .strict();
+const whatsAppTemplateCurrencyParameterSchema = z
+  .object({
+    amount1000: z.number().int(),
+    code: z.string().regex(/^[A-Z]{3}$/),
+    fallbackValue: z.string().min(1).max(128),
+    type: z.literal('currency'),
+  })
+  .strict();
+const whatsAppTemplateDateTimeParameterSchema = z
+  .object({ fallbackValue: z.string().min(1).max(128), type: z.literal('date_time') })
+  .strict();
+const whatsAppTemplateMediaParameterSchema = z
+  .object({
+    mediaAssetId: z.string().min(1).max(128),
+    type: z.enum(['document', 'image', 'video']),
+  })
+  .strict();
+const whatsAppTemplatePayloadParameterSchema = z
+  .object({ payload: z.string().min(1).max(1_024), type: z.literal('payload') })
+  .strict();
+
+const whatsAppBodyParameterSchema = z.discriminatedUnion('type', [
+  whatsAppTemplateTextParameterSchema,
+  whatsAppTemplateCurrencyParameterSchema,
+  whatsAppTemplateDateTimeParameterSchema,
+]);
+
+const whatsAppHeaderParameterSchema = z.discriminatedUnion('type', [
+  whatsAppTemplateTextParameterSchema,
+  whatsAppTemplateMediaParameterSchema,
+]);
+
+const whatsAppTemplateComponentSchema = z.union([
+  z
+    .object({
+      parameters: z.array(whatsAppBodyParameterSchema).max(64),
+      type: z.literal('body'),
+    })
+    .strict(),
+  z
+    .object({
+      parameters: z.array(whatsAppHeaderParameterSchema).max(64),
+      type: z.literal('header'),
+    })
+    .strict(),
+  z
+    .object({
+      index: z.number().int().min(0).max(9),
+      parameters: z.tuple([whatsAppTemplatePayloadParameterSchema]),
+      subType: z.literal('quick_reply'),
+      type: z.literal('button'),
+    })
+    .strict(),
+  z
+    .object({
+      index: z.number().int().min(0).max(9),
+      parameters: z.tuple([whatsAppTemplateTextParameterSchema]),
+      subType: z.literal('url'),
+      type: z.literal('button'),
+    })
+    .strict(),
+]);
+
+export const whatsAppAutomationTemplateSchema = z
+  .object({
+    components: z.array(whatsAppTemplateComponentSchema).max(64).optional(),
+    languageCode: z.string().trim().min(1).max(32),
+    name: z.string().trim().min(1).max(512),
+  })
+  .strict();
+
 export const graphEdgeSchema = z.object({
   condition: conditionRuleSchema.optional(),
   conditionGroup: conditionGroupSchema.optional(),
@@ -337,12 +411,19 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
     ) {
       errors.push(`Subflow node ${node.id} requires a pinned published scenario version`);
     }
-    if (
-      node.type === 'SEND_TEMPLATE' &&
-      (typeof node.config.templateId !== 'string' ||
-        typeof node.config.templateVersionId !== 'string')
-    ) {
-      errors.push(`Send Template node ${node.id} requires a pinned template version`);
+    if (node.type === 'SEND_TEMPLATE') {
+      const whatsAppTemplate = whatsAppAutomationTemplateSchema.safeParse(
+        node.config.whatsAppTemplate,
+      );
+      const telegramTemplate =
+        typeof node.config.templateId === 'string' &&
+        typeof node.config.templateVersionId === 'string';
+      if (!telegramTemplate && !whatsAppTemplate.success)
+        errors.push(
+          `Send Template node ${node.id} requires a pinned template version or a WhatsApp template`,
+        );
+      if (telegramTemplate && node.config.whatsAppTemplate !== undefined)
+        errors.push(`Send Template node ${node.id} cannot mix Telegram and WhatsApp templates`);
     }
     if (
       node.type === 'SEND_MESSAGE' &&

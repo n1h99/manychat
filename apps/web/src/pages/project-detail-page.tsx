@@ -109,14 +109,14 @@ export function ProjectDetailPage() {
       visible: hasProjectPermission(access.data, 'integrations:manage'),
     },
     {
-      description: 'Telegram bot connections',
+      description: 'Telegram and WhatsApp connections',
       icon: <SendOutlined />,
       label: 'Channels',
       path: `/projects/${project.id}/channels`,
       visible: hasProjectPermission(access.data, 'channels:read'),
     },
     {
-      description: 'Telegram broadcasts and delivery',
+      description: 'Channel broadcasts and delivery',
       icon: <SendOutlined />,
       label: 'Broadcasts',
       path: `/projects/${project.id}/broadcasts`,

@@ -91,6 +91,9 @@ importers:
       '@omnicus/channel-telegram':
         specifier: workspace:*
         version: link:../../packages/channel-telegram
+      '@omnicus/channel-whatsapp':
+        specifier: workspace:*
+        version: link:../../packages/channel-whatsapp
       '@omnicus/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -216,6 +219,9 @@ importers:
       '@omnicus/channel-telegram':
         specifier: workspace:*
         version: link:../../packages/channel-telegram
+      '@omnicus/channel-whatsapp':
+        specifier: workspace:*
+        version: link:../../packages/channel-whatsapp
       '@omnicus/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -273,6 +279,12 @@ importers:
       '@omnicus/test-fixtures':
         specifier: workspace:*
         version: link:../test-fixtures
+
+  packages/channel-whatsapp:
+    dependencies:
+      '@omnicus/channel-core':
+        specifier: workspace:*
+        version: link:../channel-core
 
   packages/config:
     dependencies:

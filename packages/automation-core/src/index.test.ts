@@ -75,11 +75,94 @@ describe('automation graph validation', () => {
     });
 
     expect(result.errors).toContain(
-      'Send Template node template requires a pinned template version',
+      'Send Template node template requires a pinned template version or a WhatsApp template',
     );
     expect(result.errors).toContain(
       'Subflow node subflow requires a pinned published scenario version',
     );
+  });
+
+  it('accepts a portable WhatsApp template without pinning it to one connection', () => {
+    const result = validateScenarioGraph({
+      edges: [
+        { from: 'trigger', to: 'template' },
+        { from: 'template', to: 'stop' },
+      ],
+      nodes: [
+        { id: 'trigger', type: 'INCOMING_MESSAGE' },
+        {
+          config: {
+            whatsAppTemplate: {
+              components: [
+                { parameters: [{ text: '{{contact.firstName}}', type: 'text' }], type: 'body' },
+              ],
+              languageCode: 'en_US',
+              name: 'welcome',
+            },
+          },
+          id: 'template',
+          type: 'SEND_TEMPLATE',
+        },
+        { id: 'stop', type: 'STOP' },
+      ],
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it('rejects loose or provider-invalid WhatsApp template parameter shapes', () => {
+    const validateTemplate = (whatsAppTemplate: unknown) =>
+      validateScenarioGraph({
+        edges: [
+          { from: 'trigger', to: 'template' },
+          { from: 'template', to: 'stop' },
+        ],
+        nodes: [
+          { id: 'trigger', type: 'INCOMING_MESSAGE' },
+          { config: { whatsAppTemplate }, id: 'template', type: 'SEND_TEMPLATE' },
+          { id: 'stop', type: 'STOP' },
+        ],
+      });
+    const invalidTemplates = [
+      {
+        components: [
+          {
+            index: 0,
+            parameters: [],
+            subType: 'quick_reply',
+            type: 'button',
+          },
+        ],
+        languageCode: 'en_US',
+        name: 'quick_reply',
+      },
+      {
+        components: [
+          {
+            index: 0,
+            parameters: [{ text: 'wrong', type: 'text' }],
+            subType: 'quick_reply',
+            type: 'button',
+          },
+        ],
+        languageCode: 'en_US',
+        name: 'quick_reply',
+      },
+      {
+        components: [
+          {
+            parameters: [{ amount1000: 1_000, code: 'US', fallbackValue: '$1', type: 'currency' }],
+            type: 'body',
+          },
+        ],
+        languageCode: 'en_US',
+        name: 'currency',
+      },
+      { extra: true, languageCode: 'en_US', name: 'loose' },
+    ];
+    for (const template of invalidTemplates)
+      expect(validateTemplate(template).errors).toContain(
+        'Send Template node template requires a pinned template version or a WhatsApp template',
+      );
   });
 
   it('rejects a send-message step without message content', () => {

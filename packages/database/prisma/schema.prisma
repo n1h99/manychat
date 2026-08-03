@@ -104,6 +104,7 @@ enum OutboxRecordStatus {
 
 enum OutboxKind {
   TELEGRAM
+  WHATSAPP
   CRM
   HTTP
 }
@@ -116,6 +117,7 @@ enum CrmOperationType {
   FORWARD_MESSAGE_EDIT
   FORWARD_CONTACT_SHARE
   FORWARD_AUTOMATION_STATE
+  FORWARD_MESSAGE_STATUS
 }
 
 enum CrmProvider {
@@ -146,6 +148,8 @@ enum NormalizedEventType {
   MESSAGE_EDITED
   CONTACT_SHARED
   AUTOMATION_STATE
+  INTERACTIVE
+  MESSAGE_STATUS
   CHAT_MEMBER
   UNSUPPORTED
 }
@@ -186,6 +190,7 @@ enum MessageType {
   LOCATION
   POLL
   RICH
+  INTERACTIVE
   CALLBACK_QUERY
   SYSTEM
   UNSUPPORTED
@@ -213,6 +218,9 @@ enum MessageStatus {
   RECEIVED
   PROCESSING
   SENT
+  DELIVERED
+  READ
+  DELETED
   FAILED
   UNKNOWN
 }
@@ -220,6 +228,30 @@ enum MessageStatus {
 enum MediaAssetSource {
   USER_UPLOAD
   TELEGRAM
+  WHATSAPP
+}
+
+enum WhatsAppTemplateStatus {
+  APPROVED
+  PENDING
+  REJECTED
+  PAUSED
+  DISABLED
+  UNKNOWN
+}
+
+enum WhatsAppTemplateCategory {
+  AUTHENTICATION
+  MARKETING
+  UTILITY
+  UNKNOWN
+}
+
+enum WhatsAppTemplateQuality {
+  GREEN
+  YELLOW
+  RED
+  UNKNOWN
 }
 
 enum MediaAssetStatus {
@@ -615,6 +647,8 @@ model Project {
   scheduledMessages        ScheduledMessage[]
   telegramMediaGroups      TelegramMediaGroup[]
   telegramBotInterfaces    TelegramBotInterface[]
+  messageStatusEvents      MessageStatusEvent[]
+  whatsAppMessageTemplates WhatsAppMessageTemplate[]
 
   @@index([status, createdAt])
   @@map("projects")
@@ -691,20 +725,22 @@ model ChannelIdentity {
 }
 
 model ChannelConnection {
-  id                     String                  @id @default(uuid())
+  id                     String                    @id @default(uuid())
   projectId              String
-  type                   ChannelType             @default(TELEGRAM)
-  status                 ChannelConnectionStatus @default(DRAFT)
+  type                   ChannelType               @default(TELEGRAM)
+  status                 ChannelConnectionStatus   @default(DRAFT)
   credentialsEncrypted   Json
-  webhookSecretEncrypted Json
+  webhookSecretEncrypted Json?
   botUsername            String?
   externalBotId          String?
+  providerAccountId      String?
+  providerIdentityId     String?
   webhookMetadata        Json?
-  lastWebhookAt          DateTime?               @db.Timestamptz(3)
-  lastErrorAt            DateTime?               @db.Timestamptz(3)
-  createdAt              DateTime                @default(now()) @db.Timestamptz(3)
-  updatedAt              DateTime                @updatedAt @db.Timestamptz(3)
-  project                Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  lastWebhookAt          DateTime?                 @db.Timestamptz(3)
+  lastErrorAt            DateTime?                 @db.Timestamptz(3)
+  createdAt              DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                  @updatedAt @db.Timestamptz(3)
+  project                Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   identities             ChannelIdentity[]
   rawWebhookEvents       RawWebhookEvent[]
   inboxRecords           InboxRecord[]
@@ -718,10 +754,14 @@ model ChannelConnection {
   scheduledMessages      ScheduledMessage[]
   telegramMediaGroups    TelegramMediaGroup[]
   telegramBotInterface   TelegramBotInterface?
+  messageStatusEvents    MessageStatusEvent[]
+  whatsAppTemplates      WhatsAppMessageTemplate[]
 
   @@unique([projectId, id])
+  @@unique([type, providerIdentityId])
   @@index([projectId, status])
   @@index([projectId, type])
+  @@index([type, providerAccountId, status])
   @@map("channel_connections")
 }
 
@@ -783,6 +823,7 @@ model NormalizedEvent {
   connection         ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
   inboxRecord        InboxRecord         @relation(fields: [projectId, inboxRecordId], references: [projectId, id], onDelete: Restrict)
   message            Message?
+  messageStatusEvent MessageStatusEvent?
   scenarioExecutions ScenarioExecution[]
   crmOperations      CrmOperation[]
 
@@ -1029,6 +1070,8 @@ model Conversation {
   automationReasonCode   String?
   automationRevision     Int                         @default(0)
   lastMessageAt          DateTime?                   @db.Timestamptz(3)
+  lastInboundAt          DateTime?                   @db.Timestamptz(3)
+  serviceWindowExpiresAt DateTime?                   @db.Timestamptz(3)
   nextAutomationSequence BigInt                      @default(0)
   createdAt              DateTime                    @default(now()) @db.Timestamptz(3)
   updatedAt              DateTime                    @updatedAt @db.Timestamptz(3)
@@ -1042,11 +1085,12 @@ model Conversation {
   @@unique([projectId, connectionId, externalChatId])
   @@index([projectId, connectionId, status])
   @@index([projectId, contactId, updatedAt])
+  @@index([projectId, connectionId, serviceWindowExpiresAt])
   @@map("conversations")
 }
 
 model Message {
-  id                 String              @id @default(uuid())
+  id                 String               @id @default(uuid())
   projectId          String
   connectionId       String
   conversationId     String
@@ -1059,18 +1103,19 @@ model Message {
   externalMessageId  String?
   content            Json
   metadata           Json?
-  sentAt             DateTime?           @db.Timestamptz(3)
-  failedAt           DateTime?           @db.Timestamptz(3)
-  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
-  contact            Contact             @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
-  connection         ChannelConnection   @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
-  conversation       Conversation        @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
-  normalizedEvent    NormalizedEvent?    @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
-  mediaAsset         MediaAsset?         @relation(fields: [projectId, mediaAssetId], references: [projectId, id], onDelete: Restrict)
-  broadcastRecipient BroadcastRecipient? @relation("BroadcastRecipientMessage")
+  sentAt             DateTime?            @db.Timestamptz(3)
+  failedAt           DateTime?            @db.Timestamptz(3)
+  createdAt          DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime             @updatedAt @db.Timestamptz(3)
+  contact            Contact              @relation(fields: [projectId, contactId], references: [projectId, id], onDelete: Restrict)
+  connection         ChannelConnection    @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  conversation       Conversation         @relation(fields: [projectId, conversationId], references: [projectId, id], onDelete: Restrict)
+  normalizedEvent    NormalizedEvent?     @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+  mediaAsset         MediaAsset?          @relation(fields: [projectId, mediaAssetId], references: [projectId, id], onDelete: Restrict)
+  broadcastRecipient BroadcastRecipient?  @relation("BroadcastRecipientMessage")
   crmOperations      CrmOperation[]
   scheduledMessage   ScheduledMessage?
+  statusEvents       MessageStatusEvent[]
 
   @@unique([projectId, id])
   @@unique([projectId, normalizedEventId])
@@ -1079,6 +1124,55 @@ model Message {
   @@index([projectId, connectionId, externalMessageId])
   @@index([projectId, mediaAssetId])
   @@map("messages")
+}
+
+model MessageStatusEvent {
+  id                String            @id @default(uuid())
+  projectId         String
+  connectionId      String
+  messageId         String
+  normalizedEventId String            @unique
+  providerEventId   String
+  providerMessageId String
+  status            MessageStatus
+  occurredAt        DateTime          @db.Timestamptz(3)
+  errorCode         String?
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection        ChannelConnection @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+  message           Message           @relation(fields: [projectId, messageId], references: [projectId, id], onDelete: Restrict)
+  normalizedEvent   NormalizedEvent   @relation(fields: [projectId, normalizedEventId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, normalizedEventId])
+  @@unique([projectId, connectionId, providerEventId])
+  @@index([projectId, messageId, occurredAt])
+  @@map("message_status_events")
+}
+
+model WhatsAppMessageTemplate {
+  id                  String                   @id @default(uuid())
+  projectId           String
+  connectionId        String
+  providerTemplateId  String
+  name                String
+  languageCode        String
+  status              WhatsAppTemplateStatus
+  category            WhatsAppTemplateCategory
+  components          Json
+  quality             WhatsAppTemplateQuality
+  rejectionReasonCode String?
+  lastSyncedAt        DateTime                 @db.Timestamptz(3)
+  createdAt           DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                 @updatedAt @db.Timestamptz(3)
+  project             Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  connection          ChannelConnection        @relation(fields: [projectId, connectionId], references: [projectId, id], onDelete: Restrict)
+
+  @@unique([projectId, id])
+  @@unique([projectId, connectionId, providerTemplateId])
+  @@unique([projectId, connectionId, name, languageCode])
+  @@index([projectId, connectionId, status, name])
+  @@map("whatsapp_message_templates")
 }
 
 model OutboxRecord {

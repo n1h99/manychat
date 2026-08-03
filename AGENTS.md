@@ -32,6 +32,10 @@ Pilot и утверждённые post-pilot slices реализованы и р
   `EXTERNAL_HTTP_REQUEST`;
 - Telegram Chat v3.3, включая recurring schedules, reply keyboards, native
   rich messages и live-verified user reaction events;
+- WhatsApp Business Cloud API с app-level signed webhook, durable
+  inbound/outbound processing, Meta templates, service-window enforcement,
+  broadcasts, Automation Studio и Cyber Pulse CRM contract 4.0.0; live Meta
+  acceptance остаётся внешним gate до появления Meta app и test business phone;
 - Operations & Audit Center, account invitations/password recovery, custom
   global/project roles, safe project cloning и permission-guarded System Health;
 - project-scoped Automation Activity с контактными путями, bounded charts и
@@ -44,7 +48,7 @@ Pilot и утверждённые post-pilot slices реализованы и р
 
 До отдельного явного решения пользователя не реализовывать:
 
-- WhatsApp и Instagram;
+- Instagram;
 - external action callbacks без утверждённого безопасного callback contract.
 
 Provider limitations нельзя превращать в выдуманный product contract.
@@ -85,7 +89,7 @@ capability-gated, пока Telegram Bot API не предоставляет на
 - Не добавляйте provider fields по памяти. Проверяйте официальную документацию
   и фиксируйте проверенную API version/date.
 - Не смешивайте product scope с opportunistic refactoring.
-- WhatsApp/Instagram и другие отложенные capabilities не входят в соседние
+- Instagram и другие отложенные capabilities не входят в соседние
   задачи автоматически.
 
 ## Проверки

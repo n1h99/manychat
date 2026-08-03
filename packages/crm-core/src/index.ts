@@ -10,7 +10,7 @@ export interface CrmCallContext {
 }
 
 export interface CrmIdentityInput {
-  channel: 'telegram';
+  channel: 'telegram' | 'whatsapp';
   channelIdentityId: string;
   connectionId: string;
   externalChatId?: string;
@@ -24,6 +24,7 @@ export interface CrmTagInput {
 
 export interface CrmMediaInput {
   assetId: string;
+  availability?: 'available' | 'unavailable';
   downloadUrl?: string;
   downloadUrlExpiresAt?: string;
   emoji?: string;
@@ -35,14 +36,41 @@ export interface CrmMediaInput {
   setName?: string;
   size?: number;
   type: 'audio' | 'file' | 'image' | 'sticker' | 'video';
+  unavailableReason?: string;
 }
 
-export interface CrmInteractiveInput {
-  callbackQueryId: string;
-  data?: string;
-  displayText?: string;
-  sourceMessageId?: string;
-  type: 'callback_query';
+export type CrmInteractiveInput =
+  | {
+      callbackQueryId: string;
+      data?: string;
+      displayText?: string;
+      sourceMessageId?: string;
+      type: 'callback_query';
+    }
+  | {
+      description?: string;
+      id: string;
+      sourceMessageId?: string;
+      title: string;
+      type: 'button_reply' | 'list_reply';
+    };
+
+export interface CrmLocationInput {
+  address?: string;
+  latitude: number;
+  longitude: number;
+  name?: string;
+  url?: string;
+}
+
+export interface CrmWhatsAppContactInput {
+  emails: Array<{ email: string; type?: string }>;
+  name: { firstName?: string; formattedName: string; lastName?: string };
+  phones: Array<{ phone: string; type?: string; waId?: string }>;
+}
+
+export interface CrmWhatsAppContactsInput {
+  contacts: CrmWhatsAppContactInput[];
 }
 
 export interface CrmInlineKeyboardButtonInput {
@@ -98,6 +126,7 @@ export interface ForwardInboundMessageInput {
   contactId: string;
   identity: CrmIdentityInput;
   interactive?: CrmInteractiveInput;
+  location?: CrmLocationInput;
   media?: CrmMediaInput;
   messageId?: string;
   normalizedEventId?: string;
@@ -105,6 +134,7 @@ export interface ForwardInboundMessageInput {
   replyToMessageId?: string;
   senderName?: string;
   text?: string;
+  whatsAppContacts?: CrmWhatsAppContactsInput;
 }
 
 export interface ForwardOutboundMessageInput {
@@ -185,6 +215,17 @@ export interface ForwardAutomationStateInput {
   revision: number;
 }
 
+export interface ForwardMessageStatusInput {
+  contactId: string;
+  errorCode?: string;
+  identity: CrmIdentityInput;
+  messageId: string;
+  normalizedEventId: string;
+  occurredAt: string;
+  providerMessageId?: string;
+  status: 'DELETED' | 'DELIVERED' | 'FAILED' | 'READ' | 'SENT' | 'UNKNOWN';
+}
+
 export interface CrmResult {
   mode: string;
   operationId: string;
@@ -222,6 +263,10 @@ export interface CrmClient {
   forwardAutomationState?(
     context: CrmCallContext,
     input: ForwardAutomationStateInput,
+  ): Promise<CrmResult>;
+  forwardMessageStatus?(
+    context: CrmCallContext,
+    input: ForwardMessageStatusInput,
   ): Promise<CrmResult>;
   reconcile(context: CrmCallContext): Promise<CrmReconciliationResult>;
 }
@@ -512,6 +557,34 @@ export class HttpCrmClient implements CrmClient {
     };
   }
 
+  async forwardMessageStatus(
+    context: CrmCallContext,
+    input: ForwardMessageStatusInput,
+  ): Promise<CrmResult> {
+    const result = await this.postAndReconcile(
+      '/integrations/v1/omnicus/messages/status',
+      context,
+      {
+        crmProjectId: context.crmProjectId,
+        ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+        identity: input.identity,
+        messageId: input.messageId,
+        normalizedEventId: input.normalizedEventId,
+        occurredAt: input.occurredAt,
+        omnicusContactId: input.contactId,
+        omnicusProjectId: context.projectId,
+        providerMessageId: input.providerMessageId,
+        status: input.status,
+      },
+      messageResultSchema,
+    );
+    return {
+      mode: result.mode,
+      operationId: result.operationId,
+      providerReference: result.crmMessageId,
+    };
+  }
+
   async reconcile(context: CrmCallContext): Promise<CrmReconciliationResult> {
     const url = new URL('/integrations/v1/omnicus/operations', `${this.baseUrl}/`);
     url.searchParams.set('crmProjectId', context.crmProjectId);
@@ -685,6 +758,13 @@ export class MockCrmClient implements CrmClient {
   async forwardAutomationState(
     context: CrmCallContext,
     _input: ForwardAutomationStateInput,
+  ): Promise<CrmResult> {
+    return this.perform(context, 'message');
+  }
+
+  async forwardMessageStatus(
+    context: CrmCallContext,
+    _input: ForwardMessageStatusInput,
   ): Promise<CrmResult> {
     return this.perform(context, 'message');
   }

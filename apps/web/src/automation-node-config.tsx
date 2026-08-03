@@ -11,6 +11,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Segmented,
   Select,
   Space,
   Tabs,
@@ -18,8 +19,11 @@ import {
 } from 'antd';
 import { useEffect, useState } from 'react';
 
-import { ApiError } from './api';
+import { ApiError, getUserErrorMessage } from './api';
 import type { ScenarioSummary } from './automation-api';
+import { channelAccountLabel } from './channel-provider';
+import { useChannels } from './channels-api';
+import { useMediaAssets } from './media-api';
 import type {
   AutomationCustomField,
   AutomationSecret,
@@ -37,6 +41,17 @@ import {
   type DurationUnit,
 } from './automation-studio';
 import type { MessageTemplate } from './templates-api';
+import {
+  assetKindForWhatsAppSlot,
+  whatsAppParameterSlots,
+  whatsAppTemplateComponents,
+  whatsAppTemplateComposerIssue,
+  whatsAppTemplateParameterValues,
+} from './whatsapp-template-composer';
+import {
+  type WhatsAppTemplateComponentInput,
+  useWhatsAppTemplates,
+} from './whatsapp-templates-api';
 
 interface Props {
   config: Record<string, unknown>;
@@ -44,6 +59,7 @@ interface Props {
   nodeType: string;
   onCreateSecret(name: string, value: string): Promise<string>;
   onChange(config: Record<string, unknown>): void;
+  projectId: string | undefined;
   scenarios: ScenarioSummary[];
   secrets: AutomationSecret[];
   tags: AutomationTag[];
@@ -103,6 +119,7 @@ export function AutomationNodeConfig({
   nodeType,
   onCreateSecret,
   onChange,
+  projectId,
   scenarios,
   secrets,
   tags,
@@ -110,12 +127,31 @@ export function AutomationNodeConfig({
   testHttpRequest,
 }: Props) {
   const set = (key: string, value: unknown) => onChange({ ...config, [key]: value });
+  const channels = useChannels(projectId, nodeType === 'SEND_TEMPLATE');
+  const assets = useMediaAssets(projectId, nodeType === 'SEND_TEMPLATE');
+  const activeWhatsAppChannels = (channels.data ?? []).filter(
+    (channel) => channel.type === 'WHATSAPP' && channel.status === 'ACTIVE',
+  );
+  const [whatsAppCatalogConnectionId, setWhatsAppCatalogConnectionId] = useState<string>();
+  const effectiveWhatsAppCatalogConnectionId = activeWhatsAppChannels.some(
+    (channel) => channel.id === whatsAppCatalogConnectionId,
+  )
+    ? whatsAppCatalogConnectionId
+    : activeWhatsAppChannels[0]?.id;
+  const whatsAppTemplates = useWhatsAppTemplates(projectId, effectiveWhatsAppCatalogConnectionId);
 
   if (nodeType === 'SEND_MESSAGE') {
     const text = typeof config.text === 'string' ? config.text : '';
     const preview = previewAutomationText(text, customFields);
     return (
       <Space direction="vertical" style={{ width: '100%' }}>
+        <Alert
+          className="automation-channel-note"
+          description="This step replies through the same channel and conversation that started the run. Telegram can send the text directly; WhatsApp requires an open customer service window for free-form text."
+          message="Uses the incoming conversation channel"
+          showIcon
+          type="info"
+        />
         <Form.Item label="Message text">
           <Input.TextArea
             maxLength={4096}
@@ -148,28 +184,225 @@ export function AutomationNodeConfig({
     );
   }
 
-  if (nodeType === 'SEND_TEMPLATE')
-    return (
-      <Form.Item label="Published template version">
-        <Select
-          onChange={(versionId: string) => {
-            const template = templates.find(
-              (candidate) => candidate.activeVersion?.id === versionId,
-            );
-            onChange({ templateId: template?.id, templateVersionId: versionId });
-          }}
-          options={templates
-            .filter((template) => template.status === 'PUBLISHED' && template.activeVersion)
-            .map((template) => ({
-              label: `${template.name} (${template.activeVersion!.kind})`,
-              value: template.activeVersion!.id,
-            }))}
-          placeholder="Select a published template"
-          showSearch
-          value={typeof config.templateVersionId === 'string' ? config.templateVersionId : null}
-        />
-      </Form.Item>
+  if (nodeType === 'SEND_TEMPLATE') {
+    const whatsAppTemplate =
+      config.whatsAppTemplate &&
+      typeof config.whatsAppTemplate === 'object' &&
+      !Array.isArray(config.whatsAppTemplate)
+        ? (config.whatsAppTemplate as {
+            components?: WhatsAppTemplateComponentInput[];
+            languageCode?: string;
+            name?: string;
+          })
+        : undefined;
+    const provider = whatsAppTemplate ? 'WHATSAPP' : 'TELEGRAM';
+    const selectedWhatsAppTemplate = whatsAppTemplates.data?.find(
+      (template) =>
+        template.name === whatsAppTemplate?.name &&
+        template.languageCode === whatsAppTemplate.languageCode,
     );
+    const parameterSlots = whatsAppParameterSlots(selectedWhatsAppTemplate);
+    const parameterValues = whatsAppTemplateParameterValues(
+      parameterSlots,
+      whatsAppTemplate?.components,
+    );
+    const updateWhatsAppParameters = (values: Record<string, string>) => {
+      if (!selectedWhatsAppTemplate) return;
+      const components = whatsAppTemplateComponents(parameterSlots, values);
+      onChange({
+        whatsAppTemplate: {
+          languageCode: selectedWhatsAppTemplate.languageCode,
+          name: selectedWhatsAppTemplate.name,
+          ...(components ? { components } : {}),
+        },
+      });
+    };
+    return (
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <Alert
+          className="automation-channel-note"
+          description="WhatsApp resolves the approved template by name and language on the conversation that starts the run. The scenario is not tied to one phone number. Telegram uses an immutable Omnicus template version."
+          message="Channel-compatible template required"
+          showIcon
+          type="info"
+        />
+        <Segmented
+          block
+          onChange={(value) =>
+            value === 'WHATSAPP'
+              ? onChange({ whatsAppTemplate: { languageCode: '', name: '' } })
+              : onChange({ templateId: '', templateVersionId: '' })
+          }
+          options={[
+            { label: 'Telegram', value: 'TELEGRAM' },
+            { label: 'WhatsApp', value: 'WHATSAPP' },
+          ]}
+          value={provider}
+        />
+        {provider === 'WHATSAPP' ? (
+          <>
+            {channels.isError ? (
+              <Alert
+                message={getUserErrorMessage(
+                  channels.error,
+                  'WhatsApp channels could not be loaded.',
+                )}
+                showIcon
+                type="error"
+              />
+            ) : !channels.isLoading && !activeWhatsAppChannels.length ? (
+              <Alert
+                description="Connect and activate a WhatsApp Business number before choosing its approved template catalog."
+                message="No active WhatsApp channel"
+                showIcon
+                type="warning"
+              />
+            ) : null}
+            <Form.Item
+              extra="This number is used only to browse its synced Meta catalog. It is not saved in the scenario."
+              label="Template source"
+            >
+              <Select
+                onChange={setWhatsAppCatalogConnectionId}
+                options={activeWhatsAppChannels.map((channel) => ({
+                  label: `${channel.name} — ${channelAccountLabel(channel)}`,
+                  value: channel.id,
+                }))}
+                optionFilterProp="label"
+                placeholder="Choose a connected WhatsApp number"
+                showSearch
+                value={effectiveWhatsAppCatalogConnectionId ?? null}
+              />
+            </Form.Item>
+            {whatsAppTemplates.isError ? (
+              <Alert
+                message={getUserErrorMessage(
+                  whatsAppTemplates.error,
+                  'Approved WhatsApp templates could not be loaded from this channel.',
+                )}
+                showIcon
+                type="error"
+              />
+            ) : null}
+            <Form.Item
+              extra="At runtime Omnicus requires the same approved template on the WhatsApp number that owns the conversation."
+              label="Approved Meta template"
+            >
+              <Select
+                disabled={!effectiveWhatsAppCatalogConnectionId}
+                loading={whatsAppTemplates.isLoading}
+                onChange={(templateId: string) => {
+                  const template = whatsAppTemplates.data?.find(
+                    (candidate) => candidate.id === templateId,
+                  );
+                  if (!template) return;
+                  onChange({
+                    whatsAppTemplate: {
+                      languageCode: template.languageCode,
+                      name: template.name,
+                    },
+                  });
+                }}
+                options={(whatsAppTemplates.data ?? [])
+                  .filter((template) => template.status === 'APPROVED')
+                  .map((template) => {
+                    const issue = whatsAppTemplateComposerIssue(template);
+                    return {
+                      disabled: Boolean(issue),
+                      label: `${template.name} — ${template.languageCode}${
+                        issue ? ` · ${issue}` : ''
+                      }`,
+                      value: template.id,
+                    };
+                  })}
+                optionFilterProp="label"
+                placeholder="Select an approved template"
+                showSearch
+                value={selectedWhatsAppTemplate?.id ?? null}
+              />
+            </Form.Item>
+            {whatsAppTemplate?.name && !selectedWhatsAppTemplate ? (
+              <Alert
+                message={`“${whatsAppTemplate.name}” (${whatsAppTemplate.languageCode ?? 'unknown language'}) is not approved on this catalog source.`}
+                showIcon
+                type="warning"
+              />
+            ) : null}
+            {parameterSlots.length ? (
+              <div className="automation-whatsapp-template-values">
+                <Typography.Text strong>Template values</Typography.Text>
+                <Typography.Paragraph type="secondary">
+                  Text values may use the same bounded automation variables as message steps. Media
+                  must be an existing private project asset.
+                </Typography.Paragraph>
+                {parameterSlots.map((slot) => (
+                  <Form.Item key={slot.key} label={slot.label} required>
+                    {slot.kind === 'media' ? (
+                      <Select
+                        onChange={(value: string) =>
+                          updateWhatsAppParameters({ ...parameterValues, [slot.key]: value })
+                        }
+                        options={(assets.data ?? [])
+                          .filter(
+                            (asset) =>
+                              asset.status === 'AVAILABLE' &&
+                              asset.validationChannel === 'whatsapp' &&
+                              asset.kind === assetKindForWhatsAppSlot(slot),
+                          )
+                          .map((asset) => ({
+                            label: asset.originalFilename ?? asset.id,
+                            value: asset.id,
+                          }))}
+                        placeholder={`Choose a ${slot.mediaType}`}
+                        value={parameterValues[slot.key] || null}
+                      />
+                    ) : (
+                      <Input
+                        onChange={(event) =>
+                          updateWhatsAppParameters({
+                            ...parameterValues,
+                            [slot.key]: event.target.value,
+                          })
+                        }
+                        placeholder={
+                          slot.kind === 'quick_reply'
+                            ? 'Payload returned when this reply is tapped'
+                            : slot.kind === 'url'
+                              ? 'Dynamic part appended to the approved button URL'
+                              : 'Text or {{contact.variable}}'
+                        }
+                        value={parameterValues[slot.key] ?? ''}
+                      />
+                    )}
+                  </Form.Item>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <Form.Item label="Published template version">
+            <Select
+              onChange={(versionId: string) => {
+                const template = templates.find(
+                  (candidate) => candidate.activeVersion?.id === versionId,
+                );
+                onChange({ templateId: template?.id, templateVersionId: versionId });
+              }}
+              options={templates
+                .filter((template) => template.status === 'PUBLISHED' && template.activeVersion)
+                .map((template) => ({
+                  label: `${template.name} (${template.activeVersion!.kind})`,
+                  value: template.activeVersion!.id,
+                }))}
+              placeholder="Select a published template"
+              showSearch
+              value={typeof config.templateVersionId === 'string' ? config.templateVersionId : null}
+            />
+          </Form.Item>
+        )}
+      </Space>
+    );
+  }
 
   if (nodeType === 'CONDITION')
     return (

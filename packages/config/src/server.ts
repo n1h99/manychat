@@ -206,6 +206,14 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
     REFRESH_TOKEN_TTL_DAYS: positiveIntegerSchema.max(90).default(30),
     SWAGGER_ENABLED: booleanEnvironmentSchema.default(false),
     TRUST_PROXY: trustProxySchema,
+    WHATSAPP_GRAPH_API_VERSION: z
+      .string()
+      .regex(/^v\d+\.\d+$/)
+      .optional(),
+    WHATSAPP_META_APP_ID: z.string().min(1).optional(),
+    WHATSAPP_META_APP_SECRET: z.string().min(16).optional(),
+    WHATSAPP_META_CONFIGURATION_ID: z.string().min(1).optional(),
+    WHATSAPP_META_WEBHOOK_VERIFY_TOKEN: z.string().min(16).optional(),
     ...mediaStorageEnvironment,
   })
   .superRefine((environment, context) => {
@@ -299,6 +307,12 @@ export const workerEnvironmentSchema = serviceEnvironmentSchema
     TELEGRAM_OUTBOUND_LEASE_MS: durationSchema.default(60_000),
     TELEGRAM_OUTBOUND_RECOVERY_BATCH_SIZE: positiveIntegerSchema.max(1_000).default(100),
     TELEGRAM_OUTBOUND_RECOVERY_INTERVAL_MS: durationSchema.default(10_000),
+    WHATSAPP_INBOUND_LEASE_MS: durationSchema.default(60_000),
+    WHATSAPP_INBOUND_RECOVERY_BATCH_SIZE: positiveIntegerSchema.max(1_000).default(100),
+    WHATSAPP_INBOUND_RECOVERY_INTERVAL_MS: durationSchema.default(10_000),
+    WHATSAPP_OUTBOUND_LEASE_MS: durationSchema.default(60_000),
+    WHATSAPP_OUTBOUND_RECOVERY_BATCH_SIZE: positiveIntegerSchema.max(1_000).default(100),
+    WHATSAPP_OUTBOUND_RECOVERY_INTERVAL_MS: durationSchema.default(10_000),
     WORKER_HOST: z.string().min(1).default('0.0.0.0'),
     WORKER_PORT: portSchema.default(3001),
     WORKER_SHUTDOWN_TIMEOUT_MS: durationSchema.default(10_000),

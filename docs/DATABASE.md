@@ -1461,3 +1461,58 @@ executions and explicitly report when that chart source is sampled. Responses
 exclude execution variables, normalized event payloads, node input/output,
 provider payloads, message content and credentials. Only allow-listed contact
 display fields and human-safe error categories leave the API.
+
+## WhatsApp Business Cloud API provider extension
+
+Migration `20260803000100_whatsapp_cloud_api` extends the existing
+provider-neutral channel journal; it does not create a second WhatsApp-only
+message store.
+
+- `OutboxKind.WHATSAPP` separates provider delivery workers without changing
+  the generic `OutboxRecord` state machine.
+- `MessageStatus` adds `DELIVERED`, `READ` and `DELETED`. A successful Graph
+  messages response containing a `wamid` maps to the existing `SENT` state.
+  Provider status callbacks may advance a message monotonically; an older
+  callback is retained as a fact but cannot regress the current message status.
+- `MessageType.INTERACTIVE`, `NormalizedEventType.MESSAGE_STATUS` and
+  `NormalizedEventType.INTERACTIVE` preserve provider-independent WhatsApp
+  button/list replies and delivery events. Unsupported provider types remain
+  explicit `UNSUPPORTED` events/messages rather than being dropped.
+- `MediaAssetSource.WHATSAPP` reuses the private media lifecycle. A provider
+  media ID is connection-scoped; the temporary Meta download URL is never
+  persisted and is fetched only by the authenticated adapter.
+- `Conversation.lastInboundAt` and `serviceWindowExpiresAt` are the durable
+  authority for WhatsApp's customer-service window. Free-form sends require an
+  open window; an approved template is required otherwise. Redis never owns
+  this boundary.
+- `MessageStatusEvent` stores one safe normalized status fact with a stable
+  provider event key, timestamp and optional safe error code. It contains no
+  raw provider error payload or message content.
+- `CrmOperationType.FORWARD_MESSAGE_STATUS` journals every normalized
+  WhatsApp status fact before its provider-neutral CRM callback is attempted.
+- `WhatsAppMessageTemplate` stores the latest safe Meta projection by project,
+  connection, name and language: provider template ID, category, normalized
+  status, normalized components, quality/rejection summary and sync time.
+  Meta remains the status authority. Raw template payloads and credentials are
+  not stored or returned.
+
+`ChannelConnection` remains provider-neutral. WhatsApp access tokens are
+encrypted per connection. Global Meta App secret and webhook verification
+token remain server configuration because Meta signs and verifies the one
+app-level callback before a tenant connection can be resolved. Safe provider
+account/identity IDs are indexed columns: for WhatsApp they mean WABA ID and
+phone-number ID. The unique `(type, providerIdentityId)` mapping lets a verified
+change resolve exactly one project connection without scanning encrypted or
+JSON data. Display phone data, configured Graph API version and webhook state
+live in bounded `webhookMetadata`. No secret is selected into API responses,
+logs or audit metadata.
+
+One Meta webhook delivery may contain changes for several phone numbers and
+projects. After global signature verification the API splits it into exact
+bounded individual message/status/reaction items. Every matched item creates
+its own `RawWebhookEvent` plus one-to-one `InboxRecord`; only that item's
+connection-owned slice is persisted. Unknown phone IDs are acknowledged
+without raw storage. `RawWebhookEvent.externalUpdateId` is the stable
+provider-derived item key, so a retry or another provider envelope cannot
+create a second domain effect. The existing Telegram one-to-one relation and
+semantics remain unchanged.

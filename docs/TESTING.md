@@ -46,6 +46,30 @@ one `crm-history-<messageId>` operation without an automation node, an unlinked
 contact queues one lead bootstrap, and a Telegram reply target is forwarded
 only after same-conversation resolution.
 
+WhatsApp contract and adapter suites additionally cover:
+
+- exact raw-byte `X-Hub-Signature-256` verification and challenge-token
+  rejection without raw/inbox persistence;
+- multi-entry webhook splitting, stable duplicate keys, unknown phone IDs and
+  project/WABA/phone isolation;
+- inbound text, media, voice, contact, location, interactive reply, reaction
+  and safe unsupported placeholders;
+- customer-service-window persistence and the second guard immediately before
+  a free-form provider call;
+- APPROVED connection-scoped template resolution and typed parameters;
+- media MIME/size boundaries, provider-media upload and authenticated temporary
+  download without persisted URLs;
+- `SENT -> DELIVERED -> READ`, duplicate/out-of-order callbacks, safe `FAILED`
+  and timeout/`UNKNOWN` without blind retry;
+- write-only Embedded Signup registration PIN, WABA/phone membership, template
+  sync, mark-as-read and CRM same-bubble status updates;
+- provider-aware automation replies and template-only WhatsApp broadcasts.
+
+Mocks prove deterministic contracts, not Meta acceptance. Embedded Signup,
+number registration, signed delivery, approved-template send and real delivery/
+read receipts remain one combined live gate until dedicated Meta test assets
+are supplied.
+
 Automation tests cover deterministic graph execution, branch selection,
 wait/delay/subflow continuation, immutable published versions and execution
 journaling. Automation Studio 2.2 adds explicit coverage for:

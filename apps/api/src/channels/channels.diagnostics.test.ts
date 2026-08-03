@@ -43,6 +43,7 @@ describe('ChannelsService inbound diagnostics', () => {
       } as never,
       { record: vi.fn() } as never,
       { enqueue: vi.fn() } as never,
+      {} as never,
     );
 
     await expect(service.inboundEvents('project-a', 'connection-a')).resolves.toHaveLength(1);
@@ -51,6 +52,41 @@ describe('ChannelsService inbound diagnostics', () => {
         select: expect.not.objectContaining({ payload: true }),
         take: 20,
         where: { connectionId: 'connection-a', projectId: 'project-a' },
+      }),
+    );
+  });
+
+  it('accepts a project-scoped WhatsApp connection for inbound diagnostics', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = new ChannelsService(
+      {
+        get: vi.fn((name: string) =>
+          name === 'CHANNEL_SECRETS_KEY'
+            ? Buffer.alloc(32, 7).toString('base64')
+            : 'https://api.example.test',
+        ),
+      } as never,
+      {
+        client: {
+          channelConnection: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: 'connection-whatsapp',
+              projectId: 'project-a',
+              type: 'WHATSAPP',
+            }),
+          },
+          rawWebhookEvent: { findMany },
+        },
+      } as never,
+      { record: vi.fn() } as never,
+      { enqueue: vi.fn() } as never,
+      {} as never,
+    );
+
+    await expect(service.inboundEvents('project-a', 'connection-whatsapp')).resolves.toEqual([]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { connectionId: 'connection-whatsapp', projectId: 'project-a' },
       }),
     );
   });

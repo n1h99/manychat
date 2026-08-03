@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiRequest } from './api';
 import { useAuth } from './auth';
+import type { ChannelType } from './channels-api';
+import type { WhatsAppTemplateComponentInput } from './whatsapp-templates-api';
 
 export type BroadcastStatus =
   | 'DRAFT'
@@ -24,10 +26,17 @@ export type Broadcast = {
   id: string;
   projectId: string;
   connectionId: string;
+  channelType?: ChannelType;
   name: string;
   status: BroadcastStatus;
   audience: BroadcastAudience;
   text: string;
+  whatsAppTemplate?: {
+    templateId: string;
+    name?: string;
+    languageCode?: string;
+    components?: WhatsAppTemplateComponentInput[];
+  };
   scheduledAt: string | null;
   startedAt: string | null;
   completedAt: string | null;
@@ -50,6 +59,10 @@ type Input = {
   audience: BroadcastAudience;
   templateVersionId?: string;
   text?: string;
+  whatsAppTemplate?: {
+    templateId: string;
+    components?: WhatsAppTemplateComponentInput[];
+  };
 };
 
 export function useBroadcasts(projectId?: string, archived = false) {

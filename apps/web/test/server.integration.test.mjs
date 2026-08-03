@@ -90,6 +90,20 @@ test('exposes live and ready health endpoints', async () => {
   assert.equal((await ready.json()).data.status, 'ready');
 });
 
+test('allows only the bounded Meta origins required by WhatsApp Embedded Signup', async () => {
+  const response = await fetch(`${baseUrl}/`);
+  const policy = response.headers.get('content-security-policy') ?? '';
+
+  assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin-allow-popups');
+  assert.match(policy, /script-src 'self' https:\/\/connect\.facebook\.net(?:;|$)/);
+  assert.match(
+    policy,
+    /frame-src https:\/\/www\.facebook\.com https:\/\/web\.facebook\.com(?:;|$)/,
+  );
+  assert.match(policy, /connect-src [^;]*https:\/\/graph\.facebook\.com(?:;|$)/);
+  assert.doesNotMatch(policy, /https:\/\/\*\.facebook\.com/);
+});
+
 test('serves a hashed production static asset', async () => {
   const indexResponse = await fetch(`${baseUrl}/`);
   const index = await indexResponse.text();

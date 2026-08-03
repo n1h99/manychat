@@ -30,7 +30,7 @@ const detailLabels: Record<string, string> = {
 
 const newLabels: Record<string, string> = {
   broadcasts: 'New broadcast',
-  channels: 'Connect Telegram',
+  channels: 'Connect a channel',
   scenarios: 'New scenario',
 };
 

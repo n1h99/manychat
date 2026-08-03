@@ -12,7 +12,12 @@ import {
   scenarioGraphSchema,
   simulateScenarioGraph,
   validateScenarioGraph,
+  whatsAppAutomationTemplateSchema,
 } from '@omnicus/automation-core';
+import {
+  assertWhatsAppTemplateComponents,
+  whatsAppTemplateDisabledReason,
+} from '@omnicus/channel-whatsapp';
 import type { CustomFieldType, Prisma } from '@omnicus/database';
 
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -538,6 +543,34 @@ export class AutomationService {
     for (const node of parsed.data.nodes.filter(
       (candidate) => candidate.type === 'SEND_TEMPLATE',
     )) {
+      const whatsAppTemplate = whatsAppAutomationTemplateSchema.safeParse(
+        node.config.whatsAppTemplate,
+      );
+      if (whatsAppTemplate.success) {
+        const candidates = await this.database.client.whatsAppMessageTemplate.findMany({
+          where: {
+            languageCode: whatsAppTemplate.data.languageCode,
+            name: whatsAppTemplate.data.name,
+            projectId,
+            status: 'APPROVED',
+          },
+        });
+        const sendable = candidates.some((template) => {
+          if (whatsAppTemplateDisabledReason(template)) return false;
+          try {
+            assertWhatsAppTemplateComponents(template.components, whatsAppTemplate.data.components);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+        if (!sendable)
+          throw new BadRequestException({
+            code: 'SCENARIO_WHATSAPP_TEMPLATE_INVALID',
+            message: 'Scenario references an unavailable or unsupported WhatsApp template',
+          });
+        continue;
+      }
       const templateId = node.config.templateId;
       const templateVersionId = node.config.templateVersionId;
       if (typeof templateId !== 'string' || typeof templateVersionId !== 'string') continue;

@@ -1,6 +1,6 @@
 # External gate ledger
 
-Status reviewed: 2026-08-02. This file records access-dependent work separately
+Status reviewed: 2026-08-03. This file records access-dependent work separately
 from repository implementation. Supplying credentials never expands product
 scope or authorizes destructive operations.
 
@@ -28,14 +28,18 @@ scope or authorizes destructive operations.
   routing or credential-boundary changes.
 - Verify the final Railway worker outcome for external side effects; a queued
   response is not delivery evidence and `UNKNOWN` is not safe to resend.
+- Supply a reviewed Meta Developer app, Embedded Signup configuration, app
+  secret, webhook verify token, explicit Graph API version, test WABA and test
+  business phone. Then run the combined WhatsApp live acceptance checklist in
+  [WHATSAPP_CLOUD_API.md](WHATSAPP_CLOUD_API.md). Repository implementation and
+  mock/contract verification do not count as live Meta evidence.
 
 ## Deliberately deferred channels
 
-WhatsApp and Instagram are not current blockers. They are intentionally
-deferred because dedicated test accounts have not been created and the user has
-not approved their provider scope. Do not add credentials or implement provider
-fields by analogy.
+Instagram is not a current blocker. It remains intentionally deferred because a
+dedicated test account and provider scope have not been approved. Do not add
+credentials or implement provider fields by analogy.
 
-A future WhatsApp/Instagram slice requires current official provider contracts,
-test business assets/accounts, webhook credentials, consent/template policy,
-rate limits, data-retention ownership and a separate implementation decision.
+A future Instagram slice requires a current official provider contract, test
+business assets, webhook credentials, consent policy, rate limits,
+data-retention ownership and a separate implementation decision.

@@ -5,6 +5,8 @@ import { useNavigate, useParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
 import { useBroadcast, useBroadcastMutations, useBroadcastRecipients } from '../broadcasts-api';
+import { channelAccountLabel, channelProviderLabel } from '../channel-provider';
+import { useChannels } from '../channels-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { StatusText } from '../status-text';
 
@@ -14,6 +16,7 @@ export function BroadcastDetailPage() {
   const [removing, setRemoving] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const query = useBroadcast(projectId, broadcastId);
+  const channels = useChannels(projectId);
   const recipients = useBroadcastRecipients(projectId, broadcastId);
   const access = useProjectAccess(projectId);
   const mutations = useBroadcastMutations(projectId);
@@ -27,6 +30,10 @@ export function BroadcastDetailPage() {
       />
     );
   const broadcast = query.data;
+  const channel = (channels.data ?? []).find(
+    (candidate) => candidate.id === broadcast.connectionId,
+  );
+  const provider = channel ? channelProviderLabel(channel.type) : 'Channel';
   const canLaunch = hasProjectPermission(access.data, 'broadcasts:launch');
   const canCreate = hasProjectPermission(access.data, 'broadcasts:create');
   const canPause = hasProjectPermission(access.data, 'broadcasts:pause');
@@ -75,7 +82,23 @@ export function BroadcastDetailPage() {
         items={[
           { key: 'status', label: 'Status', children: <StatusText status={broadcast.status} /> },
           { key: 'audience', label: 'Audience', children: broadcast.audience.mode },
-          { key: 'text', label: 'Message', children: broadcast.text },
+          {
+            key: 'provider',
+            label: 'Provider',
+            children: channel
+              ? `${provider} — ${channel.name} (${channelAccountLabel(channel)})`
+              : '—',
+          },
+          {
+            key: 'text',
+            label: channel?.type === 'WHATSAPP' ? 'Approved template' : 'Message',
+            children:
+              channel?.type === 'WHATSAPP'
+                ? broadcast.whatsAppTemplate?.name
+                  ? `${broadcast.whatsAppTemplate.name} — ${broadcast.whatsAppTemplate.languageCode ?? 'language saved at creation'}`
+                  : 'WhatsApp template snapshot'
+                : broadcast.text,
+          },
           { key: 'total', label: 'Recipients', children: broadcast.recipientCount },
           {
             key: 'errorCode',
@@ -155,9 +178,11 @@ export function BroadcastDetailPage() {
         columns={[
           { title: 'Contact', dataIndex: ['contact', 'displayName'] },
           {
-            title: 'Telegram',
-            dataIndex: ['channelIdentity', 'username'],
-            render: (value) => value ?? '—',
+            title: provider,
+            render: (_, recipient) =>
+              channel?.type === 'WHATSAPP'
+                ? recipient.channelIdentity.externalUserId
+                : (recipient.channelIdentity.username ?? '—'),
           },
           {
             title: 'Status',

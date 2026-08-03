@@ -662,4 +662,39 @@ describe('CrmOutboundService', () => {
       status: 'SENT',
     });
   });
+
+  it('reports a new WhatsApp retry as QUEUED even while its source message remains FAILED', async () => {
+    const db = database();
+    db.client.outboxRecord.findUnique.mockResolvedValue({
+      id: 'retry-outbox-a',
+      kind: 'WHATSAPP',
+      lastError: null,
+      payload: { messageId: 'message-a', retryOfOperationId: 'failed-outbox-a' },
+      status: 'PENDING',
+    });
+    db.client.message.findUnique.mockResolvedValue({ status: 'FAILED' });
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await expect(
+      service.status('retry-outbox-a', 'cyber-pulse-staging', 'project-a'),
+    ).resolves.toEqual({
+      messageId: 'message-a',
+      operationId: 'retry-outbox-a',
+      status: 'QUEUED',
+    });
+  });
+
+  it('resolves the isolated channel kind before dispatching an explicit retry', async () => {
+    const db = database();
+    db.client.outboxRecord.findUnique.mockResolvedValue({ kind: 'WHATSAPP' });
+    const service = new CrmOutboundService(db as never, { enqueue: vi.fn() } as never);
+
+    await expect(
+      service.operationKind('outbox-a', 'cyber-pulse-staging', 'project-a'),
+    ).resolves.toBe('WHATSAPP');
+    expect(db.client.outboxRecord.findUnique).toHaveBeenCalledWith({
+      select: { kind: true },
+      where: { projectId_id: { id: 'outbox-a', projectId: 'project-a' } },
+    });
+  });
 });

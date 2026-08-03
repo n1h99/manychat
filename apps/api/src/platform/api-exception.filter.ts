@@ -18,6 +18,15 @@ interface HttpErrorResponse {
 }
 
 export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
+  BROADCAST_CONTACTS_REQUIRED: 'This audience mode requires at least one contact',
+  BROADCAST_CONTENT_INVALID: 'Choose a valid broadcast content format',
+  BROADCAST_CONTENT_CHANNEL_MISMATCH: 'The message format does not match this channel',
+  BROADCAST_MUST_BE_STOPPED: 'Stop a running broadcast before archiving',
+  BROADCAST_TAGS_INVALID: 'Audience tags are invalid',
+  BROADCAST_WHATSAPP_COMPONENTS_INVALID: 'Complete every required WhatsApp template field',
+  BROADCAST_WHATSAPP_TEMPLATE_NOT_APPROVED: 'This WhatsApp template is not approved',
+  BROADCAST_WHATSAPP_TEMPLATE_REQUIRED: 'WhatsApp broadcasts require an approved template',
+  BROADCAST_TEMPLATE_REQUIRED: 'Select a template for WhatsApp broadcasts',
   AUTOMATION_IDEMPOTENCY_CONFLICT:
     'This automation request reuses an idempotency key with different data',
   AUTOMATION_RESUME_AT_NOT_ALLOWED: 'A resume time is allowed only for paused automation',
@@ -27,6 +36,7 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   BOT_COMMAND_SCOPE_INVALID: 'The selected bot command scope is invalid',
   BOT_INTERFACE_REVISION_CONFLICT: 'Bot menu settings changed. Refresh them before saving again',
   BOT_MENU_BUTTON_INVALID: 'One or more bot menu buttons are invalid',
+  CHANNEL_NOT_ACTIVE: 'The selected channel is currently not active',
   CHANNEL_IDENTITY_NOT_FOUND: 'The Telegram identity is no longer available for this conversation',
   CONNECTION_NOT_FOUND: 'The Telegram connection was not found',
   CRM_BASE_URL_HTTPS_REQUIRED: 'Enter a public HTTPS CRM address',
@@ -34,6 +44,24 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   CRM_CONNECTION_NOT_FOUND: 'The CRM connection was not found',
   CRM_CONNECTION_NOT_PAIRED: 'Pair this CRM project before continuing',
   CRM_CORRELATION_ID_REQUIRED: 'The CRM request is missing its correlation ID',
+  CRM_CONTACT_NOT_FOUND: 'The CRM contact was not found',
+  CRM_IDEMPOTENCY_CONFLICT: 'This CRM request reuses an idempotency key with different data',
+  CRM_LEAD_MAPPING_CONFLICT:
+    'The CRM lead mapping changed and this request can no longer be processed',
+  CRM_MEDIA_ASSET_NOT_FOUND: 'The requested CRM media asset was not found',
+  CRM_REPLY_MARKUP_CONFLICT: 'Choose only one reply markup type for this message',
+  CRM_RICH_MESSAGE_INVALID: 'The rich Telegram message settings are invalid',
+  CRM_RICH_MESSAGE_MEDIA_INVALID: 'The selected rich-message media is invalid',
+  CRM_RICH_MESSAGE_MEDIA_REFERENCE_MISSING:
+    'The selected rich-message media is no longer available',
+  CRM_STRUCTURED_MESSAGE_CONFLICT: 'Choose only one structured message type',
+  CRM_STRUCTURED_MESSAGE_INVALID: 'The structured Telegram message settings are invalid',
+  CRM_UNKNOWN_RETRY_CONFIRMATION_REQUIRED:
+    'Confirm the unknown delivery result before retrying this CRM operation',
+  CRM_REACTION_INVALID: 'The requested reaction payload is invalid',
+  CRM_REPLY_MESSAGE_NOT_FOUND: 'The referenced reply message was not found',
+  CRM_RETRY_IDEMPOTENCY_CONFLICT: 'The retry request uses a conflicting idempotency key',
+  CRM_STICKER_CAPTION_UNSUPPORTED: 'Sticker captions are not supported in this channel',
   CRM_MEDIA_GROUP_NOT_FOUND: 'The requested media group was not found',
   CRM_OPERATION_NOT_FOUND: 'The CRM operation was not found',
   CRM_OPERATION_NOT_TERMINAL: 'Wait until the CRM operation reaches a final state',
@@ -41,11 +69,19 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   CRM_PROJECT_ROUTE_NOT_FOUND: 'No active CRM route exists for this project',
   CRM_RECURRENCE_END_INVALID: 'Choose a recurrence end after the first scheduled delivery',
   CRM_RECURRENCE_INVALID: 'The recurring schedule settings are invalid',
-  CRM_REPLY_MARKUP_CONFLICT: 'Choose only one reply markup type for this message',
-  CRM_RICH_MESSAGE_INVALID: 'The rich Telegram message settings are invalid',
-  CRM_RICH_MESSAGE_MEDIA_INVALID: 'The selected rich-message media is invalid',
-  CRM_RICH_MESSAGE_MEDIA_REFERENCE_MISSING:
-    'The selected rich-message media is no longer available',
+  CRM_WHATSAPP_CONTENT_INVALID: 'The WhatsApp message content is invalid',
+  CRM_WHATSAPP_INTERACTIVE_INVALID: 'The WhatsApp interactive content is invalid',
+  CRM_WHATSAPP_MEDIA_KIND_UNSUPPORTED: 'The WhatsApp media kind is not supported',
+  CRM_WHATSAPP_MEDIA_VALIDATION_REQUIRED: 'Validate WhatsApp media before sending this message',
+  CRM_WHATSAPP_STRUCTURED_INVALID: 'The WhatsApp structured content is invalid',
+  CRM_WHATSAPP_TELEGRAM_FIELDS_UNSUPPORTED:
+    'Telegram-only fields are not supported for WhatsApp messages',
+  CRM_WHATSAPP_TEMPLATE_COMPONENTS_INVALID: 'Complete every required WhatsApp template field',
+  CRM_WHATSAPP_TEMPLATE_INVALID: 'The WhatsApp template payload is invalid',
+  CRM_WHATSAPP_TEMPLATE_NOT_APPROVED: 'This WhatsApp template is not approved',
+  CRM_WHATSAPP_TEMPLATE_PARAMETER_INVALID: 'The WhatsApp template parameter is invalid',
+  CRM_WHATSAPP_TEMPLATE_UNSUPPORTED: 'This WhatsApp template is unsupported',
+  MARK_READ_CHANNEL_UNSUPPORTED: 'Mark-as-read is unsupported for this channel',
   CRM_SCHEDULE_ALREADY_PROCESSING: 'This scheduled message is already being processed',
   CRM_SCHEDULE_IDEMPOTENCY_CONFLICT:
     'This scheduling request reuses an idempotency key with different data',
@@ -54,10 +90,6 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   CRM_SCHEDULE_REVISION_CONFLICT: 'The scheduled message changed. Refresh it before saving again',
   CRM_SCHEDULE_TIME_INVALID: 'Choose a valid future delivery time',
   CRM_SCHEDULE_TIMEZONE_INVALID: 'Choose a valid timezone for the scheduled message',
-  CRM_STRUCTURED_MESSAGE_CONFLICT: 'Choose only one structured message type',
-  CRM_STRUCTURED_MESSAGE_INVALID: 'The structured Telegram message settings are invalid',
-  CRM_UNKNOWN_RETRY_CONFIRMATION_REQUIRED:
-    'Confirm the unknown delivery result before retrying this CRM operation',
   DRAFT_CONTENT_CONFLICT: 'Choose only one draft content format',
   GLOBAL_ROLE_NOT_FOUND: 'The selected global role was not found',
   IDEMPOTENCY_CONFLICT: 'This request reuses an idempotency key with different data',
@@ -84,6 +116,10 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   OPERATION_PAYLOAD_INVALID: 'The saved operation data is invalid and cannot be retried safely',
   OPERATION_RECONCILIATION_UNAVAILABLE:
     'This provider outcome cannot be reconciled from the generic operations screen',
+  OPERATION_MESSAGE_NOT_FOUND: 'The referenced operation message was not found',
+  OPERATION_ROUTE_INVALID: 'The requested operation route is invalid',
+  OUTBOUND_RECIPIENT_REQUIRED: 'Choose at least one outbound recipient',
+  REACTION_INVALID: 'The reaction request is invalid',
   PASSWORD_RESET_INVALID: 'This password reset link is invalid, expired or already used',
   PROJECT_MEMBER_EXISTS: 'This user is already a member of the project',
   PROJECT_ROLE_NOT_FOUND: 'The selected project role was not found',
@@ -98,6 +134,11 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   SYSTEM_ROLE_IMMUTABLE: 'Built-in system roles cannot be edited or deleted',
   UNKNOWN_REQUIRES_RECONCILIATION:
     'Reconcile the unknown delivery result before attempting a retry',
+  WHATSAPP_CONFIGURATION_INCOMPLETE: 'WhatsApp configuration is incomplete',
+  WHATSAPP_CONFIGURATION_INVALID: 'The WhatsApp configuration is invalid',
+  WHATSAPP_REACTION_INVALID: 'The WhatsApp reaction emoji is invalid',
+  WHATSAPP_READ_TARGET_INVALID: 'The WhatsApp read target message is invalid',
+  WHATSAPP_SCHEDULING_UNSUPPORTED: 'WhatsApp scheduling is not supported',
   USER_NOT_FOUND: 'The selected user was not found',
 };
 

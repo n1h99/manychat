@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import type { WorkerEnvironment } from '@omnicus/config/server';
 import { ChannelSecretsService, type EncryptedSecretEnvelope } from '@omnicus/channel-secrets';
 import { TelegramAdapter, TelegramHttpTransport } from '@omnicus/channel-telegram';
+import { assertWhatsAppMedia, WhatsAppApiError, WhatsAppCloudApi } from '@omnicus/channel-whatsapp';
 import {
   CrmClientError,
   type CrmClient,
@@ -22,6 +23,7 @@ import {
   type CrmMediaInput,
   type CrmReactionActorInput,
   type CrmReactionInput,
+  type ForwardMessageStatusInput,
 } from '@omnicus/crm-core';
 import { Prisma } from '@omnicus/database';
 import { prepareMediaForTelegram, S3MediaStorage, type MediaKind } from '@omnicus/media-core';
@@ -40,6 +42,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
   private readonly secrets: ChannelSecretsService;
   private readonly storage: S3MediaStorage | undefined;
   private readonly telegram = new TelegramAdapter(new TelegramHttpTransport());
+  private readonly whatsApp = new WhatsAppCloudApi();
   private timer: NodeJS.Timeout | undefined;
   private scanning = false;
 
@@ -170,7 +173,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           include: {
             channelIdentities: {
               orderBy: { createdAt: 'asc' },
-              where: { channel: 'TELEGRAM' },
+              where: { channel: { in: ['TELEGRAM', 'WHATSAPP'] } },
             },
             customFieldValues: {
               include: { definition: { select: { key: true } } },
@@ -219,10 +222,9 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       operation.normalizedEvent?.connectionId ??
       operation.message?.connectionId ??
       this.stringProperty(operation.inputSafe, 'connectionId');
-    const identityRow =
-      operation.contact.channelIdentities.find(
-        (identity) => identity.connectionId === connectionId,
-      ) ?? operation.contact.channelIdentities[0];
+    const identityRow = operation.contact.channelIdentities.find(
+      (identity) => identity.connectionId === connectionId,
+    );
     if (!identityRow) {
       await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_channel_identity_missing');
       return;
@@ -233,7 +235,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       operation.message?.conversation.externalChatId ??
       this.stringProperty(operation.normalizedEvent?.payload, 'chatId');
     const identity: CrmIdentityInput = {
-      channel: 'telegram',
+      channel: identityRow.channel === 'WHATSAPP' ? 'whatsapp' : 'telegram',
       channelIdentityId: identityRow.id,
       connectionId: identityRow.connectionId,
       ...(externalChatId ? { externalChatId } : {}),
@@ -248,22 +250,27 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       idempotencyKey: outboxRecordId,
       projectId: operation.projectId,
     };
+    const inboundReplyToMessageId = this.stringProperty(
+      operation.normalizedEvent?.message?.metadata,
+      'replyToMessageId',
+    );
     const interactive =
       operation.type === 'FORWARD_INBOUND_MESSAGE'
         ? await this.interactive(
             operation.projectId,
             connectionId,
             operation.normalizedEvent?.payload,
+            inboundReplyToMessageId,
           )
         : undefined;
+    const inboundContent = operation.normalizedEvent?.message?.content;
+    const location = this.inboundLocation(inboundContent);
+    const whatsAppContacts = this.inboundWhatsAppContacts(inboundContent);
     const inboundText =
-      this.messageText(operation.normalizedEvent?.message?.content) ??
-      interactive?.displayText ??
-      interactive?.data;
-    const inboundReplyToMessageId = this.stringProperty(
-      operation.normalizedEvent?.message?.metadata,
-      'replyToMessageId',
-    );
+      this.messageText(inboundContent) ??
+      (interactive?.type === 'callback_query'
+        ? (interactive.displayText ?? interactive.data)
+        : interactive?.title);
 
     try {
       let result;
@@ -284,6 +291,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           contactId: operation.contact.id,
           identity,
           ...(interactive ? { interactive } : {}),
+          ...(location ? { location } : {}),
           ...(await this.media(
             operation.projectId,
             connectionId,
@@ -299,6 +307,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           ...(inboundReplyToMessageId ? { replyToMessageId: inboundReplyToMessageId } : {}),
           senderName: operation.contact.displayName,
           ...(inboundText === undefined ? {} : { text: inboundText }),
+          ...(whatsAppContacts ? { whatsAppContacts } : {}),
         });
       else if (operation.type === 'FORWARD_REACTION_EVENT') {
         const reaction = this.reactionEvent(operation.normalizedEvent?.payload);
@@ -376,6 +385,22 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           ...state,
           contactId: operation.contact.id,
           identity,
+        });
+      } else if (operation.type === 'FORWARD_MESSAGE_STATUS') {
+        if (!this.client.forwardMessageStatus) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_message_status_unsupported');
+          return;
+        }
+        const status = this.messageStatusEvent(operation.inputSafe);
+        if (!status) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_message_status_invalid');
+          return;
+        }
+        result = await this.client.forwardMessageStatus(context, {
+          ...status,
+          contactId: operation.contact.id,
+          identity,
+          normalizedEventId: operation.normalizedEventId ?? operation.id,
         });
       } else {
         const message = operation.message;
@@ -512,7 +537,8 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
         | 'FORWARD_REACTION_EVENT'
         | 'FORWARD_MESSAGE_EDIT'
         | 'FORWARD_CONTACT_SHARE'
-        | 'FORWARD_AUTOMATION_STATE';
+        | 'FORWARD_AUTOMATION_STATE'
+        | 'FORWARD_MESSAGE_STATUS';
     },
     outboxRecordId: string,
     leaseToken: string,
@@ -682,6 +708,32 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
   private stringProperty(value: Prisma.JsonValue | undefined, key: string): string | undefined {
     const candidate = this.jsonRecord(value)?.[key];
     return typeof candidate === 'string' ? candidate : undefined;
+  }
+
+  private messageStatusEvent(
+    value: Prisma.JsonValue | null | undefined,
+  ): Omit<ForwardMessageStatusInput, 'contactId' | 'identity' | 'normalizedEventId'> | undefined {
+    const input = this.jsonRecord(value);
+    if (
+      !input ||
+      typeof input.messageId !== 'string' ||
+      typeof input.occurredAt !== 'string' ||
+      !['SENT', 'DELIVERED', 'READ', 'FAILED', 'DELETED', 'UNKNOWN'].includes(
+        String(input.status),
+      ) ||
+      (!['FAILED', 'UNKNOWN'].includes(String(input.status)) &&
+        typeof input.providerMessageId !== 'string')
+    )
+      return undefined;
+    return {
+      messageId: input.messageId,
+      occurredAt: input.occurredAt,
+      ...(typeof input.providerMessageId === 'string'
+        ? { providerMessageId: input.providerMessageId }
+        : {}),
+      status: input.status as 'DELETED' | 'DELIVERED' | 'FAILED' | 'READ' | 'SENT' | 'UNKNOWN',
+      ...(typeof input.errorCode === 'string' ? { errorCode: input.errorCode } : {}),
+    };
   }
 
   private reactionEvent(payload: Prisma.JsonValue | undefined):
@@ -958,7 +1010,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       current.connectionId === connectionId &&
       current.providerMediaId
     )
-      current = await this.materializeTelegramMedia(projectId, connectionId, current);
+      current = await this.materializeProviderMedia(projectId, connectionId, current);
     const providerMetadata = this.jsonRecord(current.providerMetadata);
     const size =
       current.sizeBytes !== null && current.sizeBytes <= BigInt(Number.MAX_SAFE_INTEGER)
@@ -979,6 +1031,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     return {
       media: {
         assetId: current.id,
+        availability: current.status === 'AVAILABLE' ? 'available' : 'unavailable',
         ...download,
         ...(current.originalFilename ? { fileName: current.originalFilename } : {}),
         ...((current.detectedMimeType ?? current.declaredMimeType)
@@ -992,6 +1045,9 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
           : {}),
         ...(typeof providerMetadata?.setName === 'string'
           ? { setName: providerMetadata.setName }
+          : {}),
+        ...(typeof providerMetadata?.materializationFailure === 'string'
+          ? { unavailableReason: providerMetadata.materializationFailure }
           : {}),
         kind: current.kind as CrmMediaInput['kind'],
         type:
@@ -1012,10 +1068,29 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     projectId: string,
     connectionId: string | null | undefined,
     payload: Prisma.JsonValue | undefined,
+    sourceMessageId?: string,
   ): Promise<CrmInteractiveInput | undefined> {
     if (!connectionId || !payload || typeof payload !== 'object' || Array.isArray(payload))
       return undefined;
     const normalized = payload as Record<string, unknown>;
+    const whatsAppInteractive = this.jsonRecord(
+      normalized.interactive as Prisma.JsonValue | undefined,
+    );
+    if (
+      whatsAppInteractive &&
+      (whatsAppInteractive.type === 'button_reply' || whatsAppInteractive.type === 'list_reply') &&
+      typeof whatsAppInteractive.id === 'string' &&
+      typeof whatsAppInteractive.title === 'string'
+    )
+      return {
+        ...(typeof whatsAppInteractive.description === 'string'
+          ? { description: whatsAppInteractive.description }
+          : {}),
+        id: whatsAppInteractive.id,
+        ...(sourceMessageId ? { sourceMessageId } : {}),
+        title: whatsAppInteractive.title,
+        type: whatsAppInteractive.type,
+      };
     const content =
       normalized.content &&
       typeof normalized.content === 'object' &&
@@ -1065,6 +1140,92 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       ...(source?.id ? { sourceMessageId: source.id } : {}),
       type: 'callback_query',
     };
+  }
+
+  private inboundLocation(value: Prisma.JsonValue | undefined):
+    | {
+        address?: string;
+        latitude: number;
+        longitude: number;
+        name?: string;
+        url?: string;
+      }
+    | undefined {
+    const input = this.jsonRecord(value);
+    if (!input || typeof input.latitude !== 'number' || typeof input.longitude !== 'number') return;
+    if (
+      !Number.isFinite(input.latitude) ||
+      !Number.isFinite(input.longitude) ||
+      input.latitude < -90 ||
+      input.latitude > 90 ||
+      input.longitude < -180 ||
+      input.longitude > 180
+    )
+      return;
+    return {
+      ...(typeof input.address === 'string' ? { address: input.address } : {}),
+      latitude: input.latitude,
+      longitude: input.longitude,
+      ...(typeof input.name === 'string' ? { name: input.name } : {}),
+      ...(typeof input.url === 'string' ? { url: input.url } : {}),
+    };
+  }
+
+  private inboundWhatsAppContacts(value: Prisma.JsonValue | undefined):
+    | {
+        contacts: Array<{
+          emails: Array<{ email: string; type?: string }>;
+          name: { firstName?: string; formattedName: string; lastName?: string };
+          phones: Array<{ phone: string; type?: string; waId?: string }>;
+        }>;
+      }
+    | undefined {
+    const source = this.jsonRecord(value);
+    if (!Array.isArray(source?.contacts)) return;
+    const contacts = source.contacts.slice(0, 20).flatMap((candidate) => {
+      const contact = this.jsonRecord(candidate as Prisma.JsonValue);
+      const name = this.jsonRecord(contact?.name as Prisma.JsonValue | undefined);
+      if (!contact || typeof name?.formattedName !== 'string') return [];
+      const emails = Array.isArray(contact.emails)
+        ? contact.emails.slice(0, 20).flatMap((candidateEmail) => {
+            const email = this.jsonRecord(candidateEmail as Prisma.JsonValue);
+            return typeof email?.email === 'string'
+              ? [
+                  {
+                    email: email.email,
+                    ...(typeof email.type === 'string' ? { type: email.type } : {}),
+                  },
+                ]
+              : [];
+          })
+        : [];
+      const phones = Array.isArray(contact.phones)
+        ? contact.phones.slice(0, 20).flatMap((candidatePhone) => {
+            const phone = this.jsonRecord(candidatePhone as Prisma.JsonValue);
+            return typeof phone?.phone === 'string'
+              ? [
+                  {
+                    phone: phone.phone,
+                    ...(typeof phone.type === 'string' ? { type: phone.type } : {}),
+                    ...(typeof phone.waId === 'string' ? { waId: phone.waId } : {}),
+                  },
+                ]
+              : [];
+          })
+        : [];
+      return [
+        {
+          emails,
+          name: {
+            ...(typeof name.firstName === 'string' ? { firstName: name.firstName } : {}),
+            formattedName: name.formattedName,
+            ...(typeof name.lastName === 'string' ? { lastName: name.lastName } : {}),
+          },
+          phones,
+        },
+      ];
+    });
+    return contacts.length ? { contacts } : undefined;
   }
 
   private callbackLabel(
@@ -1165,5 +1326,182 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       });
       return asset;
     }
+  }
+
+  private async materializeProviderMedia(
+    projectId: string,
+    connectionId: string,
+    asset: Parameters<CrmOutboxService['materializeTelegramMedia']>[2],
+  ): Promise<typeof asset> {
+    const connection = await this.database.client.channelConnection.findUnique({
+      select: { type: true },
+      where: { projectId_id: { id: connectionId, projectId } },
+    });
+    if (!connection)
+      return this.markWhatsAppMediaUnavailable(projectId, asset, 'connection_unavailable');
+    if (connection.type === 'WHATSAPP')
+      return this.materializeWhatsAppMedia(projectId, connectionId, asset);
+    if (connection.type === 'TELEGRAM')
+      return this.materializeTelegramMedia(projectId, connectionId, asset);
+    return this.markWhatsAppMediaUnavailable(projectId, asset, 'connection_unsupported');
+  }
+
+  private async materializeWhatsAppMedia(
+    projectId: string,
+    connectionId: string,
+    asset: Parameters<CrmOutboxService['materializeTelegramMedia']>[2],
+  ): Promise<typeof asset> {
+    if (!this.storage)
+      throw new CrmClientError('RETRYABLE_FAILURE', 'crm_media_storage_unavailable');
+    if (!asset.providerMediaId)
+      return this.markWhatsAppMediaUnavailable(projectId, asset, 'provider_media_id_missing');
+    const connection = await this.database.client.channelConnection.findUnique({
+      where: { projectId_id: { id: connectionId, projectId } },
+    });
+    const metadata = this.jsonRecord(connection?.webhookMetadata);
+    const credentials = this.jsonRecord(connection?.credentialsEncrypted);
+    const envelope = this.jsonRecord(
+      credentials?.accessToken as Prisma.JsonValue | undefined,
+    ) as unknown as EncryptedSecretEnvelope | undefined;
+    if (
+      !connection ||
+      connection.type !== 'WHATSAPP' ||
+      !envelope ||
+      typeof metadata?.graphApiVersion !== 'string'
+    )
+      return this.markWhatsAppMediaUnavailable(projectId, asset, 'connection_unavailable');
+    let token: string;
+    try {
+      token = this.secrets.decryptSecret({
+        channelConnectionId: connection.id,
+        channelType: 'whatsapp',
+        envelope,
+        field: 'accessToken',
+        projectId,
+      });
+    } catch {
+      return this.markWhatsAppMediaUnavailable(projectId, asset, 'credentials_invalid');
+    }
+    let downloaded: Awaited<ReturnType<WhatsAppCloudApi['downloadMedia']>>;
+    try {
+      downloaded = await this.whatsApp.downloadMedia({
+        accessToken: token,
+        graphApiVersion: metadata.graphApiVersion,
+        maximumBytes: this.maximumMediaBytes,
+        mediaId: asset.providerMediaId,
+      });
+    } catch (error) {
+      if (error instanceof WhatsAppApiError && error.status >= 400 && error.status < 500)
+        return this.markWhatsAppMediaUnavailable(
+          projectId,
+          asset,
+          error.status === 413 ? 'too_large' : 'provider_rejected',
+        );
+      throw new CrmClientError('RETRYABLE_FAILURE', 'crm_whatsapp_media_download_retryable');
+    }
+    const contentType = (downloaded.contentType ?? asset.declaredMimeType)
+      ?.split(';')[0]
+      ?.trim()
+      .toLowerCase();
+    const providerKind =
+      asset.kind === 'PHOTO'
+        ? 'image'
+        : ['AUDIO', 'VOICE'].includes(asset.kind)
+          ? 'audio'
+          : asset.kind === 'DOCUMENT'
+            ? 'document'
+            : asset.kind === 'STICKER'
+              ? 'sticker'
+              : asset.kind === 'VIDEO'
+                ? 'video'
+                : undefined;
+    if (!contentType || !providerKind)
+      return this.markWhatsAppMediaUnavailable(projectId, asset, 'unsupported');
+    try {
+      assertWhatsAppMedia(providerKind, contentType, downloaded.bytes.byteLength, downloaded.bytes);
+    } catch {
+      return this.markWhatsAppMediaUnavailable(projectId, asset, 'unsupported_or_too_large');
+    }
+    const providerMetadata = this.jsonRecord(asset.providerMetadata);
+    if (
+      typeof providerMetadata?.sha256 === 'string' &&
+      createHash('sha256').update(downloaded.bytes).digest('base64') !== providerMetadata.sha256
+    )
+      return this.markWhatsAppMediaUnavailable(projectId, asset, 'checksum_mismatch');
+    const extension = this.whatsAppExtension(contentType);
+    if (!extension) return this.markWhatsAppMediaUnavailable(projectId, asset, 'unsupported');
+    const bucketKey = `${projectId}/whatsapp/${asset.id}.${extension}`;
+    try {
+      await this.storage.putObject(bucketKey, downloaded.bytes, contentType, {
+        assetId: asset.id,
+        projectId,
+      });
+      return await this.database.client.mediaAsset.update({
+        data: {
+          availableAt: new Date(),
+          bucketKey,
+          checksumSha256: createHash('sha256').update(downloaded.bytes).digest('hex'),
+          detectedMimeType: contentType,
+          extension,
+          providerMetadata: {
+            ...(providerMetadata ?? {}),
+            materializedFromWhatsApp: true,
+          },
+          retentionUntil: new Date(Date.now() + this.mediaRetentionDays * 86_400_000),
+          sizeBytes: BigInt(downloaded.bytes.byteLength),
+          status: 'AVAILABLE',
+        },
+        where: { projectId_id: { id: asset.id, projectId } },
+      });
+    } catch (error) {
+      if (error instanceof CrmClientError) throw error;
+      throw new CrmClientError('RETRYABLE_FAILURE', 'crm_whatsapp_media_storage_retryable');
+    }
+  }
+
+  private async markWhatsAppMediaUnavailable(
+    projectId: string,
+    asset: Parameters<CrmOutboxService['materializeTelegramMedia']>[2],
+    reason: string,
+  ): Promise<typeof asset> {
+    try {
+      const providerMetadata = this.jsonRecord(asset.providerMetadata);
+      return await this.database.client.mediaAsset.update({
+        data: {
+          providerMetadata: {
+            ...(providerMetadata ?? {}),
+            materializationFailure: reason,
+          },
+          status: 'UNAVAILABLE',
+        },
+        where: { projectId_id: { id: asset.id, projectId } },
+      });
+    } catch {
+      throw new CrmClientError('RETRYABLE_FAILURE', 'crm_media_state_persistence_retryable');
+    }
+  }
+
+  private whatsAppExtension(contentType: string): string | undefined {
+    const extensions: Readonly<Record<string, string>> = {
+      'application/msword': 'doc',
+      'application/pdf': 'pdf',
+      'application/vnd.ms-excel': 'xls',
+      'application/vnd.ms-powerpoint': 'ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'audio/aac': 'aac',
+      'audio/amr': 'amr',
+      'audio/mp4': 'm4a',
+      'audio/mpeg': 'mp3',
+      'audio/ogg': 'ogg',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'text/plain': 'txt',
+      'video/3gpp': '3gp',
+      'video/mp4': 'mp4',
+    };
+    return extensions[contentType];
   }
 }

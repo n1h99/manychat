@@ -26,6 +26,7 @@
     "@omnicus/automation-http": "workspace:*",
     "@omnicus/channel-secrets": "workspace:*",
     "@omnicus/channel-telegram": "workspace:*",
+    "@omnicus/channel-whatsapp": "workspace:*",
     "@omnicus/config": "workspace:*",
     "@omnicus/contracts": "workspace:*",
     "@omnicus/database": "workspace:*",

@@ -22,6 +22,8 @@ import { useNavigate, useParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
 import { type Broadcast, useBroadcastMutations, useBroadcasts } from '../broadcasts-api';
+import { channelProviderLabel } from '../channel-provider';
+import { useChannels } from '../channels-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { StatusText } from '../status-text';
 
@@ -31,6 +33,7 @@ export function BroadcastsPage() {
   const access = useProjectAccess(projectId);
   const [view, setView] = useState<'active' | 'archived'>('active');
   const query = useBroadcasts(projectId, view === 'archived');
+  const channels = useChannels(projectId);
   const canCreate = hasProjectPermission(access.data, 'broadcasts:create');
   const canPause = hasProjectPermission(access.data, 'broadcasts:pause');
   const canArchive = hasProjectPermission(access.data, 'broadcasts:cancel');
@@ -55,7 +58,7 @@ export function BroadcastsPage() {
         <div>
           <Typography.Title level={2}>Broadcasts</Typography.Title>
           <Typography.Text type="secondary">
-            Telegram broadcasts with an immutable recipient snapshot.
+            Telegram and WhatsApp broadcasts with an immutable recipient snapshot.
           </Typography.Text>
         </div>
         {canCreate ? (
@@ -90,6 +93,16 @@ export function BroadcastsPage() {
         className={`archive-state-table query-transition-table${query.isPlaceholderData ? ' is-query-updating' : ''}`}
         columns={[
           { dataIndex: 'name', ellipsis: true, title: 'Name', width: 390 },
+          {
+            render: (_, broadcast) => {
+              const channel = (channels.data ?? []).find(
+                (candidate) => candidate.id === broadcast.connectionId,
+              );
+              return channel ? channelProviderLabel(channel.type) : '—';
+            },
+            title: 'Provider',
+            width: 130,
+          },
           {
             dataIndex: 'status',
             render: (value) => <StatusText status={value} />,

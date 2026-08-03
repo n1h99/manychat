@@ -9,12 +9,17 @@ import {
   matchesWaitForReplyCriteria,
   scenarioGraphSchema,
   waitForReplyCriteriaSchema,
+  whatsAppAutomationTemplateSchema,
   type ConditionOperator,
   type ScenarioGraph,
   type ScenarioGraphEdge,
   type ScenarioGraphNode,
 } from '@omnicus/automation-core';
 import { Prisma, type CustomFieldType } from '@omnicus/database';
+import {
+  assertWhatsAppTemplateComponents,
+  whatsAppTemplateDisabledReason,
+} from '@omnicus/channel-whatsapp';
 import { renderTemplate } from '@omnicus/media-core';
 
 import { DatabaseService } from '../database/database.service';
@@ -827,8 +832,28 @@ export class AutomationRuntimeService {
     context: RuntimeContext,
     executionId: string,
   ): Promise<Prisma.InputJsonObject> {
+    const connection = await transaction.channelConnection.findUnique({
+      select: { id: true, status: true, type: true },
+      where: { projectId_id: { id: context.connectionId, projectId: context.projectId } },
+    });
+    if (
+      !connection ||
+      connection.status !== 'ACTIVE' ||
+      !['TELEGRAM', 'WHATSAPP'].includes(connection.type)
+    )
+      throw new Error('automation_channel_connection_unavailable');
+    const channelType = connection.type === 'WHATSAPP' ? 'WHATSAPP' : 'TELEGRAM';
+    const whatsAppTemplate = whatsAppAutomationTemplateSchema.safeParse(
+      node.config.whatsAppTemplate,
+    );
+    if (channelType === 'WHATSAPP' && node.type === 'SEND_TEMPLATE' && !whatsAppTemplate.success)
+      throw new Error('automation_whatsapp_template_invalid');
+    if (channelType === 'TELEGRAM' && whatsAppTemplate.success)
+      throw new Error('automation_template_channel_mismatch');
     const templateVersionId =
-      typeof node.config.templateVersionId === 'string' ? node.config.templateVersionId : undefined;
+      channelType === 'TELEGRAM' && typeof node.config.templateVersionId === 'string'
+        ? node.config.templateVersionId
+        : undefined;
     const templateVersion = templateVersionId
       ? await transaction.messageTemplateVersion.findFirst({
           where: {
@@ -849,25 +874,67 @@ export class AutomationRuntimeService {
         }
       | undefined;
     const sourceText =
-      templateVersion?.kind === 'TEXT'
-        ? templateContent?.text
-        : templateVersion
-          ? (templateContent?.caption ?? '')
-          : typeof node.config.text === 'string'
-            ? node.config.text
-            : undefined;
-    if (sourceText === undefined || sourceText.trim().length === 0)
+      channelType === 'WHATSAPP' && whatsAppTemplate.success
+        ? undefined
+        : templateVersion?.kind === 'TEXT'
+          ? templateContent?.text
+          : templateVersion
+            ? (templateContent?.caption ?? '')
+            : typeof node.config.text === 'string'
+              ? node.config.text
+              : undefined;
+    if (!whatsAppTemplate.success && (sourceText === undefined || sourceText.trim().length === 0))
       throw new Error('automation_message_content_missing');
-    const rendered = renderTemplate(sourceText, {
+    const variables = {
       ...this.object(context.variables),
       contact: context.contactVariables,
       event: context.eventPayload,
       nodes: this.object(context.variables).nodes,
       variables: context.variables,
-    });
-    if (rendered.missing.length) throw new Error('automation_template_variable_missing');
+    };
+    const rendered = sourceText === undefined ? undefined : renderTemplate(sourceText, variables);
+    if (rendered?.missing.length) throw new Error('automation_template_variable_missing');
+    let renderedWhatsAppTemplate: Prisma.InputJsonObject | undefined;
+    if (whatsAppTemplate.success) {
+      const components = whatsAppTemplate.data.components?.map((component) => ({
+        ...component,
+        parameters: component.parameters.map((parameter) => {
+          if (parameter.type === 'text') {
+            const value = renderTemplate(parameter.text, variables);
+            if (value.missing.length) throw new Error('automation_template_variable_missing');
+            return { ...parameter, text: value.output };
+          }
+          return parameter;
+        }),
+      }));
+      const approved = await transaction.whatsAppMessageTemplate.findUnique({
+        where: {
+          projectId_connectionId_name_languageCode: {
+            connectionId: context.connectionId,
+            languageCode: whatsAppTemplate.data.languageCode,
+            name: whatsAppTemplate.data.name,
+            projectId: context.projectId,
+          },
+        },
+      });
+      if (!approved || approved.status !== 'APPROVED')
+        throw new Error('automation_whatsapp_template_not_approved');
+      if (whatsAppTemplateDisabledReason(approved))
+        throw new Error('automation_whatsapp_template_unsupported');
+      try {
+        assertWhatsAppTemplateComponents(approved.components, components);
+      } catch {
+        throw new Error('automation_whatsapp_template_components_invalid');
+      }
+      renderedWhatsAppTemplate = {
+        ...(components ? { components: components as Prisma.InputJsonValue[] } : {}),
+        languageCode: approved.languageCode,
+        name: approved.name,
+      };
+    }
     const identity = await transaction.channelIdentity.findFirst({
       where: {
+        channel: channelType,
         connectionId: context.connectionId,
         contactId: context.contactId,
         projectId: context.projectId,
@@ -875,6 +942,19 @@ export class AutomationRuntimeService {
       },
     });
     if (!identity) throw new Error('automation_channel_identity_unavailable');
+    if (channelType === 'WHATSAPP' && !renderedWhatsAppTemplate) {
+      const conversation = await transaction.conversation.findUnique({
+        select: { serviceWindowExpiresAt: true },
+        where: {
+          projectId_id: { id: context.conversationId, projectId: context.projectId },
+        },
+      });
+      if (
+        !conversation?.serviceWindowExpiresAt ||
+        conversation.serviceWindowExpiresAt <= new Date()
+      )
+        throw new Error('automation_whatsapp_service_window_closed');
+    }
     const idempotencyKey = `automation-${executionId}-${node.id}`;
     const existing = await transaction.outboxRecord.findUnique({
       where: { projectId_idempotencyKey: { idempotencyKey, projectId: context.projectId } },
@@ -891,10 +971,11 @@ export class AutomationRuntimeService {
       data: {
         connectionId: context.connectionId,
         contactId: context.contactId,
-        content:
-          templateVersion && templateVersion.kind !== 'TEXT'
-            ? { caption: rendered.output }
-            : { text: rendered.output },
+        content: renderedWhatsAppTemplate
+          ? { whatsAppTemplate: renderedWhatsAppTemplate }
+          : templateVersion && templateVersion.kind !== 'TEXT'
+            ? { caption: rendered!.output }
+            : { text: rendered!.output },
         conversationId: context.conversationId,
         direction: 'OUTBOUND',
         mediaAssetId: templateVersion?.mediaAssetId ?? null,
@@ -913,13 +994,14 @@ export class AutomationRuntimeService {
         },
         projectId: context.projectId,
         status: 'QUEUED',
-        type: templateVersion?.kind ?? 'TEXT',
+        type: renderedWhatsAppTemplate ? 'TEXT' : (templateVersion?.kind ?? 'TEXT'),
       },
     });
     const outbox = await transaction.outboxRecord.create({
       data: {
         connectionId: context.connectionId,
         idempotencyKey,
+        kind: channelType,
         nextAttemptAt: new Date(),
         payload: { channelIdentityId: identity.id, messageId: message.id },
         projectId: context.projectId,

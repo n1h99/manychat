@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import {
   MediaValidationError,
   prepareMediaForTelegram,
+  prepareMediaForWhatsApp,
   renderMessageTemplateContent,
   renderTemplate,
   validateMedia,
@@ -372,6 +373,78 @@ describe('media validation', () => {
         maximumBytes: 1_000,
       }),
     ).toThrow(expect.objectContaining({ code: 'media_zip_structure_invalid' }));
+  });
+});
+
+describe('WhatsApp media validation', () => {
+  const webpSticker = (animated: boolean) => {
+    const bytes = new Uint8Array(30);
+    bytes.set([0x52, 0x49, 0x46, 0x46], 0);
+    bytes.set([0x57, 0x45, 0x42, 0x50], 8);
+    bytes.set([0x56, 0x50, 0x38, 0x58], 12);
+    bytes[20] = animated ? 0x02 : 0;
+    bytes.set([0xff, 0x01, 0], 24);
+    bytes.set([0xff, 0x01, 0], 27);
+    return bytes;
+  };
+
+  it('accepts a positively identified OGG/Opus audio file', async () => {
+    const bytes = Buffer.from('OggS\u0000\u0000\u0000\u0000OpusHead', 'binary');
+    await expect(
+      prepareMediaForWhatsApp({
+        bytes,
+        declaredMimeType: 'audio/ogg',
+        filename: 'voice.ogg',
+        kind: 'VOICE',
+        maximumBytes: 20 * 1024 * 1024,
+      }),
+    ).resolves.toMatchObject({ mimeType: 'audio/ogg', transformed: false });
+  });
+
+  it('rejects an OGG container that cannot be identified as Opus', async () => {
+    await expect(
+      prepareMediaForWhatsApp({
+        bytes: Buffer.from('OggS\u0000\u0000Vorbis', 'binary'),
+        declaredMimeType: 'audio/ogg',
+        filename: 'spoofed.ogg',
+        kind: 'VOICE',
+        maximumBytes: 20 * 1024 * 1024,
+      }),
+    ).rejects.toMatchObject({ code: 'whatsapp_ogg_opus_required' });
+  });
+
+  it('accepts a static 512px WebP sticker and rejects an animated one', async () => {
+    await expect(
+      prepareMediaForWhatsApp({
+        bytes: webpSticker(false),
+        declaredMimeType: 'image/webp',
+        filename: 'sticker.webp',
+        kind: 'STICKER',
+        maximumBytes: 20 * 1024 * 1024,
+      }),
+    ).resolves.toMatchObject({ height: 512, width: 512 });
+    await expect(
+      prepareMediaForWhatsApp({
+        bytes: webpSticker(true),
+        declaredMimeType: 'image/webp',
+        filename: 'animated.webp',
+        kind: 'STICKER',
+        maximumBytes: 20 * 1024 * 1024,
+      }),
+    ).rejects.toMatchObject({ code: 'whatsapp_sticker_dimensions_rejected' });
+  });
+
+  it('recognizes an Office Open XML document without trusting its MIME alone', async () => {
+    const bytes = Buffer.from('PK\u0003\u0004[Content_Types].xml word/document.xml', 'binary');
+    await expect(
+      prepareMediaForWhatsApp({
+        bytes,
+        declaredMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'document.docx',
+        kind: 'DOCUMENT',
+        maximumBytes: 20 * 1024 * 1024,
+      }),
+    ).resolves.toMatchObject({ extension: 'docx' });
   });
 });
 

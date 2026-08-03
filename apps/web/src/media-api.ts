@@ -6,21 +6,24 @@ import { useAuth } from './auth';
 export interface MediaAsset {
   id: string;
   kind: MediaKind;
-  source: 'TELEGRAM' | 'USER_UPLOAD';
+  source: 'TELEGRAM' | 'USER_UPLOAD' | 'WHATSAPP';
   status: string;
   originalFilename: string | null;
   detectedMimeType: string | null;
   sizeBytes: string | null;
+  validationChannel?: 'telegram' | 'whatsapp';
   createdAt: string;
 }
 
 export type MediaKind =
   'ANIMATION' | 'AUDIO' | 'DOCUMENT' | 'PHOTO' | 'STICKER' | 'VIDEO' | 'VIDEO_NOTE' | 'VOICE';
 
-export function useMediaAssets(projectId?: string) {
+export type MediaValidationChannel = 'TELEGRAM' | 'WHATSAPP';
+
+export function useMediaAssets(projectId?: string, enabled = true) {
   const { accessToken } = useAuth();
   return useQuery({
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId && enabled),
     queryFn: () =>
       apiRequest<MediaAsset[]>(`/api/v1/projects/${projectId}/media-assets`, {}, accessToken),
     queryKey: ['media-assets', projectId],
@@ -59,11 +62,20 @@ export function useMediaMutations(projectId?: string) {
         ),
     }),
     upload: useMutation({
-      mutationFn: ({ file, kind }: { file: File; kind: MediaKind }) => {
+      mutationFn: ({
+        channel,
+        file,
+        kind,
+      }: {
+        channel: MediaValidationChannel;
+        file: File;
+        kind: MediaKind;
+      }) => {
         const body = new FormData();
         body.set('file', file);
+        body.set('channel', channel.toLowerCase());
         return apiRequest<MediaAsset>(
-          `/api/v1/projects/${projectId}/media-assets/upload/${kind}`,
+          `/api/v1/projects/${projectId}/media-assets/upload/${kind}?channel=${channel.toLowerCase()}`,
           { body, method: 'POST' },
           accessToken,
         );

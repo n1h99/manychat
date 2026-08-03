@@ -2,9 +2,10 @@
 
 Omnicus is a production-deployed omnichannel automation platform built as a
 `pnpm`/Turborepo monorepo. The current release includes Auth/RBAC, projects,
-contacts and segmentation, Telegram messaging, durable inbox/outbox delivery,
-Cyber Pulse CRM integration, broadcasts, media/templates and Automation Studio
-2.2. The current platform completion also includes Operations & Audit, complete
+contacts and segmentation, Telegram messaging, official WhatsApp Business
+Cloud API support, durable inbox/outbox delivery, Cyber Pulse CRM integration,
+broadcasts, media/templates and Automation Studio 2.2. The current platform
+completion also includes Operations & Audit, complete
 operator-delivered invitations/password recovery, custom roles, safe project
 cloning and permission-guarded System Health. PostgreSQL is the source of truth;
 Redis/BullMQ accelerates recoverable jobs and never owns business state.
@@ -14,8 +15,10 @@ contact journeys, current steps, completion/drop-off reasons, timelines and
 bounded operational charts. User-facing access, audit, status and alert copy is
 translated from internal codes into plain language.
 
-WhatsApp and Instagram are intentionally deferred until dedicated test accounts
-and a separately approved provider scope are available.
+WhatsApp is implemented against Meta's official Cloud API contract. Its live
+Embedded Signup, signed webhook and delivery acceptance remain gated only by a
+Meta Developer app and test business number. Instagram remains deliberately
+deferred until its own account and provider scope are approved.
 
 Sentry is not part of the observability stack. Health and operational alerts are
 derived from service probes, queues and durable PostgreSQL journals. Railway
@@ -31,8 +34,8 @@ backup configuration remains operator-owned and is not managed by Omnicus.
 - `packages/database`: Prisma schema and reviewed migrations.
 - `packages/automation-core`, `packages/automation-http`: deterministic runtime
   and SSRF-safe External HTTP transport.
-- `packages/channel-telegram`, `packages/crm-core`, `packages/media-core`:
-  provider adapters and durable integration boundaries.
+- `packages/channel-telegram`, `packages/channel-whatsapp`, `packages/crm-core`,
+  `packages/media-core`: provider adapters and durable integration boundaries.
 
 The current implementation and remaining follow-ups are indexed in
 [docs/README.md](docs/README.md).
@@ -108,8 +111,8 @@ pre-deploy step; web and worker services must not run migrations.
 
 Development seeding is opt-in and guarded. Production administrator creation
 uses the one-time audited bootstrap described in the operations runbook. Never
-commit credentials, Telegram tokens, CRM bearer tokens, project secrets or
-Railway-generated values.
+commit credentials, Telegram or Meta access tokens, Meta app secrets, CRM
+bearer tokens, project secrets or Railway-generated values.
 
 ## Documentation
 
@@ -124,3 +127,4 @@ Railway-generated values.
 - [Railway deployment](docs/RAILWAY.md)
 - [Operations runbook](docs/RUNBOOK.md)
 - [Cyber Pulse CRM integration](docs/CRM_INTEGRATION.md)
+- [WhatsApp Business Cloud API](docs/WHATSAPP_CLOUD_API.md)

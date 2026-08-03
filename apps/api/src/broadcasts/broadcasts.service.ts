@@ -6,11 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@omnicus/database';
-import { renderMessageTemplateContent } from '@omnicus/media-core';
+import {
+  assertWhatsAppTemplateComponents,
+  whatsAppTemplateDisabledReason,
+} from '@omnicus/channel-whatsapp';
+import { renderMessageTemplateContent, renderTemplate } from '@omnicus/media-core';
 
 import { AuditService } from '../audit/audit.service';
 import type { RequestSecurityContext } from '../auth/auth.service';
 import { TelegramOutboundQueueService } from '../channels/telegram-outbound-queue.service';
+import { WhatsAppOutboundQueueService } from '../channels/whatsapp-outbound-queue.service';
 import { DatabaseService } from '../database/database.service';
 import type {
   BroadcastAudienceDto,
@@ -28,6 +33,8 @@ export class BroadcastsService {
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(TelegramOutboundQueueService) private readonly outbound: TelegramOutboundQueueService,
+    @Inject(WhatsAppOutboundQueueService)
+    private readonly whatsAppOutbound: WhatsAppOutboundQueueService,
   ) {}
 
   async list(projectId: string, archived = false) {
@@ -35,7 +42,7 @@ export class BroadcastsService {
       where: { projectId, status: archived ? 'ARCHIVED' : { not: 'ARCHIVED' } },
       orderBy: { createdAt: 'desc' },
       include: {
-        connection: { select: { botUsername: true } },
+        connection: { select: { botUsername: true, type: true } },
         _count: { select: { recipients: true } },
       },
     });
@@ -44,7 +51,7 @@ export class BroadcastsService {
 
   async get(projectId: string, broadcastId: string) {
     const broadcast = await this.broadcast(projectId, broadcastId, {
-      connection: { select: { botUsername: true } },
+      connection: { select: { botUsername: true, type: true } },
       _count: { select: { recipients: true } },
     });
     const grouped = await this.database.client.broadcastRecipient.groupBy({
@@ -60,10 +67,21 @@ export class BroadcastsService {
 
   async create(projectId: string, dto: CreateBroadcastDto, context: AuditContext) {
     this.assertAudience(dto.audience);
-    await this.assertConnection(projectId, dto.connectionId);
-    const templateVersion = dto.templateVersionId
-      ? await this.templateVersion(projectId, dto.templateVersionId)
-      : undefined;
+    const connection = await this.assertConnection(projectId, dto.connectionId);
+    this.assertContentForChannel(connection.type, dto);
+    const templateVersion =
+      connection.type === 'TELEGRAM' && dto.templateVersionId
+        ? await this.templateVersion(projectId, dto.templateVersionId)
+        : undefined;
+    const whatsAppTemplate =
+      connection.type === 'WHATSAPP' && dto.whatsAppTemplate
+        ? await this.whatsAppTemplateSnapshot(
+            projectId,
+            dto.connectionId,
+            dto.whatsAppTemplate.templateId,
+            dto.whatsAppTemplate.components,
+          )
+        : undefined;
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
     if (scheduledAt && scheduledAt.getTime() <= Date.now())
       throw new BadRequestException({
@@ -75,9 +93,11 @@ export class BroadcastsService {
         data: {
           audience: dto.audience as unknown as Prisma.InputJsonValue,
           connectionId: dto.connectionId,
-          content: templateVersion
-            ? this.templateSnapshot(templateVersion)
-            : { kind: 'TEXT', text: dto.text! },
+          content: whatsAppTemplate
+            ? whatsAppTemplate
+            : templateVersion
+              ? this.templateSnapshot(templateVersion)
+              : { kind: 'TEXT', text: dto.text! },
           createdById: context.actorUserId,
           name: dto.name.trim(),
           projectId,
@@ -86,7 +106,7 @@ export class BroadcastsService {
           status: scheduledAt ? 'SCHEDULED' : 'DRAFT',
         },
         include: {
-          connection: { select: { botUsername: true } },
+          connection: { select: { botUsername: true, type: true } },
           _count: { select: { recipients: true } },
         },
       });
@@ -126,9 +146,21 @@ export class BroadcastsService {
         message: 'Broadcast is not editable',
       });
     if (dto.audience) this.assertAudience(dto.audience);
-    const templateVersion = dto.templateVersionId
-      ? await this.templateVersion(projectId, dto.templateVersionId)
-      : undefined;
+    const connection = await this.assertConnection(projectId, current.connectionId);
+    this.assertContentForChannel(connection.type, dto, true);
+    const templateVersion =
+      connection.type === 'TELEGRAM' && dto.templateVersionId
+        ? await this.templateVersion(projectId, dto.templateVersionId)
+        : undefined;
+    const whatsAppTemplate =
+      connection.type === 'WHATSAPP' && dto.whatsAppTemplate
+        ? await this.whatsAppTemplateSnapshot(
+            projectId,
+            current.connectionId,
+            dto.whatsAppTemplate.templateId,
+            dto.whatsAppTemplate.components,
+          )
+        : undefined;
     const scheduledAt =
       dto.scheduledAt === undefined
         ? undefined
@@ -145,20 +177,22 @@ export class BroadcastsService {
       data: {
         ...(dto.audience ? { audience: dto.audience as unknown as Prisma.InputJsonValue } : {}),
         ...(dto.name === undefined ? {} : { name: dto.name.trim() }),
-        ...(templateVersion
-          ? {
-              content: this.templateSnapshot(templateVersion),
-              templateVersionId: templateVersion.id,
-            }
-          : dto.text === undefined
-            ? {}
-            : { content: { kind: 'TEXT', text: dto.text }, templateVersionId: null }),
+        ...(whatsAppTemplate
+          ? { content: whatsAppTemplate, templateVersionId: null }
+          : templateVersion
+            ? {
+                content: this.templateSnapshot(templateVersion),
+                templateVersionId: templateVersion.id,
+              }
+            : dto.text === undefined
+              ? {}
+              : { content: { kind: 'TEXT', text: dto.text }, templateVersionId: null }),
         ...(scheduledAt === undefined
           ? {}
           : { scheduledAt, status: scheduledAt ? 'SCHEDULED' : 'DRAFT' }),
       },
       include: {
-        connection: { select: { botUsername: true } },
+        connection: { select: { botUsername: true, type: true } },
         _count: { select: { recipients: true } },
       },
     });
@@ -194,7 +228,13 @@ export class BroadcastsService {
         code: 'BROADCAST_CANNOT_LAUNCH',
         message: 'Broadcast cannot be launched',
       });
-    await this.assertConnection(projectId, broadcast.connectionId);
+    const connection = await this.assertConnection(projectId, broadcast.connectionId);
+    if (connection.type === 'WHATSAPP')
+      await this.assertWhatsAppBroadcastStillApproved(
+        projectId,
+        broadcast.connectionId,
+        broadcast.content,
+      );
     const claimed = await this.database.client.broadcast.updateMany({
       where: { id: broadcastId, projectId, status: { in: ['DRAFT', 'SCHEDULED'] } },
       data: { status: 'PREPARING', startedAt: new Date(), scheduledAt: null },
@@ -356,7 +396,7 @@ export class BroadcastsService {
       data: { status: 'ARCHIVED' },
       where: { projectId_id: { id: broadcastId, projectId } },
       include: {
-        connection: { select: { botUsername: true } },
+        connection: { select: { botUsername: true, type: true } },
         _count: { select: { recipients: true } },
       },
     });
@@ -384,7 +424,7 @@ export class BroadcastsService {
       data: { status },
       where: { projectId_id: { id: broadcastId, projectId } },
       include: {
-        connection: { select: { botUsername: true } },
+        connection: { select: { botUsername: true, type: true } },
         _count: { select: { recipients: true } },
       },
     });
@@ -412,7 +452,7 @@ export class BroadcastsService {
         templateVersionId: source.templateVersionId,
       },
       include: {
-        connection: { select: { botUsername: true } },
+        connection: { select: { botUsername: true, type: true } },
         _count: { select: { recipients: true } },
       },
     });
@@ -449,6 +489,7 @@ export class BroadcastsService {
   private async prepareAndQueue(projectId: string, broadcastId: string): Promise<number> {
     const broadcast = await this.broadcast(projectId, broadcastId);
     if (broadcast.status !== 'PREPARING') return 0;
+    const connection = await this.assertConnection(projectId, broadcast.connectionId);
     const identities = await this.audienceIdentities(
       projectId,
       broadcast.connectionId,
@@ -482,9 +523,11 @@ export class BroadcastsService {
     for (const recipient of pending) {
       const identity = identities.find((candidate) => candidate.id === recipient.channelIdentityId);
       if (!identity) continue;
-      const rendered = renderMessageTemplateContent(broadcast.content, {
-        contact: identity.contact,
-      });
+      const rendered = this.renderBroadcastContent(
+        broadcast.content,
+        identity.contact,
+        connection.type,
+      );
       if (rendered.missing.length) {
         await this.database.client.broadcastRecipient.updateMany({
           data: {
@@ -541,7 +584,7 @@ export class BroadcastsService {
           data: {
             projectId,
             connectionId: broadcast.connectionId,
-            kind: 'TELEGRAM',
+            kind: connection.type,
             idempotencyKey: `broadcast-recipient-${recipient.id}`,
             nextAttemptAt: new Date(),
             payload: { messageId: message.id, channelIdentityId: recipient.channelIdentityId },
@@ -567,10 +610,17 @@ export class BroadcastsService {
   }
 
   private async enqueue(outboxIds: readonly string[]) {
+    if (!outboxIds.length) return;
+    const records = await this.database.client.outboxRecord.findMany({
+      select: { id: true, kind: true },
+      where: { id: { in: [...outboxIds] }, kind: { in: ['TELEGRAM', 'WHATSAPP'] } },
+    });
     await Promise.all(
-      outboxIds.map(async (id) => {
+      records.map(async (record) => {
         try {
-          await this.outbound.enqueue(id);
+          await (record.kind === 'WHATSAPP' ? this.whatsAppOutbound : this.outbound).enqueue(
+            record.id,
+          );
         } catch {
           /* PostgreSQL recovery owns the durable retry */
         }
@@ -627,6 +677,7 @@ export class BroadcastsService {
     audience: Audience,
   ): Promise<Prisma.ChannelIdentityWhereInput> {
     this.assertAudience(audience);
+    const connection = await this.assertConnection(projectId, connectionId);
     const contactWhere: Prisma.ContactWhereInput = { projectId, status: 'ACTIVE' };
     if (audience.mode === 'CONTACTS') contactWhere.id = { in: audience.contactIds! };
     if (audience.mode === 'SEGMENT') {
@@ -647,7 +698,7 @@ export class BroadcastsService {
       tagClauses.push({ tags: { none: { projectId, tagId: { in: audience.excludeTagIds } } } });
     if (tagClauses.length) contactWhere.AND = tagClauses;
     return {
-      channel: 'TELEGRAM',
+      channel: connection.type,
       connectionId,
       projectId,
       status: 'ACTIVE',
@@ -715,16 +766,20 @@ export class BroadcastsService {
     const connection = await this.database.client.channelConnection.findUnique({
       where: { projectId_id: { id: connectionId, projectId } },
     });
-    if (!connection || connection.type !== 'TELEGRAM')
+    if (!connection || !['TELEGRAM', 'WHATSAPP'].includes(connection.type))
       throw new NotFoundException({
         code: 'CHANNEL_NOT_FOUND',
-        message: 'Telegram channel was not found',
+        message: 'Messaging channel was not found',
       });
     if (connection.status !== 'ACTIVE')
       throw new ConflictException({
         code: 'CHANNEL_NOT_ACTIVE',
-        message: 'Telegram channel is not active',
+        message: 'Messaging channel is not active',
       });
+    return {
+      ...connection,
+      type: connection.type === 'WHATSAPP' ? ('WHATSAPP' as const) : ('TELEGRAM' as const),
+    };
   }
 
   private async broadcast(
@@ -776,12 +831,16 @@ export class BroadcastsService {
     errorCode: string | null;
     createdAt: Date;
     updatedAt: Date;
-    connection?: { botUsername: string | null };
+    connection?: { botUsername: string | null; type: string };
     _count?: { recipients: number };
   }) {
     return {
       ...broadcast,
+      channelType: broadcast.connection?.type,
       text: this.text(broadcast.content),
+      ...(this.whatsAppTemplateFromContent(broadcast.content)
+        ? { whatsAppTemplate: this.whatsAppTemplateFromContent(broadcast.content) }
+        : {}),
       recipientCount: broadcast._count?.recipients ?? 0,
     };
   }
@@ -826,6 +885,193 @@ export class BroadcastsService {
       templateId: version.templateId,
       templateVersionId: version.id,
     } as Prisma.InputJsonValue;
+  }
+
+  private assertContentForChannel(
+    type: 'TELEGRAM' | 'WHATSAPP',
+    input: { text?: string; templateVersionId?: string; whatsAppTemplate?: unknown },
+    partial = false,
+  ): void {
+    const hasText = input.text !== undefined;
+    const hasTelegramTemplate = input.templateVersionId !== undefined;
+    const hasWhatsAppTemplate = input.whatsAppTemplate !== undefined;
+    const count = Number(hasText) + Number(hasTelegramTemplate) + Number(hasWhatsAppTemplate);
+    if ((!partial && count !== 1) || (partial && count > 1))
+      throw new BadRequestException({
+        code: 'BROADCAST_CONTENT_INVALID',
+        message: 'Choose exactly one message format for this broadcast',
+      });
+    if (
+      type === 'WHATSAPP' &&
+      (hasText || hasTelegramTemplate || (!partial && !hasWhatsAppTemplate))
+    )
+      throw new BadRequestException({
+        code: 'BROADCAST_WHATSAPP_TEMPLATE_REQUIRED',
+        message: 'WhatsApp broadcasts require one approved WhatsApp template',
+      });
+    if (type === 'TELEGRAM' && hasWhatsAppTemplate)
+      throw new BadRequestException({
+        code: 'BROADCAST_CONTENT_CHANNEL_MISMATCH',
+        message: 'The selected message format does not match this channel',
+      });
+  }
+
+  private async whatsAppTemplateSnapshot(
+    projectId: string,
+    connectionId: string,
+    templateId: string,
+    components?: Record<string, unknown>[],
+  ): Promise<Prisma.InputJsonValue> {
+    const template = await this.database.client.whatsAppMessageTemplate.findFirst({
+      where: { connectionId, id: templateId, projectId, status: 'APPROVED' },
+    });
+    if (!template)
+      throw new BadRequestException({
+        code: 'BROADCAST_WHATSAPP_TEMPLATE_NOT_APPROVED',
+        message: 'Choose an approved WhatsApp template for this phone number',
+      });
+    const disabledReason = whatsAppTemplateDisabledReason(template);
+    if (disabledReason)
+      throw new BadRequestException({
+        code: disabledReason,
+        message: 'This WhatsApp template cannot be sent by Omnicus yet',
+      });
+    const normalizedComponents = this.whatsAppComponents(components);
+    try {
+      assertWhatsAppTemplateComponents(template.components, normalizedComponents);
+    } catch {
+      throw new BadRequestException({
+        code: 'BROADCAST_WHATSAPP_COMPONENTS_INVALID',
+        message: 'Complete every required WhatsApp template field',
+      });
+    }
+    return {
+      kind: 'WHATSAPP_TEMPLATE',
+      whatsAppTemplate: {
+        ...(normalizedComponents ? { components: normalizedComponents } : {}),
+        languageCode: template.languageCode,
+        name: template.name,
+        templateId: template.id,
+      },
+    };
+  }
+
+  private async assertWhatsAppBroadcastStillApproved(
+    projectId: string,
+    connectionId: string,
+    content: Prisma.JsonValue,
+  ): Promise<void> {
+    const snapshot = this.whatsAppTemplateFromContent(content);
+    if (!snapshot)
+      throw new BadRequestException({
+        code: 'BROADCAST_WHATSAPP_TEMPLATE_REQUIRED',
+        message: 'WhatsApp broadcasts require one approved WhatsApp template',
+      });
+    const approved = await this.database.client.whatsAppMessageTemplate.findFirst({
+      where: {
+        connectionId,
+        id: snapshot.templateId,
+        languageCode: snapshot.languageCode,
+        name: snapshot.name,
+        projectId,
+        status: 'APPROVED',
+      },
+    });
+    if (!approved)
+      throw new BadRequestException({
+        code: 'BROADCAST_WHATSAPP_TEMPLATE_NOT_APPROVED',
+        message: 'This WhatsApp template is no longer approved for the selected phone number',
+      });
+    const disabledReason = whatsAppTemplateDisabledReason(approved);
+    if (disabledReason)
+      throw new BadRequestException({
+        code: disabledReason,
+        message: 'This WhatsApp template cannot be sent by Omnicus yet',
+      });
+    try {
+      assertWhatsAppTemplateComponents(approved.components, snapshot.components);
+    } catch {
+      throw new BadRequestException({
+        code: 'BROADCAST_WHATSAPP_COMPONENTS_INVALID',
+        message: 'Complete every required WhatsApp template field',
+      });
+    }
+  }
+
+  private whatsAppTemplateFromContent(value: Prisma.JsonValue):
+    | {
+        components?: Prisma.JsonArray;
+        languageCode: string;
+        name: string;
+        templateId: string;
+      }
+    | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    const candidate = (value as Prisma.JsonObject).whatsAppTemplate;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return;
+    const template = candidate as Prisma.JsonObject;
+    if (
+      typeof template.templateId !== 'string' ||
+      typeof template.name !== 'string' ||
+      typeof template.languageCode !== 'string'
+    )
+      return;
+    return {
+      ...(Array.isArray(template.components) ? { components: template.components } : {}),
+      languageCode: template.languageCode,
+      name: template.name,
+      templateId: template.templateId,
+    };
+  }
+
+  private whatsAppComponents(
+    components?: Record<string, unknown>[],
+  ): Prisma.InputJsonValue[] | undefined {
+    if (!components) return;
+    if (components.length > 64)
+      throw new BadRequestException({ code: 'BROADCAST_WHATSAPP_COMPONENTS_INVALID' });
+    try {
+      return JSON.parse(JSON.stringify(components)) as Prisma.InputJsonValue[];
+    } catch {
+      throw new BadRequestException({ code: 'BROADCAST_WHATSAPP_COMPONENTS_INVALID' });
+    }
+  }
+
+  private renderBroadcastContent(
+    content: Prisma.JsonValue,
+    contact: Readonly<Record<string, unknown>>,
+    type: 'TELEGRAM' | 'WHATSAPP',
+  ): { content: Record<string, unknown>; missing: string[] } {
+    if (type === 'TELEGRAM') return renderMessageTemplateContent(content, { contact });
+    const snapshot = this.whatsAppTemplateFromContent(content);
+    if (!snapshot) throw new Error('broadcast_whatsapp_template_invalid');
+    const missing = new Set<string>();
+    const components = snapshot.components?.map((component) => {
+      if (!component || typeof component !== 'object' || Array.isArray(component)) return component;
+      const source = component as Prisma.JsonObject;
+      const parameters = Array.isArray(source.parameters)
+        ? source.parameters.map((parameter) => {
+            if (!parameter || typeof parameter !== 'object' || Array.isArray(parameter))
+              return parameter;
+            const value = parameter as Prisma.JsonObject;
+            if (value.type !== 'text' || typeof value.text !== 'string') return value;
+            const rendered = renderTemplate(value.text, { contact });
+            rendered.missing.forEach((item) => missing.add(item));
+            return { ...value, text: rendered.output };
+          })
+        : [];
+      return { ...source, parameters };
+    });
+    return {
+      content: {
+        whatsAppTemplate: {
+          ...(components ? { components } : {}),
+          languageCode: snapshot.languageCode,
+          name: snapshot.name,
+        },
+      },
+      missing: [...missing],
+    };
   }
 
   private mediaAssetId(content: unknown): string | null {

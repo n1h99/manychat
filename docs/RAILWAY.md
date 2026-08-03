@@ -1,6 +1,6 @@
 # Railway deployment
 
-Status reviewed: 2026-08-02. Omnicus is deployed on Railway from `main`; pushes
+Status reviewed: 2026-08-03. Omnicus is deployed on Railway from `main`; pushes
 to `origin/main` trigger the configured web, API and worker deployments.
 
 ## Services
@@ -23,7 +23,16 @@ Shared API/worker values include `APP_ENV`, `DATABASE_URL`, `REDIS_URL`,
 `CHANNEL_SECRETS_KEY` and the reviewed proxy/health settings from
 `.env.example`. The API additionally requires `JWT_ACCESS_SECRET`,
 `API_PUBLIC_URL`, `CORS_ALLOWED_ORIGINS` and `CRM_INBOUND_ENABLED`. The worker
-uses `CRM_INTEGRATION_ENABLED` and the bounded worker/continuation intervals.
+uses `CRM_INTEGRATION_ENABLED` and the bounded worker/continuation and
+WhatsApp recovery intervals.
+
+The API WhatsApp app boundary additionally uses
+`WHATSAPP_META_APP_ID`, `WHATSAPP_META_APP_SECRET`,
+`WHATSAPP_META_CONFIGURATION_ID`, `WHATSAPP_GRAPH_API_VERSION` and
+`WHATSAPP_META_WEBHOOK_VERIFY_TOKEN`. The app secret and verify token are
+server-only. Connected phone access tokens are encrypted project credentials,
+not shared Railway variables. Missing Meta values keep WhatsApp setup
+unavailable without degrading Telegram or the platform health probes.
 
 The web build requires `VITE_API_URL`, which is used server-side as the upstream
 for the same-origin `/api` proxy. Browser code must not receive database, Redis,
@@ -41,8 +50,9 @@ fixtures. `.railway/` is ignored.
 ## Networking and health
 
 - Web serves the SPA and proxies `/api` to the API origin.
-- Telegram calls the public API webhook derived from server-owned
-  `API_PUBLIC_URL`.
+- Telegram and Meta call public API webhooks derived from server-owned
+  `API_PUBLIC_URL`. Meta's app-level WhatsApp callback is
+  `/webhooks/whatsapp` and requires exact raw-body HMAC verification.
 - API readiness probes PostgreSQL and Redis.
 - Worker readiness requires both its BullMQ producer and running consumer.
 - Dependency failure returns `503`; liveness stays independent of external
@@ -55,7 +65,7 @@ ranges by convenience.
 ## Migration flow
 
 The executable schema has reviewed migrations through
-`20260802000200_automation_studio_22_http`. Exactly one designated API
+`20260803000100_whatsapp_cloud_api`. Exactly one designated API
 pre-deploy step runs:
 
 ```text

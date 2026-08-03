@@ -737,7 +737,7 @@ export class CrmOutboundService {
     const outbox = await this.database.client.outboxRecord.findUnique({
       where: { projectId_id: { id: operationId, projectId: omnicusProjectId } },
     });
-    if (!outbox || outbox.kind !== 'TELEGRAM')
+    if (!outbox || !['TELEGRAM', 'WHATSAPP'].includes(outbox.kind))
       throw new NotFoundException({
         code: 'CRM_OUTBOUND_OPERATION_NOT_FOUND',
         message: 'CRM outbound operation was not found',
@@ -776,19 +776,26 @@ export class CrmOutboundService {
         message: 'CRM outbound message was not found',
       });
     const action = (outbox.payload as { action?: unknown }).action;
+    const isRetry =
+      typeof (outbox.payload as { retryOfOperationId?: unknown }).retryOfOperationId === 'string';
     const isMessageMutation =
       typeof action === 'string' &&
-      ['DELETE_MESSAGE', 'EDIT_MESSAGE', 'PIN_MESSAGE', 'SET_REACTION'].includes(action);
+      ['DELETE_MESSAGE', 'EDIT_MESSAGE', 'MARK_READ', 'PIN_MESSAGE', 'SET_REACTION'].includes(
+        action,
+      );
     const status =
-      outbox.status === 'FAILED' || message.status === 'FAILED'
+      outbox.status === 'FAILED' || (!isRetry && !isMessageMutation && message.status === 'FAILED')
         ? 'FAILED'
-        : outbox.status === 'UNKNOWN' || message.status === 'UNKNOWN'
+        : outbox.status === 'UNKNOWN' ||
+            (!isRetry && !isMessageMutation && message.status === 'UNKNOWN')
           ? 'UNKNOWN'
           : outbox.status === 'SUCCEEDED' && isMessageMutation
             ? 'SUCCEEDED'
-            : outbox.status === 'SUCCEEDED' && message.status === 'SENT'
+            : outbox.status === 'SUCCEEDED' &&
+                ['SENT', 'DELIVERED', 'READ', 'DELETED'].includes(message.status)
               ? 'SENT'
-              : outbox.status === 'PROCESSING' || message.status === 'PROCESSING'
+              : outbox.status === 'PROCESSING' ||
+                  (!isRetry && !isMessageMutation && message.status === 'PROCESSING')
                 ? 'PROCESSING'
                 : 'QUEUED';
     return {
@@ -797,6 +804,25 @@ export class CrmOutboundService {
       operationId,
       status,
     };
+  }
+
+  async operationKind(
+    operationId: string,
+    crmProjectId: string,
+    omnicusProjectId: string,
+    authenticatedProjectId?: string,
+  ): Promise<'TELEGRAM' | 'WHATSAPP'> {
+    await this.assertProjectRoute(crmProjectId, omnicusProjectId, authenticatedProjectId);
+    const outbox = await this.database.client.outboxRecord.findUnique({
+      select: { kind: true },
+      where: { projectId_id: { id: operationId, projectId: omnicusProjectId } },
+    });
+    if (!outbox || !['TELEGRAM', 'WHATSAPP'].includes(outbox.kind))
+      throw new NotFoundException({
+        code: 'CRM_OUTBOUND_OPERATION_NOT_FOUND',
+        message: 'CRM outbound operation was not found',
+      });
+    return outbox.kind as 'TELEGRAM' | 'WHATSAPP';
   }
 
   private async existing(

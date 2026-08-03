@@ -899,8 +899,10 @@ export class CrmTelegramV3Service {
     authenticatedProjectId?: string,
   ) {
     const target = await this.resolveMessage(messageId, dto, authenticatedProjectId);
+    if ('emoji' in dto || ('type' in dto && (!dto.type || !dto.value)))
+      throw new ConflictException({ code: 'REACTION_INVALID' });
     const reaction: TelegramReaction | undefined =
-      'type' in dto
+      'type' in dto && dto.type && dto.value
         ? dto.type === 'emoji'
           ? { emoji: dto.value, type: 'emoji' }
           : { customEmojiId: dto.value, type: 'custom_emoji' }

@@ -531,6 +531,191 @@ export async function prepareMediaForTelegram(input: MediaValidationInput): Prom
   throw new MediaValidationError('media_photo_size_exceeded');
 }
 
+const WHATSAPP_MEDIA_RULES = {
+  AUDIO: {
+    maximumBytes: 16 * 1024 * 1024,
+    mimeTypes: ['audio/aac', 'audio/amr', 'audio/mp4', 'audio/mpeg', 'audio/ogg'],
+  },
+  DOCUMENT: {
+    maximumBytes: 100 * 1024 * 1024,
+    mimeTypes: [
+      'application/msword',
+      'application/pdf',
+      'application/vnd.ms-excel',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+    ],
+  },
+  PHOTO: { maximumBytes: 5 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png'] },
+  STICKER: { maximumBytes: 100 * 1024, mimeTypes: ['image/webp'] },
+  VIDEO: { maximumBytes: 16 * 1024 * 1024, mimeTypes: ['video/3gpp', 'video/mp4'] },
+  VOICE: { maximumBytes: 16 * 1024 * 1024, mimeTypes: ['audio/ogg'] },
+} as const;
+
+type WhatsAppMediaKind = keyof typeof WHATSAPP_MEDIA_RULES;
+
+const WHATSAPP_MIME_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
+  'application/msword': ['doc'],
+  'application/pdf': ['pdf'],
+  'application/vnd.ms-excel': ['xls'],
+  'application/vnd.ms-powerpoint': ['ppt'],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['pptx'],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['xlsx'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['docx'],
+  'audio/aac': ['aac'],
+  'audio/amr': ['amr'],
+  'audio/mp4': ['m4a', 'mp4'],
+  'audio/mpeg': ['mp3'],
+  'audio/ogg': ['oga', 'ogg', 'opus'],
+  'image/jpeg': ['jpeg', 'jpg'],
+  'image/png': ['png'],
+  'image/webp': ['webp'],
+  'text/plain': ['csv', 'log', 'text', 'txt'],
+  'video/3gpp': ['3gp', '3gpp'],
+  'video/mp4': ['mp4'],
+};
+
+function beginsWith(bytes: Uint8Array, signature: readonly number[]): boolean {
+  return signature.every((value, index) => bytes[index] === value);
+}
+
+function containsAscii(bytes: Uint8Array, value: string): boolean {
+  return Buffer.from(bytes).includes(Buffer.from(value, 'ascii'));
+}
+
+function isIsoBaseMedia(bytes: Uint8Array): boolean {
+  return bytes.byteLength >= 12 && beginsWith(bytes.slice(4), [0x66, 0x74, 0x79, 0x70]);
+}
+
+function validateWhatsAppFileIdentity(bytes: Uint8Array, mimeType: string): void {
+  if (mimeType === 'image/jpeg' && !beginsWith(bytes, [0xff, 0xd8, 0xff]))
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (mimeType === 'image/png' && !beginsWith(bytes, [0x89, 0x50, 0x4e, 0x47]))
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (
+    mimeType === 'image/webp' &&
+    !(
+      beginsWith(bytes, [0x52, 0x49, 0x46, 0x46]) &&
+      beginsWith(bytes.slice(8), [0x57, 0x45, 0x42, 0x50])
+    )
+  )
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (mimeType === 'application/pdf') {
+    if (!beginsWith(bytes, [0x25, 0x50, 0x44, 0x46]))
+      throw new MediaValidationError('whatsapp_media_signature_mismatch');
+    validateDocumentStructure(bytes, mimeType);
+  }
+  if (['audio/mp4', 'video/mp4', 'video/3gpp'].includes(mimeType) && !isIsoBaseMedia(bytes))
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (
+    mimeType === 'audio/mpeg' &&
+    !(
+      beginsWith(bytes, [0x49, 0x44, 0x33]) ||
+      (bytes[0] === 0xff && bytes[1] !== undefined && (bytes[1] & 0xe0) === 0xe0)
+    )
+  )
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (
+    mimeType === 'audio/aac' &&
+    !(bytes[0] === 0xff && bytes[1] !== undefined && (bytes[1] & 0xf6) === 0xf0)
+  )
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (mimeType === 'audio/amr' && !containsAscii(bytes.slice(0, 10), '#!AMR'))
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (mimeType === 'audio/ogg') {
+    if (!beginsWith(bytes, [0x4f, 0x67, 0x67, 0x53]) || !containsAscii(bytes, 'OpusHead'))
+      throw new MediaValidationError('whatsapp_ogg_opus_required');
+  }
+  const legacyOffice = [
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-powerpoint',
+  ];
+  if (
+    legacyOffice.includes(mimeType) &&
+    !beginsWith(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+  )
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  const openXmlFolder: Readonly<Record<string, string>> = {
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'ppt/',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xl/',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'word/',
+  };
+  const folder = openXmlFolder[mimeType];
+  if (
+    folder &&
+    !(
+      beginsWith(bytes, [0x50, 0x4b]) &&
+      containsAscii(bytes, '[Content_Types].xml') &&
+      containsAscii(bytes, folder)
+    )
+  )
+    throw new MediaValidationError('whatsapp_media_signature_mismatch');
+  if (mimeType === 'text/plain') {
+    if (bytes.includes(0)) throw new MediaValidationError('whatsapp_text_document_invalid');
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      throw new MediaValidationError('whatsapp_text_document_invalid');
+    }
+  }
+}
+
+/**
+ * Validates a file against the official WhatsApp Cloud API media subset used by
+ * Omnicus. Unlike Telegram preparation, this never transcodes or pads content.
+ */
+export async function prepareMediaForWhatsApp(input: MediaValidationInput): Promise<PreparedMedia> {
+  if (!Object.hasOwn(WHATSAPP_MEDIA_RULES, input.kind))
+    throw new MediaValidationError('whatsapp_media_kind_unsupported');
+  if (input.bytes.byteLength === 0) throw new MediaValidationError('media_empty');
+  const rule = WHATSAPP_MEDIA_RULES[input.kind as WhatsAppMediaKind];
+  const maximumBytes = Math.min(input.maximumBytes, rule.maximumBytes);
+  if (input.bytes.byteLength > maximumBytes)
+    throw new MediaValidationError('whatsapp_media_size_exceeded');
+  const mimeType = input.declaredMimeType?.split(';', 1)[0]?.trim().toLowerCase();
+  if (!mimeType || !rule.mimeTypes.includes(mimeType as never))
+    throw new MediaValidationError('whatsapp_media_type_unsupported');
+  validateWhatsAppFileIdentity(input.bytes, mimeType);
+  const allowedExtensions = WHATSAPP_MIME_EXTENSIONS[mimeType];
+  const extension = input.filename?.split('.').pop()?.toLowerCase();
+  if (extension && allowedExtensions && !allowedExtensions.includes(extension))
+    throw new MediaValidationError('media_extension_mismatch');
+  let dimensions: ImageDimensions | undefined;
+  if (input.kind === 'PHOTO') {
+    dimensions = imageDimensions(input.bytes, mimeType);
+    if (!dimensions?.width || !dimensions.height)
+      throw new MediaValidationError('media_photo_dimensions_unreadable');
+  }
+  if (input.kind === 'STICKER') {
+    dimensions = webpDimensions(input.bytes);
+    const extendedWebpAnimated =
+      input.bytes.byteLength > 21 &&
+      String.fromCharCode(...input.bytes.slice(12, 16)) === 'VP8X' &&
+      (input.bytes[20]! & 0x02) !== 0;
+    if (
+      !dimensions ||
+      dimensions.width !== 512 ||
+      dimensions.height !== 512 ||
+      extendedWebpAnimated ||
+      containsAscii(input.bytes, 'ANIM') ||
+      containsAscii(input.bytes, 'ANMF')
+    )
+      throw new MediaValidationError('whatsapp_sticker_dimensions_rejected');
+  }
+  return {
+    bytes: input.bytes,
+    extension: extension ?? allowedExtensions?.[0] ?? 'bin',
+    ...(dimensions ? { height: dimensions.height, width: dimensions.width } : {}),
+    mimeType,
+    sizeBytes: input.bytes.byteLength,
+    transformed: false,
+  };
+}
+
 const templateExpression = /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g;
 
 export function templateVariables(template: string): string[] {

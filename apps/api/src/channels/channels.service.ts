@@ -18,6 +18,7 @@ import type {
   UpdateTelegramChannelDto,
 } from './dto';
 import { TelegramOutboundQueueService } from './telegram-outbound-queue.service';
+import { WhatsAppChannelsService, type SafeWhatsAppChannel } from './whatsapp-channels.service';
 
 type ChannelMetadata = {
   name?: string;
@@ -52,23 +53,28 @@ export class ChannelsService {
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(TelegramOutboundQueueService) private readonly outbound: TelegramOutboundQueueService,
+    @Inject(WhatsAppChannelsService) private readonly whatsApp: WhatsAppChannelsService,
   ) {
     this.secrets = new ChannelSecretsService(config.get('CHANNEL_SECRETS_KEY', { infer: true }));
     this.apiPublicUrl = config.get('API_PUBLIC_URL', { infer: true });
   }
 
-  async list(projectId: string): Promise<SafeChannel[]> {
+  async list(projectId: string): Promise<Array<SafeChannel | SafeWhatsAppChannel>> {
     const rows = await this.database.client.channelConnection.findMany({
       where: { projectId, type: 'TELEGRAM' },
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map((row) => this.safe(row));
+    return [...rows.map((row) => this.safe(row)), ...(await this.whatsApp.list(projectId))].sort(
+      (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+    );
   }
-  async get(projectId: string, connectionId: string): Promise<SafeChannel> {
+  async get(projectId: string, connectionId: string): Promise<SafeChannel | SafeWhatsAppChannel> {
+    if ((await this.providerType(projectId, connectionId)) === 'WHATSAPP')
+      return this.whatsApp.get(projectId, connectionId);
     return this.safe(await this.connection(projectId, connectionId));
   }
   async inboundEvents(projectId: string, connectionId: string) {
-    await this.connection(projectId, connectionId);
+    await this.providerType(projectId, connectionId);
     return this.database.client.rawWebhookEvent.findMany({
       orderBy: { receivedAt: 'desc' },
       select: {
@@ -111,10 +117,12 @@ export class ChannelsService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<SafeChannel> {
+    if (dto.type === 'WHATSAPP')
+      return this.whatsApp.createManual(projectId, dto, actor, context) as never;
     const id = crypto.randomUUID();
     let bot: { id: string; username?: string };
     try {
-      bot = await this.telegram.validateConnection(dto.botToken);
+      bot = await this.telegram.validateConnection(dto.botToken!);
     } catch {
       throw new BadRequestException({
         code: 'TELEGRAM_TOKEN_INVALID',
@@ -132,7 +140,7 @@ export class ChannelsService {
           projectId,
           id,
           'botToken',
-          dto.botToken,
+          dto.botToken!,
         ) as unknown as Prisma.InputJsonValue,
         webhookSecretEncrypted: this.encrypt(
           projectId,
@@ -144,7 +152,7 @@ export class ChannelsService {
         externalBotId: bot.id,
         webhookMetadata: {
           name: dto.name,
-          maskedToken: maskTelegramToken(dto.botToken),
+          maskedToken: maskTelegramToken(dto.botToken!),
           webhookStatus: 'NOT_CONNECTED',
         },
       },
@@ -169,6 +177,13 @@ export class ChannelsService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<SafeChannel> {
+    if ((await this.providerType(projectId, connectionId)) === 'WHATSAPP')
+      return this.whatsApp.update(projectId, connectionId, dto, actor, context) as never;
+    if (dto.type !== undefined && dto.type !== 'TELEGRAM')
+      throw new BadRequestException({
+        code: 'CHANNEL_TYPE_MISMATCH',
+        message: 'The channel type cannot be changed',
+      });
     const previous = await this.connection(projectId, connectionId);
     const metadata = this.metadata(previous.webhookMetadata);
     let data: Prisma.ChannelConnectionUpdateInput = {
@@ -224,6 +239,8 @@ export class ChannelsService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<SafeChannel> {
+    if ((await this.providerType(projectId, id)) === 'WHATSAPP')
+      return this.whatsApp.test(projectId, id, actor, context) as never;
     const row = await this.connection(projectId, id);
     try {
       await this.telegram.validateConnection(this.decrypt(row, 'botToken'));
@@ -259,6 +276,8 @@ export class ChannelsService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<SafeChannel> {
+    if ((await this.providerType(projectId, id)) === 'WHATSAPP')
+      return this.whatsApp.connect(projectId, id, actor, context) as never;
     const row = await this.connection(projectId, id);
     const url = this.webhookUrl(id);
     try {
@@ -303,6 +322,8 @@ export class ChannelsService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<SafeChannel> {
+    if ((await this.providerType(projectId, id)) === 'WHATSAPP')
+      return this.whatsApp.disable(projectId, id, actor, context) as never;
     const row = await this.connection(projectId, id);
     if (row.status !== 'DISABLED') {
       try {
@@ -337,6 +358,11 @@ export class ChannelsService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<SafeChannel> {
+    if ((await this.providerType(projectId, id)) === 'WHATSAPP')
+      throw new BadRequestException({
+        code: 'WHATSAPP_WEBHOOK_SECRET_GLOBAL',
+        message: 'WhatsApp webhook verification is managed at the Meta App level',
+      });
     const row = await this.connection(projectId, id);
     const next = randomBytes(32).toString('base64url');
     const url = this.metadata(row.webhookMetadata).webhookUrl;
@@ -386,6 +412,8 @@ export class ChannelsService {
     actor: AuthenticatedUser,
     context: RequestSecurityContext,
   ): Promise<{ messageId: string; outboxRecordId: string }> {
+    if ((await this.providerType(projectId, connectionId)) === 'WHATSAPP')
+      return this.whatsApp.createTestMessage(projectId, connectionId, dto);
     if ((dto.contactId === undefined) === (dto.channelIdentityId === undefined))
       throw new BadRequestException({
         code: 'OUTBOUND_RECIPIENT_REQUIRED',
@@ -491,7 +519,7 @@ export class ChannelsService {
     return result;
   }
   async identities(projectId: string, connectionId: string) {
-    await this.connection(projectId, connectionId);
+    const channel = await this.providerType(projectId, connectionId);
     return this.database.client.channelIdentity.findMany({
       orderBy: [{ contact: { displayName: 'asc' } }, { createdAt: 'asc' }],
       select: {
@@ -508,14 +536,14 @@ export class ChannelsService {
         username: true,
       },
       where: {
-        channel: 'TELEGRAM',
+        channel,
         connectionId,
         projectId,
       },
     });
   }
   async outboundEvents(projectId: string, connectionId: string) {
-    await this.connection(projectId, connectionId);
+    const channel = await this.providerType(projectId, connectionId);
     const records = await this.database.client.outboxRecord.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
@@ -533,7 +561,7 @@ export class ChannelsService {
       take: 20,
       where: {
         connectionId,
-        kind: 'TELEGRAM',
+        kind: channel,
         projectId,
       },
     });
@@ -572,6 +600,15 @@ export class ChannelsService {
       throw new NotFoundException({ code: 'CHANNEL_NOT_FOUND', message: 'Channel was not found' });
     return row;
   }
+  private async providerType(projectId: string, id: string): Promise<'TELEGRAM' | 'WHATSAPP'> {
+    const row = await this.database.client.channelConnection.findUnique({
+      select: { type: true },
+      where: { projectId_id: { id, projectId } },
+    });
+    if (!row || !['TELEGRAM', 'WHATSAPP'].includes(row.type))
+      throw new NotFoundException({ code: 'CHANNEL_NOT_FOUND', message: 'Channel was not found' });
+    return row.type as 'TELEGRAM' | 'WHATSAPP';
+  }
   private encrypt(
     projectId: string,
     connectionId: string,
@@ -591,13 +628,14 @@ export class ChannelsService {
       id: string;
       projectId: string;
       credentialsEncrypted: Prisma.JsonValue;
-      webhookSecretEncrypted: Prisma.JsonValue;
+      webhookSecretEncrypted: Prisma.JsonValue | null;
     },
     field: 'botToken' | 'webhookSecret',
   ): string {
     const envelope = (field === 'botToken'
       ? row.credentialsEncrypted
       : row.webhookSecretEncrypted) as unknown as EncryptedSecretEnvelope;
+    if (!envelope) throw new Error('telegram_secret_unavailable');
     return this.secrets.decryptSecret({
       projectId: row.projectId,
       channelConnectionId: row.id,

@@ -12,6 +12,8 @@ import { WorkerHealthController } from './worker-health.controller';
 import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { MediaModule } from './media/media.module';
 import { ExternalHttpModule } from './external-http/external-http.module';
+import { WhatsAppInboundModule } from './whatsapp-inbound/whatsapp-inbound.module';
+import { WhatsAppOutboundModule } from './whatsapp-outbound/whatsapp-outbound.module';
 
 const rootEnvFile =
   process.env.APP_ENV === 'production' || process.env.APP_ENV === 'staging'
@@ -36,6 +38,8 @@ const rootEnvFile =
     BroadcastsModule,
     MediaModule,
     ExternalHttpModule,
+    WhatsAppInboundModule,
+    WhatsAppOutboundModule,
   ],
 })
 export class AppModule {}

@@ -17,7 +17,7 @@ describe('breadcrumbsFor', () => {
       { label: 'Projects', path: '/projects' },
       { label: 'Omnicus Local', path: '/projects/project-a' },
       { label: 'Channels', path: '/projects/project-a/channels' },
-      { label: 'Connect Telegram' },
+      { label: 'Connect a channel' },
     ]);
   });
 
