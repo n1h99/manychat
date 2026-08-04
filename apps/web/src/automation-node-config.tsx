@@ -126,12 +126,85 @@ export function AutomationNodeConfig({
   templates,
   testHttpRequest,
 }: Props) {
+  const updateConfig = (next: Record<string, unknown>) => onChange({ ...config, ...next });
   const set = (key: string, value: unknown) => onChange({ ...config, [key]: value });
-  const channels = useChannels(projectId, nodeType === 'SEND_TEMPLATE');
+  const channels = useChannels(projectId, nodeType === 'SEND_TEMPLATE' || nodeType === 'SEND_MESSAGE');
   const assets = useMediaAssets(projectId, nodeType === 'SEND_TEMPLATE');
+  const activeTelegramChannels = (channels.data ?? []).filter(
+    (channel) => channel.type === 'TELEGRAM' && channel.status === 'ACTIVE',
+  );
   const activeWhatsAppChannels = (channels.data ?? []).filter(
     (channel) => channel.type === 'WHATSAPP' && channel.status === 'ACTIVE',
   );
+  const sendDeliveryTarget = (() => {
+    const target = config.deliveryTarget;
+    return target === 'TELEGRAM' || target === 'WHATSAPP' || target === 'INCOMING_CONVERSATION'
+      ? target
+      : 'INCOMING_CONVERSATION';
+  })();
+  const telegramConnectionId =
+    typeof config.telegramConnectionId === 'string' ? config.telegramConnectionId : undefined;
+  const whatsappConnectionId =
+    typeof config.whatsappConnectionId === 'string' ? config.whatsappConnectionId : undefined;
+
+  useEffect(() => {
+    const updates: Record<string, unknown> = {};
+    const telegramActiveIds = activeTelegramChannels.map((channel) => channel.id);
+    const whatsappActiveIds = activeWhatsAppChannels.map((channel) => channel.id);
+    if (sendDeliveryTarget === 'INCOMING_CONVERSATION') {
+      if (telegramConnectionId !== undefined) updates.telegramConnectionId = undefined;
+      if (whatsappConnectionId !== undefined) updates.whatsappConnectionId = undefined;
+    } else if (sendDeliveryTarget === 'TELEGRAM') {
+      const validConnection = telegramConnectionId
+        ? telegramActiveIds.includes(telegramConnectionId)
+        : false;
+      if (whatsappConnectionId !== undefined) updates.whatsappConnectionId = undefined;
+      if (!activeTelegramChannels.length) {
+        if (telegramConnectionId !== undefined) updates.telegramConnectionId = undefined;
+      } else if (!validConnection) {
+        if (activeTelegramChannels.length === 1)
+          updates.telegramConnectionId = activeTelegramChannels[0]!.id;
+        else if (telegramConnectionId !== undefined) updates.telegramConnectionId = undefined;
+      }
+    } else {
+      const validConnection = whatsappConnectionId
+        ? whatsappActiveIds.includes(whatsappConnectionId)
+        : false;
+      if (telegramConnectionId !== undefined) updates.telegramConnectionId = undefined;
+      if (!activeWhatsAppChannels.length) {
+        if (whatsappConnectionId !== undefined) updates.whatsappConnectionId = undefined;
+      } else if (!validConnection) {
+        if (activeWhatsAppChannels.length === 1)
+          updates.whatsappConnectionId = activeWhatsAppChannels[0]!.id;
+        else if (whatsappConnectionId !== undefined) updates.whatsappConnectionId = undefined;
+      }
+    }
+    if (Object.keys(updates).length) onChange({ ...config, ...updates });
+  }, [
+    activeTelegramChannels,
+    activeWhatsAppChannels,
+    sendDeliveryTarget,
+    telegramConnectionId,
+    whatsappConnectionId,
+    config,
+  ]);
+
+  const sendDeliveryInfo = {
+    INCOMING_CONVERSATION: {
+      description:
+        'Uses the channel that started the automation.',
+      message: 'Automatic channel selection',
+    },
+    TELEGRAM: {
+      description: 'Always sends this message through the selected Telegram connection.',
+      message: 'Telegram delivery',
+    },
+    WHATSAPP: {
+      description:
+        'Always sends this message through the selected WhatsApp connection. Free-form messages require an open customer-service window.',
+      message: 'WhatsApp delivery',
+    },
+  }[sendDeliveryTarget];
   const [whatsAppCatalogConnectionId, setWhatsAppCatalogConnectionId] = useState<string>();
   const effectiveWhatsAppCatalogConnectionId = activeWhatsAppChannels.some(
     (channel) => channel.id === whatsAppCatalogConnectionId,
@@ -147,11 +220,94 @@ export function AutomationNodeConfig({
       <Space direction="vertical" style={{ width: '100%' }}>
         <Alert
           className="automation-channel-note"
-          description="This step replies through the same channel and conversation that started the run. Telegram can send the text directly; WhatsApp requires an open customer service window for free-form text."
-          message="Uses the incoming conversation channel"
+          description={sendDeliveryInfo.description}
+          message={sendDeliveryInfo.message}
           showIcon
           type="info"
         />
+        <Form.Item label="Send via">
+          <Segmented
+            className="segmented-switcher"
+            onChange={(value) => {
+              updateConfig({
+                deliveryTarget: value,
+                ...(value === 'INCOMING_CONVERSATION'
+                  ? { telegramConnectionId: undefined, whatsappConnectionId: undefined }
+                  : {}),
+                ...(value === 'TELEGRAM' ? { whatsappConnectionId: undefined } : {}),
+                ...(value === 'WHATSAPP' ? { telegramConnectionId: undefined } : {}),
+              });
+            }}
+            options={[
+              { label: 'Automatic', value: 'INCOMING_CONVERSATION' },
+              { label: 'Telegram only', value: 'TELEGRAM' },
+              { label: 'WhatsApp only', value: 'WHATSAPP' },
+            ]}
+            value={sendDeliveryTarget}
+          />
+        </Form.Item>
+        {sendDeliveryTarget === 'TELEGRAM' ? (
+          <Form.Item label="Telegram connection">
+            <Select
+              onChange={(value: string) => set('telegramConnectionId', value)}
+              options={activeTelegramChannels.map((channel) => ({
+                label: `${channel.name} — ${channelAccountLabel(channel)}`,
+                value: channel.id,
+              }))}
+              optionFilterProp="label"
+              placeholder="Choose an active Telegram connection"
+              showSearch
+              value={telegramConnectionId ?? null}
+            />
+            {!activeTelegramChannels.length ? (
+              <Alert
+                description="No active Telegram connection is available for this project."
+                message="No active Telegram connection is available for this project."
+                showIcon
+                type="warning"
+              />
+            ) : (
+              <Typography.Text type="secondary">
+                The contact must have an active Telegram identity for the selected connection.
+              </Typography.Text>
+            )}
+          </Form.Item>
+        ) : null}
+        {sendDeliveryTarget === 'WHATSAPP' ? (
+          <Form.Item label="WhatsApp connection">
+            <Select
+              onChange={(value: string) => set('whatsappConnectionId', value)}
+              options={activeWhatsAppChannels.map((channel) => ({
+                label: `${channel.name} — ${channelAccountLabel(channel)}`,
+                value: channel.id,
+              }))}
+              optionFilterProp="label"
+              placeholder="Choose an active WhatsApp connection"
+              showSearch
+              value={whatsappConnectionId ?? null}
+            />
+            {!activeWhatsAppChannels.length ? (
+              <Alert
+                description="No active WhatsApp connection is available for this project."
+                message="No active WhatsApp connection is available for this project."
+                showIcon
+                type="warning"
+              />
+            ) : (
+              <>
+                <Typography.Text type="secondary">
+                  The contact must have an active WhatsApp identity for the selected connection.
+                </Typography.Text>
+                <Alert
+                  description="Free-form WhatsApp messages require an open customer-service window. Use Send template outside that window."
+                  message="Free-form WhatsApp messages require an open customer-service window."
+                  showIcon
+                  type="warning"
+                />
+              </>
+            )}
+          </Form.Item>
+        ) : null}
         <Form.Item label="Message text">
           <Input.TextArea
             maxLength={4096}

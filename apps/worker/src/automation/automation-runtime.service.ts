@@ -48,6 +48,7 @@ interface NodeResult {
   reasonCode?: string;
   suspended?: boolean;
 }
+type SendMessageDeliveryTarget = 'INCOMING_CONVERSATION' | 'TELEGRAM' | 'WHATSAPP';
 
 const stepBudget = 100;
 
@@ -832,14 +833,29 @@ export class AutomationRuntimeService {
     context: RuntimeContext,
     executionId: string,
   ): Promise<Prisma.InputJsonObject> {
+    const nodeConfig = this.object(node.config);
+    const deliveryTarget =
+      node.type === 'SEND_MESSAGE'
+        ? this.resolveSendMessageDeliveryTarget(nodeConfig)
+        : 'INCOMING_CONVERSATION';
+    const connectionId =
+      node.type === 'SEND_MESSAGE' && deliveryTarget !== 'INCOMING_CONVERSATION'
+        ? this.sendMessageConnectionId(nodeConfig, deliveryTarget)
+        : context.connectionId;
     const connection = await transaction.channelConnection.findUnique({
       select: { id: true, status: true, type: true },
-      where: { projectId_id: { id: context.connectionId, projectId: context.projectId } },
+      where: { projectId_id: { id: connectionId, projectId: context.projectId } },
     });
     if (
       !connection ||
       connection.status !== 'ACTIVE' ||
       !['TELEGRAM', 'WHATSAPP'].includes(connection.type)
+    )
+      throw new Error('automation_channel_connection_unavailable');
+    if (
+      node.type === 'SEND_MESSAGE' &&
+      ((deliveryTarget === 'TELEGRAM' && connection.type !== 'TELEGRAM') ||
+        (deliveryTarget === 'WHATSAPP' && connection.type !== 'WHATSAPP'))
     )
       throw new Error('automation_channel_connection_unavailable');
     const channelType = connection.type === 'WHATSAPP' ? 'WHATSAPP' : 'TELEGRAM';
@@ -910,7 +926,7 @@ export class AutomationRuntimeService {
       const approved = await transaction.whatsAppMessageTemplate.findUnique({
         where: {
           projectId_connectionId_name_languageCode: {
-            connectionId: context.connectionId,
+            connectionId,
             languageCode: whatsAppTemplate.data.languageCode,
             name: whatsAppTemplate.data.name,
             projectId: context.projectId,
@@ -935,7 +951,7 @@ export class AutomationRuntimeService {
     const identity = await transaction.channelIdentity.findFirst({
       where: {
         channel: channelType,
-        connectionId: context.connectionId,
+        connectionId,
         contactId: context.contactId,
         projectId: context.projectId,
         status: 'ACTIVE',
@@ -969,7 +985,7 @@ export class AutomationRuntimeService {
     }
     const message = await transaction.message.create({
       data: {
-        connectionId: context.connectionId,
+        connectionId,
         contactId: context.contactId,
         content: renderedWhatsAppTemplate
           ? { whatsAppTemplate: renderedWhatsAppTemplate }
@@ -999,7 +1015,7 @@ export class AutomationRuntimeService {
     });
     const outbox = await transaction.outboxRecord.create({
       data: {
-        connectionId: context.connectionId,
+        connectionId,
         idempotencyKey,
         kind: channelType,
         nextAttemptAt: new Date(),
@@ -1012,6 +1028,33 @@ export class AutomationRuntimeService {
       messageId: message.id,
       outboxRecordId: outbox.id,
     };
+  }
+
+  private resolveSendMessageDeliveryTarget(
+    config: Record<string, Prisma.JsonValue>,
+  ): SendMessageDeliveryTarget {
+    const target = typeof config.deliveryTarget === 'string' ? config.deliveryTarget : undefined;
+    if (!target || target === 'INCOMING_CONVERSATION') return 'INCOMING_CONVERSATION';
+    if (target === 'TELEGRAM' || target === 'WHATSAPP') return target;
+    throw new Error('automation_send_message_delivery_target_invalid');
+  }
+
+  private sendMessageConnectionId(
+    config: Record<string, Prisma.JsonValue>,
+    deliveryTarget: SendMessageDeliveryTarget,
+  ): string {
+    const telegramConnectionId =
+      deliveryTarget === 'TELEGRAM' && typeof config.telegramConnectionId === 'string'
+        ? config.telegramConnectionId
+        : undefined;
+    const whatsappConnectionId =
+      deliveryTarget === 'WHATSAPP' && typeof config.whatsappConnectionId === 'string'
+        ? config.whatsappConnectionId
+        : undefined;
+    const connectionId =
+      deliveryTarget === 'TELEGRAM' ? telegramConnectionId : whatsappConnectionId;
+    if (!connectionId) throw new Error('automation_channel_connection_unavailable');
+    return connectionId;
   }
 
   private async nodeExecution(

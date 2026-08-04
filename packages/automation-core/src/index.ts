@@ -292,6 +292,8 @@ export interface GraphValidationResult {
 
 const branchingNodes = new Set<AutomationNodeType>(['CONDITION']);
 const continuationNodes = new Set<AutomationNodeType>(['DELAY', 'WAIT_FOR_REPLY']);
+const sendMessageDeliveryTargets = ['INCOMING_CONVERSATION', 'TELEGRAM', 'WHATSAPP'] as const;
+type SendMessageDeliveryTarget = (typeof sendMessageDeliveryTargets)[number];
 
 export function validateScenarioGraph(input: unknown): GraphValidationResult {
   const parsed = scenarioGraphSchema.safeParse(input);
@@ -430,6 +432,21 @@ export function validateScenarioGraph(input: unknown): GraphValidationResult {
       (typeof node.config.text !== 'string' || node.config.text.trim().length === 0)
     ) {
       errors.push(`Send Message node ${node.id} requires message text`);
+    }
+    if (node.type === 'SEND_MESSAGE') {
+      const deliveryTarget =
+        typeof node.config.deliveryTarget === 'string'
+          ? (node.config.deliveryTarget as SendMessageDeliveryTarget)
+          : 'INCOMING_CONVERSATION';
+      if (!sendMessageDeliveryTargets.includes(deliveryTarget)) {
+        errors.push(`Send Message node ${node.id} has an unsupported delivery target`);
+      }
+      if (deliveryTarget === 'TELEGRAM' && !isNonEmptyString(node.config.telegramConnectionId)) {
+        errors.push(`Send Message node ${node.id} requires a Telegram connection`);
+      }
+      if (deliveryTarget === 'WHATSAPP' && !isNonEmptyString(node.config.whatsappConnectionId)) {
+        errors.push(`Send Message node ${node.id} requires a WhatsApp connection`);
+      }
     }
     if (node.type === 'EXTERNAL_HTTP_REQUEST') {
       const config = externalHttpRequestConfigSchema.safeParse(node.config);
@@ -727,4 +744,8 @@ function valueAtPath(value: unknown, path: string): unknown {
     if (dangerousPathSegments.has(part) || !Object.hasOwn(current, part)) return undefined;
     return (current as Record<string, unknown>)[part];
   }, value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
