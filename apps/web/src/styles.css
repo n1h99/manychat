@@ -484,7 +484,7 @@
 
 .technical-record-drawer .ant-drawer-body {
   display: grid;
-  gap: 22px;
+  gap: 24px;
   padding: 16px;
 }
 
@@ -496,25 +496,30 @@
 
 .technical-record-top {
   display: grid;
-  gap: 10px;
   align-items: start;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .technical-record-top-cell {
   display: grid;
   gap: 6px;
-  padding: 10px;
+  padding: 12px;
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 12px;
+  height: auto;
   min-height: auto;
   align-self: start;
 }
 
 .technical-record-section {
   display: grid;
-  gap: 14px;
+  gap: 12px;
+}
+
+.technical-record-section + .technical-record-section {
+  margin-top: 24px;
 }
 
 .technical-record-section .ant-typography {
@@ -524,26 +529,29 @@
 .technical-record-section-title {
   color: var(--text);
   font-size: 15px !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   line-height: 1.25 !important;
+  margin: 0 !important;
 }
 
 .technical-record-fields {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .technical-record-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  gap: 3px;
 }
 
 .technical-record-label {
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.35;
+  color: var(--text);
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 1.3 !important;
 }
 
 .technical-record-top-label,
@@ -562,13 +570,21 @@
 
 .technical-record-cell-value {
   min-width: 0;
+  width: 100%;
   font-size: 14px;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .technical-record-cell-value .ant-typography {
   font-size: 14px;
   line-height: 1.35;
+}
+
+@media (max-width: 768px) {
+  .technical-record-top {
+    grid-template-columns: 1fr;
+  }
 }
 
 .technical-record-drawer .ant-typography-copy {

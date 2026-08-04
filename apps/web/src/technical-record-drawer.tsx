@@ -105,7 +105,7 @@ function renderCompactObjectValue(value: Record<string, unknown>) {
     <div className="technical-record-fields technical-record-fields--nested">
       {Object.entries(value).map(([field, nested]) => (
         <div className="technical-record-row" key={field}>
-          <Typography.Text type="secondary" className="technical-record-label">
+          <Typography.Text className="technical-record-label">
             {formatFieldLabel(field)}
           </Typography.Text>
           <div className="technical-record-cell-value">{renderFieldValue(nested)}</div>
@@ -156,7 +156,7 @@ function renderFieldRows(field: TechnicalRecordField) {
   const value = renderFieldValue(field.value);
   return (
     <div className="technical-record-row" key={field.label}>
-      <Typography.Text type="secondary" className="technical-record-label">
+      <Typography.Text className="technical-record-label" strong>
         {field.label}
       </Typography.Text>
       <div className={`technical-record-cell-value ${field.compact ? 'is-compact' : ''}`}>
