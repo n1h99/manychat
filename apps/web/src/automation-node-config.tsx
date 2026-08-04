@@ -216,8 +216,31 @@ export function AutomationNodeConfig({
   if (nodeType === 'SEND_MESSAGE') {
     const text = typeof config.text === 'string' ? config.text : '';
     const preview = previewAutomationText(text, customFields);
+    const messageTextField = (
+      <Form.Item label="Message text" style={{ marginBottom: 0 }}>
+        <div style={{ marginTop: 6 }}>
+          <Input.TextArea
+            maxLength={4096}
+            onChange={(event) => set('text', event.target.value)}
+            rows={6}
+            value={text}
+          />
+        </div>
+      </Form.Item>
+    );
+    const insertVariableField = (
+      <Form.Item label="Insert variable" style={{ marginBottom: 0 }}>
+        <Select
+          onChange={(path: string) => set('text', `${text}{{${path}}}`)}
+          options={automationVariableOptions(customFields)}
+          placeholder="Choose a contact or event variable"
+          showSearch
+          value={null}
+        />
+      </Form.Item>
+    );
     return (
-      <Space direction="vertical" style={{ width: '100%' }}>
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <Alert
           className="automation-channel-note"
           description={sendDeliveryInfo.description}
@@ -225,7 +248,7 @@ export function AutomationNodeConfig({
           showIcon
           type="info"
         />
-        <Form.Item label="Send via">
+        <Form.Item label="Send via" style={{ marginBottom: 0 }}>
           <Segmented
             className="segmented-switcher"
             onChange={(value) => {
@@ -247,84 +270,86 @@ export function AutomationNodeConfig({
           />
         </Form.Item>
         {sendDeliveryTarget === 'TELEGRAM' ? (
-          <Form.Item label="Telegram connection">
-            <Select
-              onChange={(value: string) => set('telegramConnectionId', value)}
-              options={activeTelegramChannels.map((channel) => ({
-                label: `${channel.name} — ${channelAccountLabel(channel)}`,
-                value: channel.id,
-              }))}
-              optionFilterProp="label"
-              placeholder="Choose an active Telegram connection"
-              showSearch
-              value={telegramConnectionId ?? null}
-            />
-            {!activeTelegramChannels.length ? (
-              <Alert
-                description="No active Telegram connection is available for this project."
-                message="No active Telegram connection is available for this project."
-                showIcon
-                type="warning"
-              />
-            ) : (
-              <Typography.Text type="secondary">
-                The contact must have an active Telegram identity for the selected connection.
-              </Typography.Text>
-            )}
-          </Form.Item>
+          <Space direction="vertical" size={20}>
+            <Form.Item label="Telegram connection" style={{ marginBottom: 0 }}>
+              <Space direction="vertical" size={6}>
+                <Select
+                  onChange={(value: string) => set('telegramConnectionId', value)}
+                  options={activeTelegramChannels.map((channel) => ({
+                    label: `${channel.name} — ${channelAccountLabel(channel)}`,
+                    value: channel.id,
+                  }))}
+                  optionFilterProp="label"
+                  placeholder="Choose an active Telegram connection"
+                  showSearch
+                  value={telegramConnectionId ?? null}
+                />
+                {!activeTelegramChannels.length ? (
+                  <Alert
+                    description="No active Telegram connection is available for this project."
+                    message="No active Telegram connection is available for this project."
+                    showIcon
+                    type="warning"
+                  />
+                ) : (
+                  <Typography.Text type="secondary">
+                    The contact must have an active Telegram identity for the selected connection.
+                  </Typography.Text>
+                )}
+              </Space>
+            </Form.Item>
+            {messageTextField}
+            {insertVariableField}
+          </Space>
         ) : null}
         {sendDeliveryTarget === 'WHATSAPP' ? (
-          <Form.Item label="WhatsApp connection">
-            <Select
-              onChange={(value: string) => set('whatsappConnectionId', value)}
-              options={activeWhatsAppChannels.map((channel) => ({
-                label: `${channel.name} — ${channelAccountLabel(channel)}`,
-                value: channel.id,
-              }))}
-              optionFilterProp="label"
-              placeholder="Choose an active WhatsApp connection"
-              showSearch
-              value={whatsappConnectionId ?? null}
-            />
-            {!activeWhatsAppChannels.length ? (
-              <Alert
-                description="No active WhatsApp connection is available for this project."
-                message="No active WhatsApp connection is available for this project."
-                showIcon
-                type="warning"
-              />
-            ) : (
-              <>
-                <Typography.Text type="secondary">
-                  The contact must have an active WhatsApp identity for the selected connection.
-                </Typography.Text>
-                <Alert
-                  description="Free-form WhatsApp messages require an open customer-service window. Use Send template outside that window."
-                  message="Free-form WhatsApp messages require an open customer-service window."
-                  showIcon
-                  type="warning"
+          <Space direction="vertical" size={20}>
+            <Form.Item label="WhatsApp connection" style={{ marginBottom: 0 }}>
+              <Space direction="vertical" size={6}>
+                <Select
+                  onChange={(value: string) => set('whatsappConnectionId', value)}
+                  options={activeWhatsAppChannels.map((channel) => ({
+                    label: `${channel.name} — ${channelAccountLabel(channel)}`,
+                    value: channel.id,
+                  }))}
+                  optionFilterProp="label"
+                  placeholder="Choose an active WhatsApp connection"
+                  showSearch
+                  value={whatsappConnectionId ?? null}
                 />
-              </>
-            )}
-          </Form.Item>
+                {!activeWhatsAppChannels.length ? (
+                  <Alert
+                    description="No active WhatsApp connection is available for this project."
+                    message="No active WhatsApp connection is available for this project."
+                    showIcon
+                    type="warning"
+                  />
+                ) : (
+                  <Space direction="vertical" size={12}>
+                    <Typography.Text type="secondary">
+                      The contact must have an active WhatsApp identity for the selected connection.
+                    </Typography.Text>
+                    <Alert
+                      description="Free-form WhatsApp messages require an open customer-service window. Use Send template outside that window."
+                      message="Free-form WhatsApp messages require an open customer-service window."
+                      showIcon
+                      type="warning"
+                    />
+                  </Space>
+                  )}
+              </Space>
+            </Form.Item>
+            {messageTextField}
+            {insertVariableField}
+          </Space>
         ) : null}
-        <Form.Item label="Message text">
-          <Input.TextArea
-            maxLength={4096}
-            onChange={(event) => set('text', event.target.value)}
-            rows={6}
-            value={text}
-          />
-        </Form.Item>
-        <Form.Item label="Insert variable">
-          <Select
-            onChange={(path: string) => set('text', `${text}{{${path}}}`)}
-            options={automationVariableOptions(customFields)}
-            placeholder="Choose a contact or event variable"
-            showSearch
-            value={null}
-          />
-        </Form.Item>
+        {sendDeliveryTarget === 'INCOMING_CONVERSATION' ? (
+          <Space direction="vertical" size={20}>
+            {messageTextField}
+            {insertVariableField}
+          </Space>
+        ) : null}
+
         <div className="automation-message-preview">
           <Typography.Text strong>Preview</Typography.Text>
           <Typography.Paragraph>
