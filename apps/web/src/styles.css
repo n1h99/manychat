@@ -518,8 +518,32 @@
 
 .technical-record-drawer--account-activity .technical-record-top-cell,
 .technical-record-drawer--audit-log .technical-record-top-cell {
-  gap: 4px;
-  padding: 10px 12px;
+  align-content: start;
+  gap: 6px;
+  padding: 12px;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.technical-record-drawer--account-activity .technical-record-top-value,
+.technical-record-drawer--audit-log .technical-record-top-value {
+  overflow: visible;
+  max-height: none;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.technical-record-drawer--account-activity .ant-drawer-body,
+.technical-record-drawer--audit-log .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: stretch;
+  align-content: flex-start;
+  justify-content: flex-start;
 }
 
 .technical-record-drawer--account-activity .technical-record-fields,
