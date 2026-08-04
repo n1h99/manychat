@@ -1306,14 +1306,14 @@ export function ChannelDetailPage() {
         open={Boolean(selectedInboundEvent)}
         sections={selectedInboundEvent ? inboundPipelineSections(selectedInboundEvent.event) : []}
         title="Inbound event details"
-        top={selectedInboundEvent?.top}
+        top={selectedInboundEvent?.top ?? []}
       />
       <TechnicalRecordDrawer
         onClose={closePipelineEvent}
         open={Boolean(selectedOutboundEvent)}
         sections={selectedOutboundEvent ? outboundPipelineSections(selectedOutboundEvent.event) : []}
         title="Outbound event details"
-        top={selectedOutboundEvent?.top}
+        top={selectedOutboundEvent?.top ?? []}
       />
 
       {isWhatsAppChannel(connection) ? (
