@@ -1,4 +1,4 @@
-import { Drawer, Alert, Spin, Typography } from 'antd';
+import { Drawer, Alert, Grid, Spin, Typography } from 'antd';
 import type { CSSProperties } from 'react';
 import { Fragment, type ReactNode } from 'react';
 
@@ -159,6 +159,9 @@ export function TechnicalRecordDrawer({
   title,
   top,
 }: TechnicalRecordDrawerProps) {
+  const screens = Grid.useBreakpoint();
+  const isMobile = screens.lg === false;
+  const width = isMobile ? '100%' : 560;
   const hasData = (sections ?? []).some((section) => section.fields.length > 0);
   return (
     <Drawer
@@ -166,7 +169,7 @@ export function TechnicalRecordDrawer({
       onClose={onClose}
       open={open}
       title={title}
-      width="100%"
+      width={width}
       destroyOnClose
     >
       {loading ? (
