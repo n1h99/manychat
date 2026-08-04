@@ -1,6 +1,6 @@
 import { Drawer, Alert, Grid, Spin, Typography } from 'antd';
 import type { CSSProperties } from 'react';
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, isValidElement, type ReactNode } from 'react';
 
 export type TechnicalRecordFieldValue = unknown;
 
@@ -47,10 +47,29 @@ function isPrimitive(value: unknown): value is string | number | boolean | null 
   );
 }
 
-function isFlatObject(value: Record<string, unknown>) {
-  return Object.entries(value).every(([, item]) =>
-    item === null || ['string', 'number', 'boolean'].includes(typeof item) || item instanceof Date,
-  );
+function canRenderAsCompactObject(
+  value: unknown,
+  depth = 0,
+  maxDepth = 2,
+): value is Record<string, unknown> {
+  if (isValidElement(value) || value === undefined || typeof value === 'function') return false;
+  if (value === null || isPrimitive(value) || value instanceof Date) return true;
+
+  if (Array.isArray(value)) {
+    return (
+      depth < maxDepth &&
+      value.length <= 12 &&
+      value.every((item) => canRenderAsCompactObject(item, depth + 1, maxDepth))
+    );
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > 12 || depth >= maxDepth) return false;
+    return entries.every(([, item]) => canRenderAsCompactObject(item, depth + 1, maxDepth));
+  }
+
+  return false;
 }
 
 function formatFieldLabel(value: string): string {
@@ -68,7 +87,7 @@ function formatFieldLabel(value: string): string {
     .join(' ');
 }
 
-function renderPrimitive(value: string | number | boolean | Date | null, copy: boolean) {
+function renderPrimitive(value: string | number | boolean | Date | null) {
   const display = value === null ? defaultEmptyValue : String(value);
   if (display === defaultEmptyValue) {
     return (
@@ -78,22 +97,16 @@ function renderPrimitive(value: string | number | boolean | Date | null, copy: b
     );
   }
 
-  return copy ? (
-    <Typography.Text copyable={{ text: display }} style={valueOverflowStyle}>
-      {display}
-    </Typography.Text>
-  ) : (
-    <Typography.Text style={valueOverflowStyle}>{display}</Typography.Text>
-  );
+  return <Typography.Text style={valueOverflowStyle}>{display}</Typography.Text>;
 }
 
 function renderCompactObjectValue(value: Record<string, unknown>) {
   return (
-    <div className="technical-record-fields">
+    <div className="technical-record-fields technical-record-fields--nested">
       {Object.entries(value).map(([field, nested]) => (
-        <div className="technical-record-field" key={field}>
+        <div className="technical-record-row" key={field}>
           <Typography.Text type="secondary" className="technical-record-label">
-            {formatFieldLabel(field)}:
+            {formatFieldLabel(field)}
           </Typography.Text>
           <div className="technical-record-cell-value">{renderFieldValue(nested)}</div>
         </div>
@@ -102,20 +115,23 @@ function renderCompactObjectValue(value: Record<string, unknown>) {
   );
 }
 
-function renderStructuredValue(value: unknown, copy = false) {
-  if (value === null || value === undefined) {
-    return renderPrimitive(null, false);
+function renderStructuredValue(value: unknown) {
+  if (isValidElement(value)) {
+    return value;
   }
-  if (value instanceof Date) return renderPrimitive(value, copy);
-  if (isPrimitive(value)) return renderPrimitive(value, copy);
+  if (value === null || value === undefined) {
+    return renderPrimitive(null);
+  }
+  if (value instanceof Date) return renderPrimitive(value);
+  if (isPrimitive(value)) return renderPrimitive(value);
   if (Array.isArray(value)) {
-    if (value.length === 0) return renderPrimitive(null, false);
+    if (value.length === 0) return renderPrimitive(null);
     if (value.every((item) => isPrimitive(item) || item === undefined)) {
       return (
         <div className="technical-record-list">
           {value.map((item, index) => (
             <div className="technical-record-list-item" key={`${item}-${index}`}>
-              {renderStructuredValue(item, false)}
+              {renderStructuredValue(item)}
             </div>
           ))}
         </div>
@@ -124,20 +140,20 @@ function renderStructuredValue(value: unknown, copy = false) {
     return <pre className="safe-json-view">{JSON.stringify(value, null, 2)}</pre>;
   }
   if (typeof value === 'object') {
-    if (isFlatObject(value as Record<string, unknown>)) {
+    if (canRenderAsCompactObject(value)) {
       return renderCompactObjectValue(value as Record<string, unknown>);
     }
     return <pre className="safe-json-view">{JSON.stringify(value, null, 2)}</pre>;
   }
-  return renderPrimitive(String(value), copy);
+  return renderPrimitive(String(value));
 }
 
-function renderFieldValue(value: unknown, copy = true) {
-  return renderStructuredValue(value, copy);
+function renderFieldValue(value: unknown) {
+  return renderStructuredValue(value);
 }
 
 function renderFieldRows(field: TechnicalRecordField) {
-  const value = renderFieldValue(field.value, field.copy ?? (typeof field.value === 'string'));
+  const value = renderFieldValue(field.value);
   return (
     <div className="technical-record-row" key={field.label}>
       <Typography.Text type="secondary" className="technical-record-label">
@@ -182,8 +198,12 @@ export function TechnicalRecordDrawer({
             <div className="technical-record-top">
               {top.map((item) => (
                 <div className="technical-record-top-cell" key={item.label}>
-                  <Typography.Text type="secondary">{item.label}</Typography.Text>
-                  <div style={valueOverflowStyle}>{item.value}</div>
+                  <Typography.Text type="secondary" className="technical-record-top-label">
+                    {item.label}
+                  </Typography.Text>
+                  <div className="technical-record-top-value" style={valueOverflowStyle}>
+                    {item.value}
+                  </div>
                 </div>
               ))}
             </div>
@@ -202,7 +222,9 @@ export function TechnicalRecordDrawer({
             <Fragment key={section.title}>
               {section.fields.length > 0 ? (
                 <div className="technical-record-section">
-                  <Typography.Title level={5}>{section.title}</Typography.Title>
+                  <Typography.Title className="technical-record-section-title" level={5}>
+                    {section.title}
+                  </Typography.Title>
                   <div className="technical-record-fields">
                     {section.fields.map(renderFieldRows)}
                   </div>

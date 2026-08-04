@@ -484,56 +484,95 @@
 
 .technical-record-drawer .ant-drawer-body {
   display: grid;
-  gap: 14px;
+  gap: 22px;
   padding: 16px;
+}
+
+.technical-record-drawer .ant-drawer-title {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .technical-record-top {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
 .technical-record-top-cell {
   display: grid;
-  gap: 4px;
-  padding: 11px;
+  gap: 6px;
+  padding: 10px;
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 12px;
+  min-height: auto;
+  align-self: start;
 }
 
 .technical-record-section {
   display: grid;
-  gap: 8px;
+  gap: 14px;
 }
 
 .technical-record-section .ant-typography {
   margin: 0 !important;
 }
 
+.technical-record-section-title {
+  color: var(--text);
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  line-height: 1.25 !important;
+}
+
 .technical-record-fields {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .technical-record-row {
   display: grid;
-  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  gap: 12px;
   align-items: start;
 }
 
 .technical-record-label {
-  font-size: 11px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.technical-record-top-label,
+.technical-record-top-value {
+  line-height: 1.35;
+}
+
+.technical-record-top-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.technical-record-top-value {
+  font-size: 14px;
 }
 
 .technical-record-cell-value {
   min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .technical-record-cell-value .ant-typography {
   font-size: 14px;
+  line-height: 1.35;
+}
+
+.technical-record-drawer .ant-typography-copy {
+  display: none;
 }
 
 .technical-record-list {
