@@ -286,21 +286,23 @@ export class WhatsAppWebhookService {
   ): void {
     const appSecretLength = appSecret.length;
     const reason = details.reason ?? signatureInvalidReason.MISMATCH;
-    this.logger.warn({
-      correlationId: context.correlationId,
-      ip: context.ip,
-      message: 'WhatsApp webhook signature rejected',
-      appSecretLength,
-      appSecretPresent: appSecretLength > 0,
-      rawBodyLength: rawBody.length,
-      rawBodyPresent: true,
-      signatureHexLength: details.signatureHexLength,
-      signatureHasSha256Prefix: details.signatureHasSha256Prefix,
-      signaturePresent: details.signaturePresent,
-      signatureHexValid: details.signatureHexValid,
-      safeReason: reason,
-      userAgent: context.userAgent,
-    });
+    this.logger.warn(
+      JSON.stringify({
+        event: 'whatsapp_webhook_signature_rejected',
+        correlationId: context.correlationId,
+        ip: context.ip,
+        appSecretLength,
+        appSecretPresent: appSecretLength > 0,
+        rawBodyLength: rawBody.length,
+        rawBodyPresent: true,
+        signatureHexLength: details.signatureHexLength,
+        signatureHasSha256Prefix: details.signatureHasSha256Prefix,
+        signaturePresent: details.signaturePresent,
+        signatureHexValid: details.signatureHexValid,
+        safeReason: reason,
+        userAgent: context.userAgent,
+      }),
+    );
   }
 
   private safeEqual(left: string, right: string): boolean {

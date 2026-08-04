@@ -76,8 +76,9 @@ function getWarnLog(service: WhatsAppWebhookService) {
 function getWarnPayload(warn: ReturnType<typeof vi.fn>): Record<string, unknown> {
   expect(warn).toHaveBeenCalledOnce();
   const log = warn.mock.calls[0]?.[0];
-  expect(log).toBeDefined();
-  return log as Record<string, unknown>;
+  expect(log).toBeTypeOf('string');
+  expect(typeof log).toBe('string');
+  return JSON.parse(log as string) as Record<string, unknown>;
 }
 
 function envelope() {
