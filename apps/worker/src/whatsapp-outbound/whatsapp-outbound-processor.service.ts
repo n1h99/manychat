@@ -192,17 +192,87 @@ export class WhatsAppOutboundProcessorService
       const action = string(payload.action);
       if (action === 'MARK_READ') {
         const providerMessageId = string(payload.providerMessageId);
-        if (!providerMessageId)
-          throw new WhatsAppOutboundPermanentError('whatsapp_read_target_invalid');
+        if (!providerMessageId) {
+          await this.failOutboxOnly(claimed, 'whatsapp_read_target_invalid');
+          return;
+        }
+        const accessToken = this.resolveAccessToken(connection);
+        const phoneNumberId = connection.phoneNumberId;
+        sendContext = {
+          accessTokenDecryptSucceeded: accessToken.accessTokenDecryptSucceeded,
+          accessTokenPresent: accessToken.accessTokenPresent,
+          connectionId: connection.id,
+          correlationId: string(object(payload.correlationId)),
+          graphApiVersion: connection.graphApiVersion,
+          messageType: 'whatsapp_read',
+          operationId: claimed.id,
+          outboxId: claimed.id,
+          phoneNumberId,
+          phoneNumberIdPresent: Boolean(phoneNumberId),
+          projectId: claimed.projectId,
+          recipientPresent: false,
+        };
+        if (!accessToken.accessTokenPresent) {
+          await this.logOutboundSendRejection(
+            claimed,
+            undefined,
+            {
+              mode: 'FAIL',
+              safeReason: 'ACCESS_TOKEN_MISSING',
+            },
+            sendContext,
+          );
+          await this.failOutboxOnly(claimed, 'whatsapp_mark_read_failed');
+          return;
+        }
+        if (!accessToken.accessTokenDecryptSucceeded) {
+          await this.logOutboundSendRejection(
+            claimed,
+            undefined,
+            {
+              mode: 'FAIL',
+              safeReason: 'ACCESS_TOKEN_DECRYPT_FAILED',
+            },
+            sendContext,
+          );
+          await this.failOutboxOnly(claimed, 'whatsapp_mark_read_failed');
+          return;
+        }
+        if (!accessToken.accessToken) {
+          await this.logOutboundSendRejection(
+            claimed,
+            undefined,
+            {
+              mode: 'FAIL',
+              safeReason: 'ACCESS_TOKEN_MISSING',
+            },
+            sendContext,
+          );
+          await this.failOutboxOnly(claimed, 'whatsapp_mark_read_failed');
+          return;
+        }
+        if (!phoneNumberId) {
+          await this.logOutboundSendRejection(
+            claimed,
+            undefined,
+            {
+              mode: 'FAIL',
+              safeReason: 'GRAPH_API_INVALID_PHONE_NUMBER_ID',
+            },
+            sendContext,
+          );
+          await this.failOutboxOnly(claimed, 'whatsapp_mark_read_failed');
+          return;
+        }
         try {
           await this.api.markMessageRead({
-            accessToken: this.decrypt(connection),
+            accessToken: accessToken.accessToken,
             graphApiVersion: connection.graphApiVersion,
             messageId: providerMessageId,
-            phoneNumberId: connection.phoneNumberId,
+            phoneNumberId,
           });
         } catch (error) {
-          await this.handlePreMessageError(claimed, error, 'whatsapp_mark_read_failed');
+          await this.handleMarkReadError(claimed, error, sendContext);
           return;
         }
         await this.succeedOutboxOnly(claimed);
@@ -1504,6 +1574,25 @@ export class WhatsAppOutboundProcessorService
     }
     await this.unknown(claimed, messageId, 'whatsapp_outbound_unknown');
   }
+
+  private async handleMarkReadError(
+    claimed: ClaimedOutboxRecord,
+    error: unknown,
+    context?: SendAttemptContext,
+  ): Promise<void> {
+    const analysis = this.classifySendFailure(error, context);
+    if (analysis.mode === 'FAIL') {
+      if (context) await this.logOutboundSendRejection(claimed, undefined, analysis, context);
+      await this.failOutboxOnly(claimed, 'whatsapp_mark_read_failed');
+      return;
+    }
+    if (analysis.mode === 'RETRY') {
+      await this.retry(claimed, 'whatsapp_mark_read_retryable', analysis.retryAfterSeconds, true);
+      return;
+    }
+    await this.unknownOutboxOnly(claimed, 'whatsapp_mark_read_unknown');
+  }
+
   private async succeedOutboxOnly(claimed: ClaimedOutboxRecord): Promise<void> {
     const updated = await this.database.client.outboxRecord.updateMany({
       data: {

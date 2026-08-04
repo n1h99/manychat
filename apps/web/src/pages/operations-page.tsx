@@ -98,6 +98,53 @@ function terminalCount(groups: SummaryGroup | undefined, statuses: string[]) {
     .reduce((total, group) => total + group._count._all, 0);
 }
 
+function readableAuditValue(value: unknown, emptyLabel = '—') {
+  if (value === null || value === undefined) return emptyLabel;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value) || typeof value !== 'object') {
+    return <pre className="safe-json-view">{JSON.stringify(value, null, 2)}</pre>;
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length === 0) return emptyLabel;
+
+  const isFlatObject = entries.every(([, nestedValue]) =>
+    ['string', 'number', 'boolean'].includes(typeof nestedValue) || nestedValue === null,
+  );
+  if (isFlatObject) {
+    return (
+      <div style={{ display: 'grid', gap: 10 }}>
+        {entries.map(([field, fieldValue]) => (
+          <div style={{ display: 'grid', gap: 2 }} key={field}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {field
+                .replace(/([a-z])([A-Z])/g, '$1 $2')
+                .replace(/[_-]+/g, ' ')
+                .split(' ')
+                .filter(Boolean)
+                .map((piece, index) => {
+                  const lowered = piece.toLowerCase();
+                  if (lowered === 'id') return 'ID';
+                  if (lowered === 'crm') return 'CRM';
+                  if (index === 0) return piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase();
+                  return lowered;
+                })
+                .join(' ')}
+            </Typography.Text>
+            <Typography.Text style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+              {fieldValue === null || fieldValue === undefined ? emptyLabel : String(fieldValue)}
+            </Typography.Text>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <pre className="safe-json-view">{JSON.stringify(value, null, 2)}</pre>;
+}
+
 export function OperationsPage() {
   const { projectId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -502,14 +549,10 @@ export function OperationsPage() {
             </Descriptions.Item>
             <Descriptions.Item label="Correlation">{auditDetails.correlationId}</Descriptions.Item>
             <Descriptions.Item label="Before">
-              <pre className="safe-json-view">
-                {JSON.stringify(auditDetails.beforeSafeJson, null, 2)}
-              </pre>
+              {readableAuditValue(auditDetails.beforeSafeJson, 'No previous value')}
             </Descriptions.Item>
             <Descriptions.Item label="After">
-              <pre className="safe-json-view">
-                {JSON.stringify(auditDetails.afterSafeJson, null, 2)}
-              </pre>
+              {readableAuditValue(auditDetails.afterSafeJson)}
             </Descriptions.Item>
           </Descriptions>
         ) : null}

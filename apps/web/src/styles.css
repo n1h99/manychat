@@ -3954,7 +3954,7 @@ button:disabled,
 .channel-management-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr);
-  align-items: stretch;
+  align-items: start;
   gap: 18px;
   margin-top: 18px;
 }
@@ -3964,7 +3964,6 @@ button:disabled,
   grid-template-rows: auto 1fr;
   gap: 18px;
   min-width: 0;
-  height: 100%;
 }
 
 .channel-management-grid > .ant-card,
@@ -3975,7 +3974,7 @@ button:disabled,
 
 .channel-test-message-card {
   min-width: 0;
-  height: 100% !important;
+  align-self: start;
 }
 
 .channel-management-grid .ant-card-body {

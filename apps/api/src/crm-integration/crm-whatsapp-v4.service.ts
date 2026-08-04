@@ -440,8 +440,19 @@ export class CrmWhatsAppV4Service {
     authenticatedProjectId?: string,
   ) {
     const target = await this.resolveMessage(messageId, dto, authenticatedProjectId);
-    if (target.direction !== 'INBOUND')
+    if (
+      target.direction !== 'INBOUND' ||
+      !this.isReadableIncomingMessage(target.messageType, target.status, target.content, target.metadata)
+    )
       throw new ConflictException({ code: 'WHATSAPP_READ_TARGET_INVALID' });
+    if (!target.providerMessageId)
+      throw new ConflictException({ code: 'WHATSAPP_READ_TARGET_INVALID' });
+    if (target.status === 'READ') {
+      const existing = await this.findExistingMarkReadAction(target);
+      return existing
+        ? { ...existing, status: 'QUEUED', replayed: true }
+        : { messageId: target.messageId, operationId: target.messageId, replayed: true, status: 'QUEUED' };
+    }
     return this.queueAction('MARK_READ', target, {}, idempotencyKey, correlationId);
   }
 
@@ -780,18 +791,22 @@ export class CrmWhatsAppV4Service {
         connectionId: route.connectionId,
         contactId: route.contactId,
         conversation: { externalChatId: route.externalUserId },
-        externalMessageId: { not: null },
         id: messageId,
         projectId: route.projectId,
       },
     });
-    if (!message?.externalMessageId) throw new NotFoundException({ code: 'MESSAGE_NOT_FOUND' });
+    if (!message?.externalMessageId)
+      throw new NotFoundException({ code: 'WHATSAPP_READ_TARGET_INVALID' });
     return {
       channelIdentityId: route.identityId,
       connectionId: route.connectionId,
       direction: message.direction,
       messageId: message.id,
       projectId: route.projectId,
+      metadata: message.metadata,
+      content: message.content,
+      status: message.status,
+      messageType: message.type,
       providerMessageId: message.externalMessageId,
     };
   }
@@ -803,6 +818,17 @@ export class CrmWhatsAppV4Service {
     idempotencyKey: string,
     correlationId: string,
   ): Promise<CrmWhatsAppQueuedResult> {
+    if (action === 'MARK_READ') {
+      const existingMarkRead = await this.findExistingMarkReadAction(target);
+      if (existingMarkRead) {
+        return {
+          messageId: existingMarkRead.messageId,
+          operationId: existingMarkRead.operationId,
+          replayed: true,
+          status: 'QUEUED',
+        };
+      }
+    }
     const requestHash = this.requestHash({ action, messageId: target.messageId, mutation });
     const storedKey = `crm-whatsapp-v4-${idempotencyKey}`;
     const existing = await this.database.client.outboxRecord.findUnique({
@@ -894,6 +920,74 @@ export class CrmWhatsAppV4Service {
       replayed: false,
       status: 'QUEUED',
     };
+  }
+
+  private async findExistingMarkReadAction(target: {
+    connectionId: string;
+    messageId: string;
+    projectId: string;
+    providerMessageId: string;
+  }): Promise<{ messageId: string; operationId: string } | undefined> {
+    const duplicate = await this.database.client.outboxRecord.findFirst({
+      where: {
+        connectionId: target.connectionId,
+        kind: 'WHATSAPP',
+        projectId: target.projectId,
+        AND: [
+          { payload: { path: ['action'], equals: 'MARK_READ' } },
+          { payload: { path: ['messageId'], equals: target.messageId } },
+        ],
+      },
+      select: {
+        id: true,
+        payload: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const payload = this.object(duplicate?.payload);
+    if (
+      !payload ||
+      payload.messageId !== target.messageId ||
+      payload.providerMessageId !== target.providerMessageId
+    )
+      return;
+    return {
+      messageId: target.messageId,
+      operationId: duplicate!.id,
+    };
+  }
+
+  private isReadableIncomingMessage(
+    messageType: string | undefined,
+    status: string,
+    content: unknown,
+    metadata: unknown,
+  ): boolean {
+    if (status === 'READ') return false;
+    if (!this.isReadableIncomingMessageType(messageType)) return false;
+    if (this.isSyntheticSource(metadata)) return false;
+    if (messageType === 'INTERACTIVE' && this.isSyntheticInteractive(content)) return false;
+    return true;
+  }
+
+  private isSyntheticSource(metadata: unknown): boolean {
+    const source = this.nonEmptyString(this.object(metadata)?.source);
+    const sourceValue = source?.toLowerCase();
+    return (
+      sourceValue === 'automation' ||
+      sourceValue === 'broadcast' ||
+      sourceValue === 'system'
+    );
+  }
+
+  private isSyntheticInteractive(content: unknown): boolean {
+    const interactive = this.object(this.object(content)?.interactive);
+    const type = this.nonEmptyString(interactive?.type)?.toLowerCase();
+    return type === 'button_reply' || type === 'list_reply';
+  }
+
+  private isReadableIncomingMessageType(messageType: string | undefined): boolean {
+    return !['SYSTEM', 'CALLBACK_QUERY', 'UNSUPPORTED'].includes(messageType ?? '');
   }
 
   private retryReplay(

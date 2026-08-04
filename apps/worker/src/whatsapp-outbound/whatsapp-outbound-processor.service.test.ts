@@ -11,13 +11,13 @@ const config = new ConfigService({
   WHATSAPP_OUTBOUND_LEASE_MS: 30_000,
 });
 
-const claim = () => ({
+const claim = (payload: Record<string, unknown> = {}) => ({
   attempts: 1,
   connectionId: 'connection-a',
   id: 'outbox-a',
   leaseToken: 'lease-a',
   maxAttempts: 8,
-  payload: { channelIdentityId: 'identity-a', messageId: 'message-a' },
+  payload: { channelIdentityId: 'identity-a', messageId: 'message-a', ...payload },
   projectId: 'project-a',
 });
 
@@ -39,6 +39,7 @@ describe('WhatsApp outbound terminal semantics', () => {
       apiResult?: { messageId: string };
       connection?: Record<string, unknown>;
       decrypt?: () => string;
+      claimPayload?: Record<string, unknown>;
       message?: Record<string, unknown>;
       identity?: Record<string, unknown>;
       recipient?: Record<string, unknown> | null;
@@ -81,12 +82,22 @@ describe('WhatsApp outbound terminal semantics', () => {
     const instance = service(databaseClient);
     const retry = vi.fn().mockResolvedValue(undefined);
     const unknown = vi.fn().mockResolvedValue(undefined);
+    const failOutboxOnly = vi.fn().mockResolvedValue(undefined);
+    const unknownOutboxOnly = vi.fn().mockResolvedValue(undefined);
     const fail = vi.fn().mockResolvedValue(undefined);
     const persistProviderSendJournal = vi.fn().mockResolvedValue(true);
     const recoverJournaledSend = vi.fn().mockResolvedValue(undefined);
+    const markMessageRead = vi
+      .fn()
+      .mockImplementation(() =>
+        error === undefined ? Promise.resolve(undefined) : Promise.reject(error),
+      );
 
     const internals = instance as never as {
-      api: { sendMessage: ReturnType<typeof vi.fn> };
+      api: {
+        markMessageRead: ReturnType<typeof vi.fn>;
+        sendMessage: ReturnType<typeof vi.fn>;
+      };
       claim: ReturnType<typeof vi.fn>;
       connection: ReturnType<typeof vi.fn>;
       decrypt: ReturnType<typeof vi.fn>;
@@ -97,9 +108,11 @@ describe('WhatsApp outbound terminal semantics', () => {
       replyProviderMessageId: ReturnType<typeof vi.fn>;
       retry: typeof retry;
       unknown: typeof unknown;
+      failOutboxOnly: typeof failOutboxOnly;
+      unknownOutboxOnly: typeof unknownOutboxOnly;
     };
 
-    internals.claim = vi.fn().mockResolvedValue(claim());
+    internals.claim = vi.fn().mockResolvedValue(claim(options.claimPayload));
     internals.connection = vi.fn().mockResolvedValue({
       credentialsEncrypted: credentialsEncrypted ?? { accessToken: {} },
       graphApiVersion: 'v23.0',
@@ -117,6 +130,7 @@ describe('WhatsApp outbound terminal semantics', () => {
       .mockResolvedValue({ message: { template: {}, type: 'template' }, template: true });
     internals.replyProviderMessageId = vi.fn().mockResolvedValue(undefined);
     internals.api = {
+      markMessageRead,
       sendMessage: vi
         .fn()
         .mockImplementation(() =>
@@ -130,11 +144,16 @@ describe('WhatsApp outbound terminal semantics', () => {
     internals.recoverJournaledSend = recoverJournaledSend;
     internals.retry = retry;
     internals.unknown = unknown;
+    internals.failOutboxOnly = failOutboxOnly;
+    internals.unknownOutboxOnly = unknownOutboxOnly;
     internals.fail = fail;
 
     return {
+      failOutboxOnly,
+      unknownOutboxOnly,
       fail,
       instance,
+      markMessageRead,
       persistProviderSendJournal,
       recoverJournaledSend,
       retry,
@@ -167,6 +186,177 @@ describe('WhatsApp outbound terminal semantics', () => {
     expect(fail).not.toHaveBeenCalled();
     expect(retry).not.toHaveBeenCalled();
     expect(unknown).not.toHaveBeenCalled();
+  });
+
+  it('marks an inbound message as read through MARK_READ action', async () => {
+    const { instance, fail, failOutboxOnly, markMessageRead, retry, unknownOutboxOnly, unknown } =
+      sendingHarness(undefined, {
+        claimPayload: {
+          action: 'MARK_READ',
+          messageId: 'message-a',
+          providerMessageId: 'wamid.inbound',
+        },
+      });
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(markMessageRead).toHaveBeenCalledWith({
+      accessToken: 'mock-token',
+      graphApiVersion: 'v23.0',
+      messageId: 'wamid.inbound',
+      phoneNumberId: 'phone-a',
+    });
+    expect(fail).not.toHaveBeenCalled();
+    expect(failOutboxOnly).not.toHaveBeenCalled();
+    expect(unknownOutboxOnly).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+  });
+
+  it('fails mark-read when provider message id is missing and does not send request', async () => {
+    const { instance, failOutboxOnly, markMessageRead } = sendingHarness(undefined, {
+      claimPayload: { action: 'MARK_READ' },
+    });
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(markMessageRead).not.toHaveBeenCalled();
+    expect(failOutboxOnly).toHaveBeenCalledWith(
+      claim({ action: 'MARK_READ' }),
+      'whatsapp_read_target_invalid',
+    );
+  });
+
+  it('fails mark-read when access token is missing without sending request', async () => {
+    const { instance, failOutboxOnly, markMessageRead, unknown } = sendingHarness(undefined, {
+      claimPayload: {
+        action: 'MARK_READ',
+        messageId: 'message-a',
+        providerMessageId: 'wamid.inbound',
+      },
+      connection: { credentialsEncrypted: {} },
+    });
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(markMessageRead).not.toHaveBeenCalled();
+    expect(failOutboxOnly).toHaveBeenCalledWith(
+      claim({ action: 'MARK_READ', messageId: 'message-a', providerMessageId: 'wamid.inbound' }),
+      'whatsapp_mark_read_failed',
+    );
+    expect(unknown).not.toHaveBeenCalled();
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('ACCESS_TOKEN_MISSING');
+  });
+
+  it('retries mark-read on retryable provider failures', async () => {
+    const { instance, retry, markMessageRead } = sendingHarness(
+      new WhatsAppApiError(500, 7, 190, 463, true),
+      {
+        claimPayload: {
+          action: 'MARK_READ',
+          messageId: 'message-a',
+          providerMessageId: 'wamid.inbound',
+        },
+      },
+    );
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(markMessageRead).toHaveBeenCalled();
+    expect(retry).toHaveBeenCalledWith(
+      claim({ action: 'MARK_READ', messageId: 'message-a', providerMessageId: 'wamid.inbound' }),
+      'whatsapp_mark_read_retryable',
+      7,
+      true,
+    );
+  });
+
+  it('stores unknown on timeout for mark-read', async () => {
+    const timeout = new Error('request timed out');
+    timeout.name = 'TimeoutError';
+    const { instance, unknownOutboxOnly, markMessageRead } = sendingHarness(timeout, {
+      claimPayload: {
+        action: 'MARK_READ',
+        messageId: 'message-a',
+        providerMessageId: 'wamid.inbound',
+      },
+    });
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(markMessageRead).toHaveBeenCalled();
+    expect(unknownOutboxOnly).toHaveBeenCalledWith(
+      claim({ action: 'MARK_READ', messageId: 'message-a', providerMessageId: 'wamid.inbound' }),
+      'whatsapp_mark_read_unknown',
+    );
+  });
+
+  it('fails mark-read permanently on 401/403 provider errors', async () => {
+    const { instance, failOutboxOnly, markMessageRead } = sendingHarness(
+      new WhatsAppApiError(
+        401,
+        undefined,
+        190,
+        463,
+        false,
+        'OAuthException',
+        'Invalid OAuth access token',
+      ),
+      {
+        claimPayload: {
+          action: 'MARK_READ',
+          messageId: 'message-a',
+          providerMessageId: 'wamid.inbound',
+        },
+      },
+    );
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(markMessageRead).toHaveBeenCalled();
+    expect(failOutboxOnly).toHaveBeenCalledWith(
+      claim({ action: 'MARK_READ', messageId: 'message-a', providerMessageId: 'wamid.inbound' }),
+      'whatsapp_mark_read_failed',
+    );
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('GRAPH_API_UNAUTHORIZED');
+    expect(event.httpStatus).toBe(401);
+  });
+
+  it('never logs sensitive data for mark-read failures', async () => {
+    const { instance, markMessageRead, failOutboxOnly } = sendingHarness(
+      new WhatsAppApiError(403, undefined, 200, 400, false, 'OAuthException', 'Permissions error'),
+      {
+        claimPayload: {
+          action: 'MARK_READ',
+          messageId: 'message-a',
+          providerMessageId: 'wamid.inbound',
+        },
+        connection: {
+          credentialsEncrypted: { accessToken: {} },
+        },
+        decrypt: () => 'super-secret-access-token',
+      },
+    );
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(markMessageRead).toHaveBeenCalled();
+    expect(failOutboxOnly).toHaveBeenCalledWith(
+      claim({ action: 'MARK_READ', messageId: 'message-a', providerMessageId: 'wamid.inbound' }),
+      'whatsapp_mark_read_failed',
+    );
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    const serialized = JSON.stringify(event);
+    expect(serialized).not.toContain('super-secret-access-token');
+    expect(serialized).not.toContain('rawBody');
+    expect(serialized).not.toContain('providerResponse');
+    expect(serialized).not.toContain('providerMessage');
+    expect(serialized).not.toContain('requestBody');
   });
 
   it('retries an explicit 429 exactly once', async () => {

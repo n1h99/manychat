@@ -73,8 +73,8 @@ function fixture(options: { open?: boolean } = {}) {
     conversation: {
       findUnique: vi.fn().mockResolvedValue({
         automationState: 'AUTO',
-        lastInboundAt: new Date('2026-08-03T10:00:00.000Z'),
-        serviceWindowExpiresAt: new Date('2026-08-04T10:00:00.000Z'),
+        lastInboundAt: new Date(Date.now() - 30_000),
+        serviceWindowExpiresAt: open ? new Date(Date.now() + 60_000) : null,
       }),
     },
     idempotencyRecord: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -91,6 +91,7 @@ function fixture(options: { open?: boolean } = {}) {
     outboxRecord: {
       create: vi.fn().mockResolvedValue({ id: 'action-outbox-a' }),
       findUnique: vi.fn().mockResolvedValue(null),
+      findFirst: vi.fn().mockResolvedValue(null),
     },
     project: {
       findUnique: vi.fn().mockResolvedValue({
@@ -313,6 +314,119 @@ describe('CrmWhatsAppV4Service', () => {
         }),
       }),
     );
+  });
+
+  it('rejects mark-read for outbound messages', async () => {
+    const { client, service } = fixture();
+    client.message.findFirst.mockResolvedValue({
+      connectionId: 'connection-a',
+      contactId: 'contact-a',
+      direction: 'OUTBOUND',
+      externalMessageId: 'wamid.outbound',
+      id: 'message-outbound',
+      projectId: 'project-a',
+      type: 'TEXT',
+    });
+    await expect(
+      service.markRead(
+        'message-outbound',
+        {
+          crmProjectId: 'cyber-pulse-staging',
+          identity: outbound.identity,
+          omnicusContactId: 'contact-a',
+          omnicusProjectId: 'project-a',
+        },
+        'read-b',
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ response: { code: 'WHATSAPP_READ_TARGET_INVALID' } });
+  });
+
+  it('rejects mark-read for unsupported message types like SYSTEM', async () => {
+    const { client, service } = fixture();
+    client.message.findFirst.mockResolvedValue({
+      connectionId: 'connection-a',
+      contactId: 'contact-a',
+      direction: 'INBOUND',
+      externalMessageId: 'wamid.system',
+      id: 'message-system',
+      projectId: 'project-a',
+      type: 'SYSTEM',
+    });
+    await expect(
+      service.markRead(
+        'message-system',
+        {
+          crmProjectId: 'cyber-pulse-staging',
+          identity: outbound.identity,
+          omnicusContactId: 'contact-a',
+          omnicusProjectId: 'project-a',
+        },
+        'read-c',
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ response: { code: 'WHATSAPP_READ_TARGET_INVALID' } });
+  });
+
+  it('rejects mark-read when external message id is missing', async () => {
+    const { client, service } = fixture();
+    client.message.findFirst.mockResolvedValue({
+      connectionId: 'connection-a',
+      contactId: 'contact-a',
+      direction: 'INBOUND',
+      externalMessageId: null,
+      id: 'message-missing-provider-id',
+      projectId: 'project-a',
+      type: 'TEXT',
+    });
+    await expect(
+      service.markRead(
+        'message-missing-provider-id',
+        {
+          crmProjectId: 'cyber-pulse-staging',
+          identity: outbound.identity,
+          omnicusContactId: 'contact-a',
+          omnicusProjectId: 'project-a',
+        },
+        'read-d',
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ response: { code: 'WHATSAPP_READ_TARGET_INVALID' } });
+  });
+
+  it('returns existing MARK_READ operation for the same message instead of creating a duplicate', async () => {
+    const { client, service, transaction, queue } = fixture();
+    client.outboxRecord.findFirst.mockResolvedValue({
+      id: 'existing-read-action',
+      kind: 'WHATSAPP',
+      status: 'SUCCEEDED',
+      payload: {
+        action: 'MARK_READ',
+        messageId: 'message-inbound',
+        providerMessageId: 'wamid.inbound',
+      },
+    });
+
+    await expect(
+      service.markRead(
+        'message-inbound',
+        {
+          crmProjectId: 'cyber-pulse-staging',
+          identity: outbound.identity,
+          omnicusContactId: 'contact-a',
+          omnicusProjectId: 'project-a',
+        },
+        'read-e',
+        'correlation-a',
+      ),
+    ).resolves.toMatchObject({
+      messageId: 'message-inbound',
+      operationId: 'existing-read-action',
+      replayed: true,
+      status: 'QUEUED',
+    });
+    expect(transaction.outboxRecord.create).not.toHaveBeenCalled();
+    expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
   it('keeps ordinary WhatsApp replies scoped to the same conversation route', async () => {
