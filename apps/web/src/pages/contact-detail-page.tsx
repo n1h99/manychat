@@ -122,6 +122,10 @@ export function ContactDetailPage() {
                   <div className="contact-summary-value">{value.crmLeadId ?? '\u2014'}</div>
                 </div>
                 <div className="contact-summary-row">
+                  <div className="contact-summary-label">Contact ID:</div>
+                  <div className="contact-summary-value">{value.id}</div>
+                </div>
+                <div className="contact-summary-row">
                   <div className="contact-summary-label">Telegram:</div>
                   <div className="contact-summary-value">
                     {telegramIdentity ? formatIdentityValue(telegramIdentity) : '\u2014'}
@@ -362,7 +366,7 @@ export function ContactDetailPage() {
                 }}
               >
                 <Form.Item
-                  label="Primary contact ID"
+                  label="Contact ID"
                   name="primaryContactId"
                   rules={[{ required: true }]}
                 >
