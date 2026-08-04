@@ -5,9 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { WhatsAppWebhookService } from './whatsapp-webhook.service';
 
 const secret = 'meta-app-secret';
+const secretWithWhitespace = '  meta-app-secret  ';
+const shortSecret = 'short-secret';
 
-function signature(raw: Buffer): string {
-  return `sha256=${createHmac('sha256', secret).update(raw).digest('hex')}`;
+function signature(raw: Buffer, appSecret: string = secret): string {
+  return `sha256=${createHmac('sha256', appSecret).update(raw).digest('hex')}`;
 }
 
 function setup(
@@ -15,6 +17,7 @@ function setup(
     id: 'connection-a',
     projectId: 'project-a',
   },
+  appSecret?: string,
 ) {
   let sequence = 0;
   const transaction = {
@@ -38,7 +41,9 @@ function setup(
   const config = {
     get: vi.fn((key: string) =>
       key === 'WHATSAPP_META_APP_SECRET'
-        ? secret
+        ? appSecret === undefined
+          ? secret
+          : appSecret
         : key === 'WHATSAPP_META_WEBHOOK_VERIFY_TOKEN'
           ? 'verify-token'
           : undefined,
@@ -115,6 +120,17 @@ describe('WhatsAppWebhookService', () => {
       expect(JSON.stringify(call[0].data.payload)).not.toContain('undefined');
   });
 
+  it('accepts a short WhatsApp app secret when validating webhook signatures', async () => {
+    const test = setup(undefined, shortSecret);
+    const payload = envelope();
+    const raw = Buffer.from(JSON.stringify(payload));
+    await expect(
+      test.service.receive(raw, signature(raw, shortSecret), payload, {
+        correlationId: 'correlation-a',
+      }),
+    ).resolves.toMatchObject({ accepted: true, persisted: 2, unknownConnections: 0 });
+  });
+
   it('acknowledges an unknown phone without storing its payload', async () => {
     const test = setup(null);
     const payload = envelope();
@@ -124,6 +140,17 @@ describe('WhatsAppWebhookService', () => {
     ).resolves.toMatchObject({ persisted: 0, unknownConnections: 2 });
     expect(test.client.$transaction).not.toHaveBeenCalled();
     expect(test.queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('rejects webhook processing when WhatsApp Meta app secret is empty', async () => {
+    const test = setup(undefined, '');
+    const payload = envelope();
+    const raw = Buffer.from(JSON.stringify(payload));
+    await expect(
+      test.service.receive(raw, signature(raw, ''), payload, { correlationId: 'correlation-a' }),
+    ).rejects.toMatchObject({
+      response: { code: 'WHATSAPP_META_CONFIGURATION_REQUIRED' },
+    });
   });
 
   it('returns a deterministic error for an oversized signed envelope', async () => {
@@ -137,5 +164,21 @@ describe('WhatsAppWebhookService', () => {
       test.service.receive(raw, signature(raw), payload, { correlationId: 'correlation-a' }),
     ).rejects.toMatchObject({ response: { code: 'WHATSAPP_WEBHOOK_ENVELOPE_OVERSIZED' } });
     expect(test.client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('does not include the app secret in webhook signature rejection messages', async () => {
+    const test = setup(undefined, secretWithWhitespace);
+    const payload = envelope();
+    const raw = Buffer.from(JSON.stringify(payload));
+    try {
+      await test.service.receive(raw, 'sha256=not-a-signature', payload, {
+        correlationId: 'correlation-a',
+      });
+      throw new Error('expected rejection');
+    } catch (error) {
+      const serialized = JSON.stringify(error);
+      expect(serialized).not.toContain(secretWithWhitespace);
+      expect(serialized).not.toContain(secret.trim());
+    }
   });
 });

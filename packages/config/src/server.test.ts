@@ -91,6 +91,33 @@ describe('server environment validation', () => {
     expect(environment.API_PUBLIC_URL).toBe('http://0.0.0.0:3000');
   });
 
+  it('accepts a non-empty WhatsApp Meta app secret shorter than 16 characters', () => {
+    const environment = validateApiEnvironment({
+      ...baseEnvironment,
+      WHATSAPP_META_APP_SECRET: 'short-secret',
+    });
+
+    expect(environment.WHATSAPP_META_APP_SECRET).toBe('short-secret');
+  });
+
+  it('trims surrounding whitespace from WhatsApp Meta app secret', () => {
+    const environment = validateApiEnvironment({
+      ...baseEnvironment,
+      WHATSAPP_META_APP_SECRET: '   abc-secret   ',
+    });
+
+    expect(environment.WHATSAPP_META_APP_SECRET).toBe('abc-secret');
+  });
+
+  it('rejects an empty WhatsApp Meta app secret', () => {
+    expect(() =>
+      validateApiEnvironment({
+        ...baseEnvironment,
+        WHATSAPP_META_APP_SECRET: '   ',
+      }),
+    ).toThrow();
+  });
+
   it.each(['production', 'staging'] as const)(
     'requires an explicit HTTPS API_PUBLIC_URL for %s',
     (appEnvironment) => {

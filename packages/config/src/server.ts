@@ -211,7 +211,7 @@ export const apiEnvironmentSchema = serviceEnvironmentSchema
       .regex(/^v\d+\.\d+$/)
       .optional(),
     WHATSAPP_META_APP_ID: z.string().min(1).optional(),
-    WHATSAPP_META_APP_SECRET: z.string().min(16).optional(),
+    WHATSAPP_META_APP_SECRET: z.string().trim().min(1).optional(),
     WHATSAPP_META_CONFIGURATION_ID: z.string().min(1).optional(),
     WHATSAPP_META_WEBHOOK_VERIFY_TOKEN: z.string().min(16).optional(),
     ...mediaStorageEnvironment,
