@@ -496,7 +496,7 @@
 
 .technical-record-top {
   display: grid;
-  align-items: start;
+  align-items: stretch;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -509,17 +509,16 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   height: auto;
-  min-height: auto;
-  align-self: start;
+  min-height: 0;
+}
+
+.technical-record-top-cell--wide {
+  grid-column: 1 / -1;
 }
 
 .technical-record-section {
   display: grid;
   gap: 12px;
-}
-
-.technical-record-section + .technical-record-section {
-  margin-top: 24px;
 }
 
 .technical-record-section .ant-typography {
@@ -536,7 +535,7 @@
 
 .technical-record-fields {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .technical-record-row {

@@ -196,8 +196,13 @@ export function TechnicalRecordDrawer({
         <>
           {top ? (
             <div className="technical-record-top">
-              {top.map((item) => (
-                <div className="technical-record-top-cell" key={item.label}>
+              {top.map((item, itemIndex) => (
+                <div
+                  className={`technical-record-top-cell${
+                    top.length === 3 && itemIndex === 2 ? ' technical-record-top-cell--wide' : ''
+                  }`}
+                  key={item.label}
+                >
                   <Typography.Text type="secondary" className="technical-record-top-label">
                     {item.label}
                   </Typography.Text>
