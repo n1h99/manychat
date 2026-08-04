@@ -13,7 +13,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import { useParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
@@ -28,6 +28,11 @@ import {
   useSaveCrmProjectConfig,
 } from '../crm-api';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
+import {
+  TechnicalRecordDrawer,
+  type TechnicalRecordSection,
+  type TechnicalRecordTopField,
+} from '../technical-record-drawer';
 
 export function CrmConfigPage() {
   const { projectId } = useParams();
@@ -43,6 +48,52 @@ export function CrmConfigPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [pairing, setPairing] = useState<CrmPairing>();
+  const [selectedOperation, setSelectedOperation] = useState<CrmOperation>();
+
+  const activateRow = (callback: () => void) => (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      callback();
+    }
+  };
+  const crmOperationLabel = (type: CrmOperation['type']) =>
+    ({
+      CREATE_OR_UPDATE_LEAD: 'Create or update lead',
+      FORWARD_INBOUND_MESSAGE: 'Forward inbound message',
+      FORWARD_OUTBOUND_MESSAGE: 'Forward outbound message',
+      FORWARD_REACTION_EVENT: 'Forward reaction event',
+    })[type] ?? type;
+  const crmTop = (row: CrmOperation): TechnicalRecordTopField[] => [
+    { label: 'Type', value: crmOperationLabel(row.type) },
+    { label: 'Status', value: <StatusText status={row.status} /> },
+    { label: 'Updated', value: new Date(row.updatedAt).toLocaleString() },
+  ];
+  const crmSections = (row: CrmOperation): TechnicalRecordSection[] => [
+    {
+      fields: [
+        { label: 'Attempts', value: row.attempts },
+        {
+          label: 'Safe error',
+          value: row.lastError ?? 'No safe error',
+        },
+      ],
+      title: 'Processing',
+    },
+    {
+      fields: [
+        { label: 'Operation type', value: crmOperationLabel(row.type) },
+        { label: 'Created', value: new Date(row.createdAt).toLocaleString() },
+      ],
+      title: 'Entity',
+    },
+    {
+      fields: [{ label: 'Operation ID', value: row.id, copy: true }],
+      title: 'Identifiers',
+    },
+    ...(row.resultSafe === null || row.resultSafe === undefined
+      ? []
+      : [{ fields: [{ label: 'Result', value: row.resultSafe }], title: 'Additional details' }]),
+  ];
   if (access.isLoading || config.isLoading) return <Spin className="route-loading" size="large" />;
   if (!hasProjectPermission(access.data, 'integrations:manage'))
     return (
@@ -244,8 +295,11 @@ export function CrmConfigPage() {
             render: (_value: unknown, record: CrmOperation) =>
               record.status === 'FAILED' || record.status === 'UNKNOWN' ? (
                 <Button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setRetryOperation(record);
+                  }}
                   loading={retry.isPending && retryOperation?.id === record.id}
-                  onClick={() => setRetryOperation(record)}
                   size="small"
                 >
                   Retry
@@ -254,6 +308,20 @@ export function CrmConfigPage() {
             title: 'Action',
           },
         ]}
+        onRow={(row) => ({
+          className: 'clickable-table-row',
+          onClick: () => setSelectedOperation(row),
+          onKeyDown: activateRow(() => setSelectedOperation(row)),
+          tabIndex: 0,
+        })}
+        rowClassName="clickable-table-row"
+      />
+      <TechnicalRecordDrawer
+        onClose={() => setSelectedOperation(undefined)}
+        open={Boolean(selectedOperation)}
+        sections={selectedOperation ? crmSections(selectedOperation) : []}
+        title="CRM operation details"
+        top={selectedOperation ? crmTop(selectedOperation) : []}
       />
       <Modal
         className="account-confirm-modal"

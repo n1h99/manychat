@@ -9,12 +9,17 @@ import {
 } from '@ant-design/icons';
 import { Alert, Button, Card, Col, Row, Table, Tabs, Tag, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import { Link } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
 import { useAuth } from '../auth';
 import { humanizeAuditAction, humanizeEntity, humanizeReason } from '../humanize';
+import {
+  TechnicalRecordDrawer,
+  type TechnicalRecordSection,
+  type TechnicalRecordTopField,
+} from '../technical-record-drawer';
 
 interface SystemAlert {
   code: string;
@@ -73,6 +78,7 @@ interface Paged<T> {
 export function SystemHealthPage() {
   const { accessToken } = useAuth();
   const [auditPage, setAuditPage] = useState(1);
+  const [selectedAudit, setSelectedAudit] = useState<GlobalAudit>();
   const health = useQuery({
     queryFn: () => apiRequest<Snapshot>('/api/v1/system/health', {}, accessToken),
     queryKey: ['system-health', accessToken],
@@ -92,6 +98,35 @@ export function SystemHealthPage() {
   const olderOperationCount = history
     ? history.older.inboxTerminal + history.older.outboxFailed + history.older.outboxUnknown
     : 0;
+  const activateRow = (callback: () => void) => (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      callback();
+    }
+  };
+  const auditTop = (row: GlobalAudit): TechnicalRecordTopField[] => [
+    { label: 'Action', value: humanizeAuditAction(row.action) },
+    { label: 'Time', value: new Date(row.createdAt).toLocaleString() },
+  ];
+  const auditSections = (row: GlobalAudit): TechnicalRecordSection[] => [
+    {
+      fields: [
+        { label: 'What happened', value: humanizeAuditAction(row.action) },
+        { label: 'Who', value: row.actorEmailSnapshot ?? humanizeEntity(row.actorType) },
+        { label: 'Where', value: row.projectNameSnapshot ?? 'Entire system' },
+        { label: 'Item', value: humanizeEntity(row.entityType) },
+        { label: 'Why', value: row.reason ?? 'No safe error' },
+      ],
+      title: 'Context',
+    },
+    {
+      fields: [
+        { label: 'Correlation ID', value: row.correlationId, copy: true },
+        { label: 'Audit entry ID', value: row.id, copy: true },
+      ],
+      title: 'Identifiers',
+    },
+  ];
   return (
     <section className="system-health-page">
       <div className="page-heading-row">
@@ -271,6 +306,12 @@ export function SystemHealthPage() {
                 <Table<GlobalAudit>
                   dataSource={audit.data?.items ?? []}
                   loading={audit.isLoading}
+                  onRow={(row) => ({
+                    className: 'clickable-table-row',
+                    onClick: () => setSelectedAudit(row),
+                    onKeyDown: activateRow(() => setSelectedAudit(row)),
+                    tabIndex: 0,
+                  })}
                   pagination={{
                     current: auditPage,
                     onChange: setAuditPage,
@@ -279,6 +320,7 @@ export function SystemHealthPage() {
                     total: audit.data?.total ?? 0,
                   }}
                   rowKey="id"
+                  rowClassName="clickable-table-row"
                   scroll={{ x: 980 }}
                   columns={[
                     {
@@ -318,6 +360,13 @@ export function SystemHealthPage() {
           ]}
         />
       </Card>
+      <TechnicalRecordDrawer
+        onClose={() => setSelectedAudit(undefined)}
+        open={Boolean(selectedAudit)}
+        sections={selectedAudit ? auditSections(selectedAudit) : []}
+        title="Account activity details"
+        top={selectedAudit ? auditTop(selectedAudit) : []}
+      />
     </section>
   );
 }

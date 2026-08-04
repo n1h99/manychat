@@ -478,6 +478,78 @@
   margin: 20px 0;
 }
 
+.technical-record-drawer .ant-drawer-content-wrapper {
+  max-width: min(560px, 100vw);
+}
+
+.technical-record-drawer .ant-drawer-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.technical-record-top {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.technical-record-top-cell {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.technical-record-section {
+  display: grid;
+  gap: 8px;
+}
+
+.technical-record-section .ant-typography {
+  margin: 0 !important;
+}
+
+.technical-record-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.technical-record-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.technical-record-label {
+  font-size: 11px;
+}
+
+.technical-record-cell-value {
+  min-width: 0;
+}
+
+.technical-record-cell-value .ant-typography {
+  font-size: 14px;
+}
+
+.technical-record-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.technical-record-list-item {
+  color: var(--text);
+}
+
+.technical-record-list-item:first-child {
+  margin-top: 0;
+}
+
 .operations-summary-grid .ant-card,
 .health-dependency-card,
 .settings-card {
@@ -522,6 +594,19 @@
 
 .clickable-table-row {
   cursor: pointer;
+}
+
+.clickable-table-row > td {
+  transition: background-color 140ms ease;
+}
+
+.clickable-table-row:hover > td,
+.clickable-table-row:focus-visible > td {
+  background: rgba(15, 118, 110, 0.05) !important;
+}
+
+.clickable-table-row:active > td {
+  background: rgba(15, 118, 110, 0.08) !important;
 }
 
 .permission-group-grid {

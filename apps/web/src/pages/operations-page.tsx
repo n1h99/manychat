@@ -3,7 +3,6 @@ import {
   Button,
   Card,
   DatePicker,
-  Descriptions,
   Form,
   Input,
   Modal,
@@ -18,7 +17,7 @@ import {
 } from 'antd';
 import { ReloadOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { type KeyboardEvent, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 
 import { apiRequest, getUserErrorMessage } from '../api';
@@ -32,6 +31,11 @@ import {
   humanizeStatus,
 } from '../humanize';
 import { StatusText } from '../status-text';
+import {
+  TechnicalRecordDrawer,
+  type TechnicalRecordSection,
+  type TechnicalRecordTopField,
+} from '../technical-record-drawer';
 
 interface OperationRow {
   attempts?: number;
@@ -98,67 +102,6 @@ function terminalCount(groups: SummaryGroup | undefined, statuses: string[]) {
     .reduce((total, group) => total + group._count._all, 0);
 }
 
-function formatAuditFieldLabel(field: string) {
-  return field
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((piece, index) => {
-      const lowered = piece.toLowerCase();
-      if (lowered === 'id') return 'ID';
-      if (lowered === 'crm') return 'CRM';
-      if (index === 0) return piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase();
-      return lowered;
-    })
-    .join(' ');
-}
-
-function readableAuditValue(value: unknown, emptyLabel = '—') {
-  if (value === null || value === undefined) return emptyLabel;
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value) || typeof value !== 'object') {
-    return <pre className="safe-json-view">{JSON.stringify(value, null, 2)}</pre>;
-  }
-
-  const entries = Object.entries(value);
-  if (entries.length === 0) return emptyLabel;
-
-  const isFlatObject = entries.every(([, nestedValue]) =>
-    ['string', 'number', 'boolean'].includes(typeof nestedValue) || nestedValue === null,
-  );
-  if (isFlatObject) {
-    return (
-      <div style={{ display: 'grid', gap: 6 }}>
-        {entries.map(([field, fieldValue]) => (
-          <div
-            style={{
-              columnGap: 12,
-              display: 'grid',
-              gridTemplateColumns: 'minmax(120px, auto) 1fr',
-              alignItems: 'start',
-            }}
-            key={field}
-          >
-            <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: 'normal' }}>
-              {formatAuditFieldLabel(field)}:
-            </Typography.Text>
-            <Typography.Text
-              style={{ overflowWrap: 'anywhere', whiteSpace: 'normal', wordBreak: 'break-word' }}
-            >
-              {fieldValue === null || fieldValue === undefined ? emptyLabel : String(fieldValue)}
-            </Typography.Text>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  return <pre className="safe-json-view">{JSON.stringify(value, null, 2)}</pre>;
-}
-
 export function OperationsPage() {
   const { projectId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -188,7 +131,8 @@ export function OperationsPage() {
     mode: 'RECONCILE' | 'RETRY';
     row: OperationRow;
   }>();
-  const [auditDetails, setAuditDetails] = useState<AuditRow>();
+  const [selectedOperation, setSelectedOperation] = useState<OperationRow>();
+  const [selectedAudit, setSelectedAudit] = useState<AuditRow>();
   const [form] = Form.useForm();
   const updateUrlFilter = (key: 'source' | 'status', value?: string) => {
     const next = new URLSearchParams(searchParams);
@@ -245,6 +189,85 @@ export function OperationsPage() {
       client.invalidateQueries({ queryKey: ['project-audit', projectId] }),
     ]);
   };
+  const activateRow = (callback: () => void) => (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      callback();
+    }
+  };
+  const operationTop = (row: OperationRow): TechnicalRecordTopField[] => [
+    { label: 'Status', value: <StatusText status={row.status} /> },
+    { label: 'Source', value: humanizeOperationSource(row.source) },
+    { label: 'Updated', value: new Date(row.updatedAt).toLocaleString() },
+  ];
+  const operationSections = (row: OperationRow): TechnicalRecordSection[] => [
+    {
+      title: 'Processing',
+      fields: [
+        {
+          label: 'Status',
+          value: <StatusText status={row.status} />,
+          copy: false,
+        },
+        {
+          label: 'Attempts',
+          value: row.attempts === undefined ? '—' : `${row.attempts}/${row.maxAttempts ?? '—'}`,
+        },
+        { label: 'Safe error', value: row.errorCode ? humanizeReason(row.errorCode) : 'No safe error' },
+      ],
+    },
+    {
+      title: 'Entity',
+      fields: [
+        { label: 'Entity', value: humanizeEntity(row.entityType) },
+        { label: 'Entity ID', value: row.entityId ?? '—' },
+        { label: 'Kind', value: row.kind ?? '—' },
+      ],
+    },
+    {
+      title: 'Identifiers',
+      fields: [
+        { label: 'Operation ID', value: row.id, copy: true },
+        { label: 'Correlation ID', value: row.correlationId ?? '—', copy: true },
+        { label: 'Created', value: new Date(row.createdAt).toLocaleString() },
+      ],
+    },
+  ];
+  const auditTop = (row: AuditRow): TechnicalRecordTopField[] => [
+    { label: 'Action', value: humanizeAuditAction(row.action) },
+    { label: 'Time', value: new Date(row.createdAt).toLocaleString() },
+  ];
+  const auditSections = (row: AuditRow): TechnicalRecordSection[] => [
+    {
+      title: 'Context',
+      fields: [
+        {
+          label: 'What happened',
+          value: humanizeAuditAction(row.action),
+        },
+        { label: 'Who', value: row.actorEmailSnapshot ?? humanizeEntity(row.actorType) },
+        {
+          label: 'What',
+          value: row.entityId === null ? humanizeEntity(row.entityType) : `${humanizeEntity(row.entityType)} (${row.entityId})`,
+        },
+        { label: 'Why', value: humanizeReason(row.reason) },
+      ],
+    },
+    {
+      title: 'Identifiers',
+      fields: [
+        { label: 'Correlation ID', value: row.correlationId, copy: true },
+        { label: 'Audit entry ID', value: row.id, copy: true },
+      ],
+    },
+    {
+      title: 'Payload changes',
+      fields: [
+        { label: 'Before', value: row.beforeSafeJson ?? 'No previous value' },
+        { label: 'After', value: row.afterSafeJson ?? '—' },
+      ],
+    },
+  ];
 
   return (
     <section className="operations-page">
@@ -403,7 +426,10 @@ export function OperationsPage() {
                             {row.retryAvailable && ['INBOX', 'OUTBOX'].includes(row.source) ? (
                               <Button
                                 icon={<SyncOutlined />}
-                                onClick={() => setRecovery({ mode: 'RETRY', row })}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setRecovery({ mode: 'RETRY', row });
+                                }}
                               >
                                 Retry
                               </Button>
@@ -411,7 +437,10 @@ export function OperationsPage() {
                             {row.reconciliationAvailable ? (
                               <Button
                                 icon={<SafetyCertificateOutlined />}
-                                onClick={() => setRecovery({ mode: 'RECONCILE', row })}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setRecovery({ mode: 'RECONCILE', row });
+                                }}
                               >
                                 Reconcile
                               </Button>
@@ -424,6 +453,12 @@ export function OperationsPage() {
                   ]}
                   dataSource={operations.data?.items ?? []}
                   loading={operations.isLoading}
+                  onRow={(row) => ({
+                    className: 'clickable-table-row',
+                    onClick: () => setSelectedOperation(row),
+                    onKeyDown: activateRow(() => setSelectedOperation(row)),
+                    tabIndex: 0,
+                  })}
                   pagination={{
                     current: page,
                     onChange: setPage,
@@ -431,6 +466,7 @@ export function OperationsPage() {
                     showSizeChanger: false,
                     total: operations.data?.total ?? 0,
                   }}
+                  rowClassName="clickable-table-row"
                   rowKey={(row) => `${row.source}-${row.id}`}
                   scroll={{ x: 1400 }}
                 />
@@ -472,7 +508,12 @@ export function OperationsPage() {
                 ]}
                 dataSource={audit.data?.items ?? []}
                 loading={audit.isLoading}
-                onRow={(row) => ({ onClick: () => setAuditDetails(row) })}
+                onRow={(row) => ({
+                  className: 'clickable-table-row',
+                  onClick: () => setSelectedAudit(row),
+                  onKeyDown: activateRow(() => setSelectedAudit(row)),
+                  tabIndex: 0,
+                })}
                 pagination={{
                   current: auditPage,
                   onChange: setAuditPage,
@@ -486,6 +527,20 @@ export function OperationsPage() {
             ),
           },
         ]}
+      />
+      <TechnicalRecordDrawer
+        onClose={() => setSelectedOperation(undefined)}
+        open={Boolean(selectedOperation)}
+        sections={selectedOperation ? operationSections(selectedOperation) : []}
+        title="Operation details"
+        top={selectedOperation ? operationTop(selectedOperation) : []}
+      />
+      <TechnicalRecordDrawer
+        onClose={() => setSelectedAudit(undefined)}
+        open={Boolean(selectedAudit)}
+        sections={selectedAudit ? auditSections(selectedAudit) : []}
+        title="Audit log details"
+        top={selectedAudit ? auditTop(selectedAudit) : []}
       />
       <Modal
         destroyOnHidden
@@ -548,28 +603,6 @@ export function OperationsPage() {
             Confirm action
           </Button>
         </Form>
-      </Modal>
-      <Modal
-        footer={null}
-        onCancel={() => setAuditDetails(undefined)}
-        open={Boolean(auditDetails)}
-        title="Audit details"
-        width={720}
-      >
-        {auditDetails ? (
-          <Descriptions column={1} size="small">
-            <Descriptions.Item label="What happened">
-              {humanizeAuditAction(auditDetails.action)}
-            </Descriptions.Item>
-            <Descriptions.Item label="Correlation">{auditDetails.correlationId}</Descriptions.Item>
-            <Descriptions.Item label="Before">
-              {readableAuditValue(auditDetails.beforeSafeJson, 'No previous value')}
-            </Descriptions.Item>
-            <Descriptions.Item label="After">
-              {readableAuditValue(auditDetails.afterSafeJson)}
-            </Descriptions.Item>
-          </Descriptions>
-        ) : null}
       </Modal>
     </section>
   );

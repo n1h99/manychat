@@ -27,7 +27,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 
 import { getUserErrorMessage } from '../api';
@@ -58,6 +58,12 @@ import {
   preloadWhatsAppEmbeddedSignup,
   type WhatsAppEmbeddedSignupResult,
 } from '../whatsapp-embedded-signup';
+import {
+  TechnicalRecordDrawer,
+  type TechnicalRecordField,
+  type TechnicalRecordSection,
+  type TechnicalRecordTopField,
+} from '../technical-record-drawer';
 
 type WhatsAppSettingsValues = {
   accessToken?: string;
@@ -414,6 +420,14 @@ export function ChannelDetailPage() {
   const [setupOpen, setSetupOpen] = useState(searchParams.get('setup') === '1');
   const [rotatingOpen, setRotatingOpen] = useState(false);
   const [disablingOpen, setDisablingOpen] = useState(false);
+  const [selectedInboundEvent, setSelectedInboundEvent] = useState<{
+    event: ChannelInboundEvent;
+    top: TechnicalRecordTopField[];
+  } | null>(null);
+  const [selectedOutboundEvent, setSelectedOutboundEvent] = useState<{
+    event: ChannelOutboundEvent;
+    top: TechnicalRecordTopField[];
+  } | null>(null);
   const whatsappSettingsRef = useRef<HTMLDivElement | null>(null);
   const retryKey = useRef<string | undefined>(undefined);
   const pipelineNotificationState = useRef<{
@@ -475,6 +489,121 @@ export function ChannelDetailPage() {
       previous.inbound.set(eventKey, status);
     }
   }, [channel.data, connectionId, inbound.data, outbound.data, projectId]);
+
+  const closePipelineEvent = () => {
+    setSelectedInboundEvent(null);
+    setSelectedOutboundEvent(null);
+  };
+
+  const openInboundEvent = (event: ChannelInboundEvent) => {
+    setSelectedOutboundEvent(null);
+    setSelectedInboundEvent({
+      event,
+      top: [
+        { label: 'Received', value: new Date(event.receivedAt).toLocaleString() },
+        { label: 'Event', value: event.inboxRecord?.normalizedEvent?.type ?? 'Not available' },
+        {
+          label: 'Status',
+          value: <StatusText status={event.inboxRecord?.status ?? 'NOT_CREATED'} />,
+        },
+        { label: 'Contact', value: event.inboxRecord?.normalizedEvent?.message?.contactId ?? '—' },
+      ],
+    });
+  };
+
+  const openOutboundEvent = (event: ChannelOutboundEvent) => {
+    setSelectedInboundEvent(null);
+    setSelectedOutboundEvent({
+      event,
+      top: [
+        { label: 'Created', value: new Date(event.createdAt).toLocaleString() },
+        { label: 'Event', value: event.message?.status ?? 'Not available' },
+        { label: 'Status', value: <StatusText status={event.status} /> },
+      ],
+    });
+  };
+
+  const activatePipelineRow = (callback: () => void) =>
+    (event: KeyboardEvent<HTMLElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        callback();
+      }
+    };
+
+  const inboundPipelineSections = (event: ChannelInboundEvent): TechnicalRecordSection[] => {
+    const normalizedType = event.inboxRecord?.normalizedEvent?.type ?? 'Not available';
+    const contactId = event.inboxRecord?.normalizedEvent?.message?.contactId;
+    const normalizedEvent = event.inboxRecord?.normalizedEvent;
+    const safeError = event.inboxRecord?.lastError;
+
+    return [
+      {
+        title: 'Processing',
+        fields: [
+          {
+            label: 'Inbox status',
+            value: <StatusText status={event.inboxRecord?.status ?? 'NOT_CREATED'} />,
+            copy: false,
+          },
+          {
+            label: 'Attempts',
+            value:
+              event.inboxRecord && event.inboxRecord.maxAttempts
+                ? `${event.inboxRecord.attempts}/${event.inboxRecord.maxAttempts}`
+                : '—',
+          },
+          { label: 'Normalized event', value: normalizedType },
+          { label: 'Contact', value: contactId ?? '—' },
+          { label: 'Safe error', value: safeError ?? 'No safe error' },
+        ],
+      },
+      {
+        title: 'Identifiers',
+        fields: [
+          { label: 'Provider update ID', value: event.externalUpdateId },
+          { label: 'Correlation ID', value: event.correlationId },
+          { label: 'Contact ID', value: contactId ?? '—' },
+          { label: 'Connection ID', value: connection?.id ?? '—' },
+          { label: 'Operation ID', value: event.externalUpdateId },
+        ],
+      },
+      {
+        title: 'Additional details',
+        fields: normalizedEvent ? [{ label: 'Normalized event details', value: normalizedEvent }] : [],
+      },
+    ];
+  };
+
+  const outboundPipelineSections = (event: ChannelOutboundEvent): TechnicalRecordSection[] => [
+    {
+      title: 'Processing',
+      fields: [
+        {
+          label: 'Outbox status',
+          value: <StatusText status={event.status} />,
+          copy: false,
+        },
+        {
+          label: 'Attempts',
+          value: event.maxAttempts ? `${event.attempts}/${event.maxAttempts}` : '—',
+        },
+        { label: 'Safe error', value: event.lastError ?? 'No safe error' },
+      ],
+    },
+    {
+      title: 'Identifiers',
+      fields: [
+        { label: 'Message ID', value: event.message?.externalMessageId ?? '—' },
+        { label: 'Connection ID', value: connection?.id ?? '—' },
+        { label: 'Outbox record ID', value: event.id },
+      ],
+    },
+    {
+      title: 'Additional details',
+      fields: [{ label: 'Message', value: event.message }],
+    },
+  ];
 
   if (channel.isLoading) return <Spin className="route-loading" />;
   if (channel.isError || !channel.data) {
@@ -1080,12 +1209,19 @@ export function ChannelDetailPage() {
               render: (value: string) => new Date(value).toLocaleString(),
               title: 'Received',
             },
-            { dataIndex: 'externalUpdateId', title: 'Provider update ID' },
+            {
+              render: (_, event) => event.inboxRecord?.normalizedEvent?.type ?? '—',
+              title: 'Event',
+            },
             {
               render: (_, event) => (
                 <StatusText status={event.inboxRecord?.status ?? 'NOT_CREATED'} />
               ),
-              title: 'Inbox',
+              title: 'Status',
+            },
+            {
+              render: (_, event) => event.inboxRecord?.normalizedEvent?.message?.contactId ?? '—',
+              title: 'Contact',
             },
             {
               render: (_, event) =>
@@ -1094,28 +1230,21 @@ export function ChannelDetailPage() {
                   : '—',
               title: 'Attempts',
             },
-            {
-              render: (_, event) => event.inboxRecord?.lastError ?? '—',
-              title: 'Safe error',
-            },
-            {
-              render: (_, event) => event.inboxRecord?.normalizedEvent?.type ?? '—',
-              title: 'Normalized',
-            },
-            {
-              render: (_, event) => event.inboxRecord?.normalizedEvent?.message?.contactId ?? '—',
-              title: 'Contact ID',
-            },
-            { dataIndex: 'correlationId', title: 'Correlation ID' },
           ]}
           dataSource={inbound.data ?? []}
           loading={inbound.isLoading}
           locale={{
             emptyText: inbound.isError
               ? 'Inbound diagnostics could not be loaded'
-              : pipelineCopy.inboundEmpty,
+            : pipelineCopy.inboundEmpty,
           }}
           pagination={false}
+          onRow={(row) => ({
+            className: 'clickable-table-row',
+            onClick: () => openInboundEvent(row),
+            onKeyDown: activatePipelineRow(() => openInboundEvent(row)),
+            tabIndex: 0,
+          })}
           rowKey={(event) => `${event.externalUpdateId}-${event.receivedAt}`}
           scroll={{ x: 1100 }}
           size="small"
@@ -1140,25 +1269,16 @@ export function ChannelDetailPage() {
               title: 'Created',
             },
             {
-              dataIndex: 'status',
-              render: (value: string) => <StatusText status={value} />,
-              title: 'Outbox',
+              render: (_, event) => event.message?.status ?? '—',
+              title: 'Event',
+            },
+            {
+              render: (_, event) => <StatusText status={event.status} />,
+              title: 'Status',
             },
             {
               render: (_, event) => `${event.attempts}/${event.maxAttempts}`,
               title: 'Attempts',
-            },
-            {
-              render: (_, event) => event.message?.status ?? '—',
-              title: 'Message',
-            },
-            {
-              render: (_, event) => event.lastError ?? '—',
-              title: 'Safe error',
-            },
-            {
-              render: (_, event) => event.message?.externalMessageId ?? '—',
-              title: provider.messageIdLabel,
             },
           ]}
           dataSource={outbound.data ?? []}
@@ -1166,14 +1286,35 @@ export function ChannelDetailPage() {
           locale={{
             emptyText: outbound.isError
               ? 'Outbound diagnostics could not be loaded'
-              : pipelineCopy.outboundEmpty,
+            : pipelineCopy.outboundEmpty,
           }}
           pagination={false}
+          onRow={(row) => ({
+            className: 'clickable-table-row',
+            onClick: () => openOutboundEvent(row),
+            onKeyDown: activatePipelineRow(() => openOutboundEvent(row)),
+            tabIndex: 0,
+          })}
           rowKey="id"
           scroll={{ x: 900 }}
           size="small"
         />
       </Card>
+
+      <TechnicalRecordDrawer
+        onClose={closePipelineEvent}
+        open={Boolean(selectedInboundEvent)}
+        sections={selectedInboundEvent ? inboundPipelineSections(selectedInboundEvent.event) : []}
+        title="Inbound event details"
+        top={selectedInboundEvent?.top}
+      />
+      <TechnicalRecordDrawer
+        onClose={closePipelineEvent}
+        open={Boolean(selectedOutboundEvent)}
+        sections={selectedOutboundEvent ? outboundPipelineSections(selectedOutboundEvent.event) : []}
+        title="Outbound event details"
+        top={selectedOutboundEvent?.top}
+      />
 
       {isWhatsAppChannel(connection) ? (
         <WhatsAppSetupModal
