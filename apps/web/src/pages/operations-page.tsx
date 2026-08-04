@@ -98,6 +98,22 @@ function terminalCount(groups: SummaryGroup | undefined, statuses: string[]) {
     .reduce((total, group) => total + group._count._all, 0);
 }
 
+function formatAuditFieldLabel(field: string) {
+  return field
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((piece, index) => {
+      const lowered = piece.toLowerCase();
+      if (lowered === 'id') return 'ID';
+      if (lowered === 'crm') return 'CRM';
+      if (index === 0) return piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase();
+      return lowered;
+    })
+    .join(' ');
+}
+
 function readableAuditValue(value: unknown, emptyLabel = '—') {
   if (value === null || value === undefined) return emptyLabel;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -115,25 +131,23 @@ function readableAuditValue(value: unknown, emptyLabel = '—') {
   );
   if (isFlatObject) {
     return (
-      <div style={{ display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gap: 6 }}>
         {entries.map(([field, fieldValue]) => (
-          <div style={{ display: 'grid', gap: 2 }} key={field}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {field
-                .replace(/([a-z])([A-Z])/g, '$1 $2')
-                .replace(/[_-]+/g, ' ')
-                .split(' ')
-                .filter(Boolean)
-                .map((piece, index) => {
-                  const lowered = piece.toLowerCase();
-                  if (lowered === 'id') return 'ID';
-                  if (lowered === 'crm') return 'CRM';
-                  if (index === 0) return piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase();
-                  return lowered;
-                })
-                .join(' ')}
+          <div
+            style={{
+              columnGap: 12,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(120px, auto) 1fr',
+              alignItems: 'start',
+            }}
+            key={field}
+          >
+            <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: 'normal' }}>
+              {formatAuditFieldLabel(field)}:
             </Typography.Text>
-            <Typography.Text style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+            <Typography.Text
+              style={{ overflowWrap: 'anywhere', whiteSpace: 'normal', wordBreak: 'break-word' }}
+            >
               {fieldValue === null || fieldValue === undefined ? emptyLabel : String(fieldValue)}
             </Typography.Text>
           </div>
