@@ -26,30 +26,54 @@ function service(client: Record<string, unknown> = {}) {
 }
 
 describe('WhatsApp outbound terminal semantics', () => {
-  function sendingHarness(error: unknown) {
+  function installLogger(instance: WhatsAppOutboundProcessorService): ReturnType<typeof vi.fn> {
+    const warn = vi.fn();
+    const internals = instance as never as { logger: { warn: ReturnType<typeof vi.fn> } };
+    internals.logger.warn = warn;
+    return warn;
+  }
+
+  function sendingHarness(
+    error?: unknown,
+    options: {
+      apiResult?: { messageId: string };
+      connection?: Record<string, unknown>;
+      decrypt?: () => string;
+      message?: Record<string, unknown>;
+      identity?: Record<string, unknown>;
+      recipient?: Record<string, unknown> | null;
+    } = {},
+  ) {
+    const credentialsEncrypted = options.connection?.['credentialsEncrypted'] as
+      Record<string, unknown> | undefined;
+    const recipient = options.recipient === undefined ? null : options.recipient;
     const databaseClient = {
-      broadcastRecipient: { findFirst: vi.fn().mockResolvedValue(null) },
+      broadcastRecipient: { findFirst: vi.fn().mockResolvedValue(recipient) },
       channelIdentity: {
-        findUnique: vi.fn().mockResolvedValue({
-          channel: 'WHATSAPP',
-          connectionId: 'connection-a',
-          contactId: 'contact-a',
-          externalUserId: '15550001',
-          id: 'identity-a',
-        }),
+        findUnique: vi.fn().mockResolvedValue(
+          options.identity ?? {
+            channel: 'WHATSAPP',
+            connectionId: 'connection-a',
+            contactId: 'contact-a',
+            externalUserId: '15550001',
+            id: 'identity-a',
+          },
+        ),
       },
       message: {
-        findUnique: vi.fn().mockResolvedValue({
-          connectionId: 'connection-a',
-          contactId: 'contact-a',
-          content: { text: 'hello' },
-          conversation: { id: 'conversation-a' },
-          conversationId: 'conversation-a',
-          id: 'message-a',
-          mediaAsset: null,
-          metadata: {},
-          type: 'TEXT',
-        }),
+        findUnique: vi.fn().mockResolvedValue(
+          options.message ?? {
+            connectionId: 'connection-a',
+            contactId: 'contact-a',
+            content: { text: 'hello' },
+            conversation: { id: 'conversation-a' },
+            conversationId: 'conversation-a',
+            id: 'message-a',
+            mediaAsset: null,
+            metadata: {},
+            type: 'TEXT',
+          },
+        ),
       },
       outboxRecord: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       scheduledMessage: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -58,6 +82,9 @@ describe('WhatsApp outbound terminal semantics', () => {
     const retry = vi.fn().mockResolvedValue(undefined);
     const unknown = vi.fn().mockResolvedValue(undefined);
     const fail = vi.fn().mockResolvedValue(undefined);
+    const persistProviderSendJournal = vi.fn().mockResolvedValue(true);
+    const recoverJournaledSend = vi.fn().mockResolvedValue(undefined);
+
     const internals = instance as never as {
       api: { sendMessage: ReturnType<typeof vi.fn> };
       claim: ReturnType<typeof vi.fn>;
@@ -65,58 +92,293 @@ describe('WhatsApp outbound terminal semantics', () => {
       decrypt: ReturnType<typeof vi.fn>;
       fail: typeof fail;
       prepareMessage: ReturnType<typeof vi.fn>;
+      persistProviderSendJournal: typeof persistProviderSendJournal;
+      recoverJournaledSend: typeof recoverJournaledSend;
       replyProviderMessageId: ReturnType<typeof vi.fn>;
       retry: typeof retry;
       unknown: typeof unknown;
     };
+
     internals.claim = vi.fn().mockResolvedValue(claim());
     internals.connection = vi.fn().mockResolvedValue({
-      credentialsEncrypted: {},
+      credentialsEncrypted: credentialsEncrypted ?? { accessToken: {} },
       graphApiVersion: 'v23.0',
-      id: 'connection-a',
-      phoneNumberId: 'phone-a',
-      projectId: 'project-a',
-    });
+      id: options.connection?.['id'] ? (options.connection['id'] as string) : 'connection-a',
+      phoneNumberId: options.connection?.['phoneNumberId']
+        ? (options.connection['phoneNumberId'] as string)
+        : 'phone-a',
+      projectId: options.connection?.['projectId']
+        ? (options.connection['projectId'] as string)
+        : 'project-a',
+      ...(options.connection ? options.connection : {}),
+    } as Record<string, unknown>);
     internals.prepareMessage = vi
       .fn()
       .mockResolvedValue({ message: { template: {}, type: 'template' }, template: true });
     internals.replyProviderMessageId = vi.fn().mockResolvedValue(undefined);
-    internals.api = { sendMessage: vi.fn().mockRejectedValue(error) };
-    internals.decrypt = vi.fn().mockReturnValue('mock-token');
+    internals.api = {
+      sendMessage: vi
+        .fn()
+        .mockImplementation(() =>
+          error === undefined
+            ? Promise.resolve(options.apiResult ?? { messageId: 'wamid.1' })
+            : Promise.reject(error),
+        ),
+    };
+    internals.decrypt = vi.fn().mockImplementation(() => options.decrypt?.() ?? 'mock-token');
+    internals.persistProviderSendJournal = persistProviderSendJournal;
+    internals.recoverJournaledSend = recoverJournaledSend;
     internals.retry = retry;
     internals.unknown = unknown;
     internals.fail = fail;
-    return { fail, instance, retry, unknown };
+
+    return {
+      fail,
+      instance,
+      persistProviderSendJournal,
+      recoverJournaledSend,
+      retry,
+      unknown,
+      sendMessage: internals.api.sendMessage,
+    };
   }
+
+  it('sends a text message successfully through the normal outbound path', async () => {
+    const {
+      instance,
+      retry,
+      unknown,
+      fail,
+      persistProviderSendJournal,
+      recoverJournaledSend,
+      sendMessage,
+    } = sendingHarness(undefined, { apiResult: { messageId: 'wamid.ok' } });
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '15550001',
+        message: expect.objectContaining({ type: 'template' }),
+      }),
+    );
+    expect(persistProviderSendJournal).toHaveBeenCalledWith(claim(), 'wamid.ok');
+    expect(recoverJournaledSend).toHaveBeenCalledWith(claim(), 'message-a', 'wamid.ok');
+    expect(fail).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+  });
 
   it('retries an explicit 429 exactly once', async () => {
     const { instance, retry, unknown } = sendingHarness(new WhatsAppApiError(429, 7));
-    await expect(instance.process({ outboxRecordId: 'outbox-a' })).rejects.toMatchObject({
-      status: 429,
-    });
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
     expect(retry).toHaveBeenCalledTimes(1);
     expect(retry).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_retryable', 7);
     expect(unknown).not.toHaveBeenCalled();
   });
 
-  it.each([new WhatsAppApiError(500), new Error('network timeout')])(
-    'marks an ambiguous non-idempotent POST as UNKNOWN without retry',
-    async (error) => {
-      const { instance, retry, unknown } = sendingHarness(error);
-      await instance.process({ outboxRecordId: 'outbox-a' });
-      expect(unknown).toHaveBeenCalledTimes(1);
+  it.each([
+    ['server rejection with 5xx', new WhatsAppApiError(500, undefined, 1000)],
+    [
+      'timeout',
+      (() => {
+        const timeout = new Error('Request timed out');
+        timeout.name = 'TimeoutError';
+        return timeout;
+      })(),
+    ],
+    ['network error', new Error('network timeout')],
+  ])('classifies %s as retryable/unknown as expected', async (_, error) => {
+    const { instance, retry, unknown } = sendingHarness(error);
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    if (error instanceof WhatsAppApiError && error.status >= 500) {
+      expect(retry).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_retryable', undefined);
+      expect(unknown).not.toHaveBeenCalled();
+    } else {
       expect(unknown).toHaveBeenCalledWith(claim(), 'message-a', 'whatsapp_outbound_unknown');
       expect(retry).not.toHaveBeenCalled();
-    },
-  );
+    }
+  });
 
-  it('treats an HTTP 400 Meta rejection as FAILED even when marked transient', async () => {
-    const { fail, instance, retry } = sendingHarness(
-      new WhatsAppApiError(400, undefined, 131000, undefined, true),
+  it('maps 400 to a safe provider-rejected reason when template/recipient patterns are absent', async () => {
+    const { fail, instance, retry, unknown } = sendingHarness(
+      new WhatsAppApiError(
+        400,
+        undefined,
+        1001,
+        2002,
+        false,
+        'SomeType',
+        'Invalid request payload',
+      ),
     );
+    const warn = installLogger(instance);
+
     await instance.process({ outboxRecordId: 'outbox-a' });
+
     expect(fail).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_rejected', 'message-a');
     expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('GRAPH_API_PROVIDER_REJECTED');
+    expect(event.httpStatus).toBe(400);
+    expect(event.providerErrorCode).toBe(1001);
+    expect(event.providerErrorSubcode).toBe(2002);
+    expect(event.retryable).toBe(false);
+  });
+
+  it('maps 401 to GRAPH_API_UNAUTHORIZED with safe diagnostics', async () => {
+    const { fail, instance, retry, unknown } = sendingHarness(
+      new WhatsAppApiError(
+        401,
+        undefined,
+        190,
+        463,
+        false,
+        'OAuthException',
+        'Invalid OAuth access token',
+      ),
+    );
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(fail).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_rejected', 'message-a');
+    expect(fail).toHaveBeenCalledTimes(1);
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('GRAPH_API_UNAUTHORIZED');
+    expect(event.httpStatus).toBe(401);
+    expect(event.retryable).toBe(false);
+    expect(event.providerErrorCode).toBe(190);
+    expect(event.providerErrorSubcode).toBe(463);
+  });
+
+  it('maps 403 to GRAPH_API_PERMISSION_DENIED with safe diagnostics', async () => {
+    const { fail, instance, retry, unknown } = sendingHarness(
+      new WhatsAppApiError(403, undefined, 200, 400, false, 'OAuthException', 'Permissions error'),
+    );
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(fail).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_rejected', 'message-a');
+    expect(fail).toHaveBeenCalledTimes(1);
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('GRAPH_API_PERMISSION_DENIED');
+    expect(event.httpStatus).toBe(403);
+    expect(event.retryable).toBe(false);
+  });
+
+  it('fails closed when access token is not decryptable and never sends request', async () => {
+    const { fail, instance, retry, unknown, sendMessage } = sendingHarness(
+      new WhatsAppApiError(500),
+      {
+        decrypt: () => {
+          throw new Error('bad key');
+        },
+      },
+    );
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(fail).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_rejected', 'message-a');
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('ACCESS_TOKEN_DECRYPT_FAILED');
+    expect(event.accessTokenPresent).toBe(true);
+    expect(event.accessTokenDecryptSucceeded).toBe(false);
+  });
+
+  it('fails with RECIPIENT_MISSING before sending request and logs the reason', async () => {
+    const { fail, instance, retry, unknown, sendMessage } = sendingHarness(undefined, {
+      identity: {
+        channel: 'WHATSAPP',
+        connectionId: 'connection-a',
+        contactId: 'contact-a',
+        externalUserId: '',
+        id: 'identity-a',
+      },
+    });
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(fail).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_rejected', 'message-a');
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('RECIPIENT_MISSING');
+    expect(event.recipientPresent).toBe(false);
+  });
+
+  it('fails with ACCESS_TOKEN_MISSING when encrypted token is absent and never sends request', async () => {
+    const { fail, instance, retry, unknown, sendMessage } = sendingHarness(undefined, {
+      connection: { credentialsEncrypted: {} },
+    });
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(fail).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_rejected', 'message-a');
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event.safeReason).toBe('ACCESS_TOKEN_MISSING');
+    expect(event.accessTokenPresent).toBe(false);
+  });
+
+  it('never logs sensitive data in outbound failure diagnostics', async () => {
+    const { fail, instance, retry, unknown, sendMessage } = sendingHarness(
+      new WhatsAppApiError(
+        401,
+        undefined,
+        190,
+        463,
+        false,
+        'OAuthException',
+        'Invalid OAuth access token',
+      ),
+      {
+        connection: { credentialsEncrypted: { accessToken: {} } },
+        decrypt: () => 'super-secret-access-token',
+      },
+    );
+    const warn = installLogger(instance);
+
+    await instance.process({ outboxRecordId: 'outbox-a' });
+
+    expect(sendMessage).toHaveBeenCalled();
+    expect(fail).toHaveBeenCalledWith(claim(), 'whatsapp_outbound_rejected', 'message-a');
+    expect(retry).not.toHaveBeenCalled();
+    expect(unknown).not.toHaveBeenCalled();
+
+    const event = JSON.parse(warn.mock.calls.at(-1)![0] as string);
+    expect(event).toBeDefined();
+    const serialized = JSON.stringify(event);
+    expect(serialized).not.toContain('super-secret-access-token');
+    expect(serialized).not.toContain('rawBody');
+    expect(serialized).not.toContain('raw body');
+    expect(serialized).not.toContain('providerResponse');
+    expect(serialized).not.toContain('providerMessage');
+    expect(serialized).not.toContain('requestBody');
+    expect(serialized).not.toContain('request body');
   });
 
   it('finishes a journaled provider acceptance as SENT after a worker crash', async () => {

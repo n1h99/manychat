@@ -52,6 +52,57 @@ interface ClaimedOutboxRecord {
   projectId: string;
 }
 
+type SendFailureSafeReason =
+  | 'ACCESS_TOKEN_DECRYPT_FAILED'
+  | 'ACCESS_TOKEN_MISSING'
+  | 'RECIPIENT_MISSING'
+  | 'GRAPH_API_INVALID_PHONE_NUMBER_ID'
+  | 'GRAPH_API_INVALID_RECIPIENT'
+  | 'GRAPH_API_PERMISSION_DENIED'
+  | 'GRAPH_API_PROVIDER_REJECTED'
+  | 'GRAPH_API_RATE_LIMITED'
+  | 'GRAPH_API_REQUEST_INVALID'
+  | 'GRAPH_API_TEMPLATE_REQUIRED'
+  | 'GRAPH_API_TIMEOUT'
+  | 'GRAPH_API_UNKNOWN_RESULT'
+  | 'GRAPH_API_UNAUTHORIZED';
+
+type SendFailureMode = 'FAIL' | 'RETRY' | 'UNKNOWN';
+
+interface SendFailureAnalysis {
+  httpStatus?: number;
+  mode: SendFailureMode;
+  providerErrorCode?: number;
+  providerErrorSubcode?: number;
+  providerErrorType?: string;
+  providerSafeMessage?: string;
+  providerTraceId?: string;
+  retryAfterSeconds?: number;
+  safeReason: SendFailureSafeReason;
+}
+
+interface AccessTokenResolution {
+  accessToken: string;
+  accessTokenDecryptSucceeded: boolean;
+  accessTokenPresent: boolean;
+}
+
+interface SendAttemptContext {
+  accessTokenPresent: boolean;
+  accessTokenDecryptSucceeded: boolean;
+  connectionId: string;
+  correlationId: string | undefined;
+  graphApiVersion: string;
+  phoneNumberId: string | undefined;
+  messageType: string;
+  operationId: string;
+  outboxId: string;
+  phoneNumberIdPresent: boolean;
+  projectId: string;
+  recipientPresent: boolean;
+  retryCount?: number;
+}
+
 type JsonObject = Record<string, unknown>;
 
 class WhatsAppOutboundPermanentError extends Error {}
@@ -134,6 +185,8 @@ export class WhatsAppOutboundProcessorService
       await this.fail(claimed, 'whatsapp_outbound_payload_invalid');
       return;
     }
+    let messageId: string | undefined;
+    let sendContext: SendAttemptContext | undefined;
     try {
       const connection = await this.connection(claimed);
       const action = string(payload.action);
@@ -161,7 +214,7 @@ export class WhatsAppOutboundProcessorService
         return;
       }
 
-      const messageId = string(payload.messageId);
+      messageId = string(payload.messageId);
       const identityId = string(payload.channelIdentityId);
       if (!messageId || !identityId)
         throw new WhatsAppOutboundPermanentError('whatsapp_outbound_payload_invalid');
@@ -186,23 +239,23 @@ export class WhatsAppOutboundProcessorService
         identity.channel !== 'WHATSAPP'
       )
         throw new WhatsAppOutboundPermanentError('whatsapp_outbound_scope_invalid');
-      const recipient = await this.database.client.broadcastRecipient.findFirst({
+      const broadcastRecipient = await this.database.client.broadcastRecipient.findFirst({
         include: { broadcast: { select: { status: true } } },
         where: { outboxRecordId: claimed.id, projectId: claimed.projectId },
       });
-      if (recipient?.broadcast.status === 'PAUSED') {
+      if (broadcastRecipient?.broadcast.status === 'PAUSED') {
         await this.deferBroadcastRecipient(claimed);
         return;
       }
-      if (recipient && recipient.broadcast.status !== 'RUNNING') {
-        await this.cancelBroadcastRecipient(claimed, recipient.id, message.id);
+      if (broadcastRecipient && broadcastRecipient.broadcast.status !== 'RUNNING') {
+        await this.cancelBroadcastRecipient(claimed, broadcastRecipient.id, message.id);
         return;
       }
-      if (recipient)
+      if (broadcastRecipient)
         await this.database.client.broadcastRecipient.updateMany({
           data: { lastError: null, status: 'PROCESSING' },
           where: {
-            id: recipient.id,
+            id: broadcastRecipient.id,
             projectId: claimed.projectId,
             status: { in: ['QUEUED', 'PROCESSING'] },
           },
@@ -213,6 +266,75 @@ export class WhatsAppOutboundProcessorService
       });
       const prepared = await this.prepareMessage(connection, message, claimed);
       if (!prepared.template) await this.assertServiceWindow(message.conversation.id, claimed);
+      const accessToken = this.resolveAccessToken(connection);
+      const recipientNumber = string(identity.externalUserId)?.trim();
+      sendContext = {
+        accessTokenDecryptSucceeded: accessToken.accessTokenDecryptSucceeded,
+        accessTokenPresent: accessToken.accessTokenPresent,
+        connectionId: connection.id,
+        correlationId: string(object(message.metadata)?.correlationId),
+        graphApiVersion: connection.graphApiVersion,
+        messageType: prepared.message.type,
+        operationId: claimed.id,
+        outboxId: claimed.id,
+        phoneNumberId: connection.phoneNumberId,
+        phoneNumberIdPresent: Boolean(connection.phoneNumberId),
+        projectId: claimed.projectId,
+        recipientPresent: Boolean(recipientNumber),
+        retryCount: claimed.attempts,
+      };
+      if (!recipientNumber) {
+        await this.logOutboundSendRejection(
+          claimed,
+          message.id,
+          {
+            mode: 'FAIL',
+            safeReason: 'RECIPIENT_MISSING',
+          },
+          sendContext,
+        );
+        await this.fail(claimed, 'whatsapp_outbound_rejected', message.id);
+        return;
+      }
+      if (!accessToken.accessTokenPresent) {
+        await this.logOutboundSendRejection(
+          claimed,
+          message.id,
+          {
+            mode: 'FAIL',
+            safeReason: 'ACCESS_TOKEN_MISSING',
+          },
+          sendContext,
+        );
+        await this.fail(claimed, 'whatsapp_outbound_rejected', message.id);
+        return;
+      }
+      if (!accessToken.accessTokenDecryptSucceeded) {
+        await this.logOutboundSendRejection(
+          claimed,
+          message.id,
+          {
+            mode: 'FAIL',
+            safeReason: 'ACCESS_TOKEN_DECRYPT_FAILED',
+          },
+          sendContext,
+        );
+        await this.fail(claimed, 'whatsapp_outbound_rejected', message.id);
+        return;
+      }
+      if (!accessToken.accessToken) {
+        await this.logOutboundSendRejection(
+          claimed,
+          message.id,
+          {
+            mode: 'FAIL',
+            safeReason: 'ACCESS_TOKEN_MISSING',
+          },
+          sendContext,
+        );
+        await this.fail(claimed, 'whatsapp_outbound_rejected', message.id);
+        return;
+      }
       const replyToProviderMessageId = await this.replyProviderMessageId(
         message.metadata,
         claimed,
@@ -222,16 +344,16 @@ export class WhatsAppOutboundProcessorService
       try {
         providerMessageId = (
           await this.api.sendMessage({
-            accessToken: this.decrypt(connection),
+            accessToken: accessToken.accessToken,
             graphApiVersion: connection.graphApiVersion,
             message: prepared.message,
             phoneNumberId: connection.phoneNumberId,
             ...(replyToProviderMessageId ? { replyToProviderMessageId } : {}),
-            to: identity.externalUserId,
+            to: recipientNumber,
           })
         ).messageId;
       } catch (error) {
-        await this.handleMessageSendError(claimed, message.id, error);
+        await this.handleMessageSendError(claimed, message.id, error, sendContext);
         return;
       }
       if (!(await this.persistProviderSendJournal(claimed, providerMessageId))) {
@@ -242,6 +364,18 @@ export class WhatsAppOutboundProcessorService
       if (error instanceof WhatsAppOutboundLeaseConflictError) throw error;
       if (error instanceof WhatsAppOutboundUnknownError) return;
       if (error instanceof WhatsAppOutboundPermanentError) {
+        await this.logOutboundSendRejection(
+          claimed,
+          messageId,
+          {
+            mode: 'FAIL',
+            safeReason:
+              error.message === 'whatsapp_template_required'
+                ? 'GRAPH_API_TEMPLATE_REQUIRED'
+                : 'GRAPH_API_REQUEST_INVALID',
+          },
+          sendContext,
+        );
         await this.fail(claimed, error.message);
         return;
       }
@@ -345,6 +479,193 @@ export class WhatsAppOutboundProcessorService
       field: 'accessToken',
       projectId: row.projectId,
     });
+  }
+
+  private resolveAccessToken(connection: {
+    credentialsEncrypted: Prisma.JsonValue;
+    id: string;
+    projectId: string;
+  }): AccessTokenResolution {
+    const container = object(connection.credentialsEncrypted);
+    const envelope = object(container?.accessToken) as EncryptedSecretEnvelope | undefined;
+    if (!envelope)
+      return { accessToken: '', accessTokenPresent: false, accessTokenDecryptSucceeded: false };
+    try {
+      const accessToken = string(this.decrypt(connection)?.trim()) ?? '';
+      return {
+        accessToken,
+        accessTokenDecryptSucceeded: true,
+        accessTokenPresent: true,
+      };
+    } catch {
+      return { accessToken: '', accessTokenPresent: true, accessTokenDecryptSucceeded: false };
+    }
+  }
+
+  private sanitizeProviderMessage(message: string | undefined): string | undefined {
+    const value = message?.trim();
+    return value && value.length > 320 ? `${value.slice(0, 320)}...` : value;
+  }
+
+  private classifySendFailure(error: unknown, context?: SendAttemptContext): SendFailureAnalysis {
+    const safeContext: SendAttemptContext = context ?? {
+      accessTokenDecryptSucceeded: false,
+      accessTokenPresent: false,
+      connectionId: '',
+      graphApiVersion: 'v23.0',
+      messageType: 'unknown',
+      operationId: '',
+      outboxId: '',
+      phoneNumberId: undefined,
+      phoneNumberIdPresent: false,
+      projectId: '',
+      recipientPresent: false,
+      correlationId: undefined,
+    };
+    if (error instanceof WhatsAppApiError) {
+      const providerSafeMessage = this.sanitizeProviderMessage(error.providerMessage);
+      const base: Omit<SendFailureAnalysis, 'mode' | 'safeReason'> = {
+        httpStatus: error.status,
+        ...(error.providerTraceId ? { providerTraceId: error.providerTraceId } : {}),
+        ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
+      };
+      if (error.providerCode !== undefined) base.providerErrorCode = error.providerCode;
+      if (error.providerSubcode !== undefined) base.providerErrorSubcode = error.providerSubcode;
+      if (error.providerType !== undefined) base.providerErrorType = error.providerType;
+      if (providerSafeMessage !== undefined) base.providerSafeMessage = providerSafeMessage;
+      if (error.status === 401) {
+        return {
+          ...base,
+          mode: 'FAIL',
+          safeReason: 'GRAPH_API_UNAUTHORIZED',
+        };
+      }
+      if (error.status === 403) {
+        return {
+          ...base,
+          mode: 'FAIL',
+          safeReason: 'GRAPH_API_PERMISSION_DENIED',
+        };
+      }
+      if (error.status === 404 && !safeContext.phoneNumberIdPresent) {
+        return {
+          ...base,
+          mode: 'FAIL',
+          safeReason: 'GRAPH_API_INVALID_PHONE_NUMBER_ID',
+        };
+      }
+      if (error.status === 429) {
+        return {
+          ...base,
+          mode: 'RETRY',
+          safeReason: 'GRAPH_API_RATE_LIMITED',
+        };
+      }
+      if (error.status >= 500) {
+        return {
+          ...base,
+          mode: 'RETRY',
+          safeReason: 'GRAPH_API_UNKNOWN_RESULT',
+        };
+      }
+      if (error.status >= 400 && error.status < 500) {
+        const hasRecipientError = /(phone|recipient|contact|to)/i.test(error.providerMessage ?? '');
+        const hasRecipientErrorInSafeMessage = /(recipient|to)/i.test(providerSafeMessage ?? '');
+        if ((error.providerCode === 100 || error.providerCode === 131000) && hasRecipientError)
+          return { ...base, mode: 'FAIL', safeReason: 'GRAPH_API_INVALID_RECIPIENT' };
+        if (
+          (error.providerCode === 100 && !safeContext.recipientPresent) ||
+          hasRecipientErrorInSafeMessage
+        )
+          return { ...base, mode: 'FAIL', safeReason: 'GRAPH_API_INVALID_RECIPIENT' };
+        if (/(phone.?number.?id|phone number id|sender)/i.test(providerSafeMessage ?? '')) {
+          return {
+            ...base,
+            mode: 'FAIL',
+            safeReason: 'GRAPH_API_INVALID_PHONE_NUMBER_ID',
+          };
+        }
+        if (/template/i.test(providerSafeMessage ?? '')) {
+          return {
+            ...base,
+            mode: 'FAIL',
+            safeReason: 'GRAPH_API_TEMPLATE_REQUIRED',
+          };
+        }
+        return {
+          ...base,
+          mode: 'FAIL',
+          safeReason: 'GRAPH_API_PROVIDER_REJECTED',
+        };
+      }
+      return {
+        ...base,
+        mode: 'FAIL',
+        safeReason: 'GRAPH_API_REQUEST_INVALID',
+      };
+    }
+    if (error instanceof Error && error.name === 'TimeoutError')
+      return { mode: 'UNKNOWN', safeReason: 'GRAPH_API_TIMEOUT' };
+    const message = this.sanitizeProviderMessage(
+      error instanceof Error ? error.message : undefined,
+    );
+    return message !== undefined
+      ? {
+          mode: 'UNKNOWN',
+          safeReason: 'GRAPH_API_UNKNOWN_RESULT',
+          providerSafeMessage: message,
+        }
+      : {
+          mode: 'UNKNOWN',
+          safeReason: 'GRAPH_API_UNKNOWN_RESULT',
+        };
+  }
+
+  private async logOutboundSendRejection(
+    claimed: ClaimedOutboxRecord,
+    messageId: string | undefined,
+    analysis: SendFailureAnalysis,
+    context?: SendAttemptContext,
+  ): Promise<void> {
+    const contextValue = context ?? {
+      accessTokenDecryptSucceeded: false,
+      accessTokenPresent: false,
+      connectionId: claimed.connectionId,
+      correlationId: undefined,
+      graphApiVersion: 'v23.0',
+      messageType: 'unknown',
+      operationId: claimed.id,
+      outboxId: claimed.id,
+      phoneNumberId: undefined,
+      phoneNumberIdPresent: false,
+      projectId: claimed.projectId,
+      recipientPresent: false,
+    };
+    const payload: Record<string, unknown> = {
+      event: 'whatsapp_outbound_rejected',
+      outboxId: claimed.id,
+      operationId: contextValue.operationId,
+      connectionId: contextValue.connectionId,
+      projectId: claimed.projectId,
+      correlationId: contextValue.correlationId,
+      graphApiVersion: contextValue.graphApiVersion,
+      phoneNumberIdPresent: contextValue.phoneNumberIdPresent,
+      accessTokenPresent: contextValue.accessTokenPresent,
+      accessTokenDecryptSucceeded: contextValue.accessTokenDecryptSucceeded,
+      recipientPresent: contextValue.recipientPresent,
+      messageType: contextValue.messageType,
+      httpStatus: analysis.httpStatus,
+      providerErrorCode: analysis.providerErrorCode,
+      providerErrorSubcode: analysis.providerErrorSubcode,
+      providerErrorType: analysis.providerErrorType,
+      providerSafeMessage: analysis.providerSafeMessage,
+      providerTraceId: analysis.providerTraceId,
+      retryable: analysis.mode === 'RETRY',
+      safeReason: analysis.safeReason,
+      ...(analysis.retryAfterSeconds ? { retryAfterSeconds: analysis.retryAfterSeconds } : {}),
+    };
+    if (messageId) payload.messageId = messageId;
+    this.logger.warn(JSON.stringify(payload));
   }
 
   private async prepareMessage(
@@ -1169,21 +1490,20 @@ export class WhatsAppOutboundProcessorService
     claimed: ClaimedOutboxRecord,
     messageId: string,
     error: unknown,
+    context?: SendAttemptContext,
   ): Promise<void> {
-    if (error instanceof WhatsAppApiError) {
-      if (error.status === 429) {
-        throw error;
-      }
-      if (error.status >= 500) {
-        await this.unknown(claimed, messageId, 'whatsapp_outbound_unknown');
-        return;
-      }
+    const analysis = this.classifySendFailure(error, context);
+    if (analysis.mode === 'FAIL') {
+      if (context) await this.logOutboundSendRejection(claimed, messageId, analysis, context);
       await this.fail(claimed, 'whatsapp_outbound_rejected', messageId);
+      return;
+    }
+    if (analysis.mode === 'RETRY') {
+      await this.retry(claimed, 'whatsapp_outbound_retryable', analysis.retryAfterSeconds);
       return;
     }
     await this.unknown(claimed, messageId, 'whatsapp_outbound_unknown');
   }
-
   private async succeedOutboxOnly(claimed: ClaimedOutboxRecord): Promise<void> {
     const updated = await this.database.client.outboxRecord.updateMany({
       data: {

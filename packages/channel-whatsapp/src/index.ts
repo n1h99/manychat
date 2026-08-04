@@ -527,6 +527,9 @@ export class WhatsAppApiError extends Error {
     public readonly providerCode?: number,
     public readonly providerSubcode?: number,
     public readonly providerTransient?: boolean,
+    public readonly providerType?: string,
+    public readonly providerMessage?: string,
+    public readonly providerTraceId?: string,
   ) {
     super(`whatsapp_api_${status}`);
     this.name = 'WhatsAppApiError';
@@ -967,6 +970,12 @@ export class WhatsAppCloudApi {
       typeof provider?.error_subcode === 'number' && Number.isSafeInteger(provider.error_subcode)
         ? provider.error_subcode
         : undefined;
+    const providerType = string(provider?.type);
+    const providerMessage =
+      typeof provider?.message === 'string' && provider.message.length > 0
+        ? provider.message
+        : undefined;
+    const providerTraceId = string(payload?.fbtrace_id);
     const providerTransient =
       typeof provider?.is_transient === 'boolean' ? provider.is_transient : undefined;
     return new WhatsAppApiError(
@@ -975,6 +984,9 @@ export class WhatsAppCloudApi {
       providerCode,
       providerSubcode,
       providerTransient,
+      providerType,
+      providerMessage,
+      providerTraceId,
     );
   }
 

@@ -153,7 +153,9 @@ export class OperationsService {
               ? `CRM ${row.crmOperation.type.toLocaleLowerCase('en-US').replaceAll('_', ' ')}`
               : row.broadcastRecipient
                 ? 'Broadcast delivery'
-                : 'Telegram delivery';
+                : row.kind === 'WHATSAPP'
+                  ? 'WhatsApp delivery'
+                  : 'Telegram delivery';
           return {
             attempts: row.attempts,
             correlationId: row.externalHttpOperation?.execution.correlationId,
@@ -255,7 +257,8 @@ export class OperationsService {
     }
 
     baseRows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
-    const merged = source === undefined ? baseRows.slice(offset, offset + query.pageSize) : baseRows;
+    const merged =
+      source === undefined ? baseRows.slice(offset, offset + query.pageSize) : baseRows;
     return {
       items: merged,
       page: query.page,

@@ -11,6 +11,56 @@ const actor = {
 const context = { correlationId: 'correlation-a' };
 
 describe('OperationsService', () => {
+  it('labels WhatsApp and Telegram outbound operations correctly', async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        attempts: 1,
+        broadcastRecipient: null,
+        connectionId: 'connection-whatsapp',
+        createdAt: new Date('2026-08-03T00:02:00.000Z'),
+        crmOperation: null,
+        externalHttpOperation: null,
+        id: 'outbox-whatsapp',
+        kind: 'WHATSAPP',
+        lastError: 'whatsapp_outbound_rejected',
+        maxAttempts: 8,
+        status: 'FAILED',
+        updatedAt: new Date('2026-08-03T00:03:00.000Z'),
+      },
+      {
+        attempts: 1,
+        broadcastRecipient: null,
+        connectionId: 'connection-telegram',
+        createdAt: new Date('2026-08-03T00:01:00.000Z'),
+        crmOperation: null,
+        externalHttpOperation: null,
+        id: 'outbox-telegram',
+        kind: 'TELEGRAM',
+        lastError: 'telegram_outbound_failed',
+        maxAttempts: 5,
+        status: 'FAILED',
+        updatedAt: new Date('2026-08-03T00:04:00.000Z'),
+      },
+    ]);
+    const service = new OperationsService(
+      {} as never,
+      { client: { outboxRecord: { count: vi.fn().mockResolvedValue(2), findMany } } } as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.list('project-a', {
+      page: 1,
+      pageSize: 50,
+      source: 'OUTBOX',
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ entityType: 'WhatsApp delivery', id: 'outbox-whatsapp' }),
+      expect.objectContaining({ entityType: 'Telegram delivery', id: 'outbox-telegram' }),
+    ]);
+  });
+
   it('returns a safe outbox projection without provider payloads', async () => {
     const findMany = vi.fn().mockResolvedValue([
       {
