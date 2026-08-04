@@ -539,6 +539,7 @@ export function OperationsPage() {
         onClose={() => setSelectedAudit(undefined)}
         open={Boolean(selectedAudit)}
         sections={selectedAudit ? auditSections(selectedAudit) : []}
+        className="technical-record-drawer--audit-log"
         title="Audit log details"
         top={selectedAudit ? auditTop(selectedAudit) : []}
       />

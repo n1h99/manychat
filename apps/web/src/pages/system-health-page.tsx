@@ -363,6 +363,7 @@ export function SystemHealthPage() {
       <TechnicalRecordDrawer
         onClose={() => setSelectedAudit(undefined)}
         open={Boolean(selectedAudit)}
+        className="technical-record-drawer--account-activity"
         sections={selectedAudit ? auditSections(selectedAudit) : []}
         title="Account activity details"
         top={selectedAudit ? auditTop(selectedAudit) : []}

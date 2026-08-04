@@ -24,6 +24,7 @@ export type TechnicalRecordTopField = {
 type TechnicalRecordDrawerProps = {
   error?: unknown;
   loading?: boolean;
+  className?: string;
   onClose: () => void;
   open: boolean;
   sections?: TechnicalRecordSection[];
@@ -169,6 +170,7 @@ function renderFieldRows(field: TechnicalRecordField) {
 export function TechnicalRecordDrawer({
   error,
   loading,
+  className,
   onClose,
   open,
   sections,
@@ -181,7 +183,7 @@ export function TechnicalRecordDrawer({
   const hasData = (sections ?? []).some((section) => section.fields.length > 0);
   return (
     <Drawer
-      className="technical-record-drawer"
+      className={`technical-record-drawer${className ? ` ${className}` : ''}`}
       onClose={onClose}
       open={open}
       title={title}

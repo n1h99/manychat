@@ -516,6 +516,33 @@
   grid-column: 1 / -1;
 }
 
+.technical-record-drawer--account-activity .technical-record-top-cell,
+.technical-record-drawer--audit-log .technical-record-top-cell {
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.technical-record-drawer--account-activity .technical-record-fields,
+.technical-record-drawer--audit-log .technical-record-fields {
+  gap: 14px;
+}
+
+.technical-record-drawer--account-activity .technical-record-section,
+.technical-record-drawer--audit-log .technical-record-section {
+  gap: 12px;
+}
+
+.technical-record-drawer--account-activity .technical-record-top-label,
+.technical-record-drawer--audit-log .technical-record-top-label {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.technical-record-drawer--account-activity .technical-record-top-value,
+.technical-record-drawer--audit-log .technical-record-top-value {
+  line-height: 1.3;
+}
+
 .technical-record-section {
   display: grid;
   gap: 12px;
