@@ -7,6 +7,8 @@ import { WhatsAppWebhookService } from './whatsapp-webhook.service';
 const secret = 'meta-app-secret';
 const secretWithWhitespace = '  meta-app-secret  ';
 const shortSecret = 'short-secret';
+const userAgent = 'meta-simulator';
+const ipAddress = '203.0.113.10';
 
 function signature(raw: Buffer, appSecret: string = secret): string {
   return `sha256=${createHmac('sha256', appSecret).update(raw).digest('hex')}`;
@@ -63,6 +65,21 @@ function setup(
   };
 }
 
+function getWarnLog(service: WhatsAppWebhookService) {
+  const logger = vi.spyOn(
+    (service as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger,
+    'warn',
+  );
+  return logger;
+}
+
+function getWarnPayload(warn: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  expect(warn).toHaveBeenCalledOnce();
+  const log = warn.mock.calls[0]?.[0];
+  expect(log).toBeDefined();
+  return log as Record<string, unknown>;
+}
+
 function envelope() {
   return {
     entry: [
@@ -95,16 +112,134 @@ describe('WhatsAppWebhookService', () => {
     expect(() => test.service.verifyChallenge('subscribe', 'wrong', 'challenge')).toThrow();
   });
 
-  it('rejects an invalid signature without persisting the raw body', async () => {
+  it('rejects a missing signature header with structured safe diagnostics', async () => {
     const test = setup();
+    const warn = getWarnLog(test.service);
     const payload = envelope();
     await expect(
-      test.service.receive(Buffer.from(JSON.stringify(payload)), 'sha256=00', payload, {
+      test.service.receive(Buffer.from(JSON.stringify(payload)), undefined, payload, {
         correlationId: 'correlation-a',
+        ip: ipAddress,
+        userAgent,
       }),
     ).rejects.toMatchObject({ response: { code: 'WHATSAPP_WEBHOOK_SIGNATURE_REJECTED' } });
+    const log = getWarnPayload(warn);
+    expect(log).toMatchObject({
+      correlationId: 'correlation-a',
+      signaturePresent: false,
+      signatureHasSha256Prefix: false,
+      signatureHexLength: null,
+      signatureHexValid: false,
+      appSecretLength: secret.length,
+      appSecretPresent: true,
+      rawBodyPresent: true,
+      rawBodyLength: JSON.stringify(payload).length,
+      safeReason: 'SIGNATURE_HEADER_MISSING',
+      ip: ipAddress,
+      userAgent,
+    });
     expect(test.audit.record).toHaveBeenCalledOnce();
     expect(test.client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid signature prefix with structured safe diagnostics', async () => {
+    const test = setup();
+    const warn = getWarnLog(test.service);
+    const payload = envelope();
+    const raw = Buffer.from(JSON.stringify(payload));
+    await expect(
+      test.service.receive(raw, 'md5=abcdef', payload, {
+        correlationId: 'correlation-a',
+        ip: ipAddress,
+        userAgent,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'WHATSAPP_WEBHOOK_SIGNATURE_REJECTED' } });
+    const log = getWarnPayload(warn);
+    expect(log).toMatchObject({
+      correlationId: 'correlation-a',
+      signaturePresent: true,
+      signatureHasSha256Prefix: false,
+      signatureHexLength: null,
+      signatureHexValid: false,
+      safeReason: 'SIGNATURE_PREFIX_INVALID',
+      rawBodyLength: raw.length,
+      appSecretLength: secret.length,
+    });
+  });
+
+  it('rejects a signature with invalid hex content with structured safe diagnostics', async () => {
+    const test = setup();
+    const warn = getWarnLog(test.service);
+    const payload = envelope();
+    const raw = Buffer.from(JSON.stringify(payload));
+    await expect(
+      test.service.receive(raw, `sha256=${'zz'.repeat(32)}`, payload, {
+        correlationId: 'correlation-a',
+        ip: ipAddress,
+        userAgent,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'WHATSAPP_WEBHOOK_SIGNATURE_REJECTED' } });
+    const log = getWarnPayload(warn);
+    expect(log).toMatchObject({
+      correlationId: 'correlation-a',
+      signaturePresent: true,
+      signatureHasSha256Prefix: true,
+      signatureHexLength: 64,
+      signatureHexValid: false,
+      safeReason: 'SIGNATURE_HEX_INVALID',
+      rawBodyLength: raw.length,
+      appSecretLength: secret.length,
+    });
+  });
+
+  it('rejects a signature with invalid length with structured safe diagnostics', async () => {
+    const test = setup();
+    const warn = getWarnLog(test.service);
+    const payload = envelope();
+    const raw = Buffer.from(JSON.stringify(payload));
+    await expect(
+      test.service.receive(raw, `sha256=${'a'.repeat(63)}`, payload, {
+        correlationId: 'correlation-a',
+        ip: ipAddress,
+        userAgent,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'WHATSAPP_WEBHOOK_SIGNATURE_REJECTED' } });
+    const log = getWarnPayload(warn);
+    expect(log).toMatchObject({
+      correlationId: 'correlation-a',
+      signaturePresent: true,
+      signatureHasSha256Prefix: true,
+      signatureHexLength: 63,
+      signatureHexValid: true,
+      safeReason: 'SIGNATURE_LENGTH_INVALID',
+      rawBodyLength: raw.length,
+      appSecretLength: secret.length,
+    });
+  });
+
+  it('rejects a signature mismatch with structured safe diagnostics', async () => {
+    const test = setup();
+    const warn = getWarnLog(test.service);
+    const payload = envelope();
+    const raw = Buffer.from(JSON.stringify(payload));
+    await expect(
+      test.service.receive(raw, `sha256=${'a'.repeat(64)}`, payload, {
+        correlationId: 'correlation-a',
+        ip: ipAddress,
+        userAgent,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'WHATSAPP_WEBHOOK_SIGNATURE_REJECTED' } });
+    const log = getWarnPayload(warn);
+    expect(log).toMatchObject({
+      correlationId: 'correlation-a',
+      signaturePresent: true,
+      signatureHasSha256Prefix: true,
+      signatureHexLength: 64,
+      signatureHexValid: true,
+      safeReason: 'SIGNATURE_MISMATCH',
+      rawBodyLength: raw.length,
+      appSecretLength: secret.length,
+    });
   });
 
   it('persists and enqueues every bounded item without undefined JSON properties', async () => {
@@ -170,6 +305,7 @@ describe('WhatsAppWebhookService', () => {
     const test = setup(undefined, secretWithWhitespace);
     const payload = envelope();
     const raw = Buffer.from(JSON.stringify(payload));
+    const warn = getWarnLog(test.service);
     try {
       await test.service.receive(raw, 'sha256=not-a-signature', payload, {
         correlationId: 'correlation-a',
@@ -179,6 +315,12 @@ describe('WhatsAppWebhookService', () => {
       const serialized = JSON.stringify(error);
       expect(serialized).not.toContain(secretWithWhitespace);
       expect(serialized).not.toContain(secret.trim());
+      const log = getWarnPayload(warn);
+      const logSerialized = JSON.stringify(log);
+      expect(logSerialized).not.toContain(secretWithWhitespace);
+      expect(logSerialized).not.toContain(secret.trim());
+      expect(logSerialized).not.toContain('not-a-signature');
+      expect(logSerialized).not.toContain(raw.toString());
     }
   });
 });

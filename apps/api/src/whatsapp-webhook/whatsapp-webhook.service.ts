@@ -21,6 +21,28 @@ import { DatabaseService } from '../database/database.service';
 import { WhatsAppInboundQueueService } from './whatsapp-inbound-queue.service';
 
 const retentionMilliseconds = 30 * 24 * 60 * 60 * 1_000;
+const signaturePrefix = 'sha256=';
+const expectedSignatureHexLength = 64;
+const signaturePrefixLength = signaturePrefix.length;
+
+const signatureInvalidReason = {
+  HEADER_MISSING: 'SIGNATURE_HEADER_MISSING',
+  PREFIX_INVALID: 'SIGNATURE_PREFIX_INVALID',
+  HEX_INVALID: 'SIGNATURE_HEX_INVALID',
+  LENGTH_INVALID: 'SIGNATURE_LENGTH_INVALID',
+  MISMATCH: 'SIGNATURE_MISMATCH',
+} as const;
+
+type SignatureInvalidReason = (typeof signatureInvalidReason)[keyof typeof signatureInvalidReason];
+
+type SignatureCheckResult = {
+  valid: boolean;
+  reason: SignatureInvalidReason | null;
+  signaturePresent: boolean;
+  signatureHasSha256Prefix: boolean;
+  signatureHexLength: number | null;
+  signatureHexValid: boolean;
+};
 
 export interface WhatsAppWebhookContext {
   correlationId: string;
@@ -85,8 +107,9 @@ export class WhatsAppWebhookService {
         code: 'WHATSAPP_META_CONFIGURATION_REQUIRED',
         message: 'WhatsApp webhook configuration is incomplete',
       });
-    if (!this.signatureValid(rawBody, signature, appSecret)) {
-      await this.recordRejected(context);
+    const signatureResult = this.evaluateSignature(rawBody, signature, appSecret);
+    if (!signatureResult.valid) {
+      await this.recordRejected(context, rawBody, signatureResult, appSecret);
       throw new ForbiddenException({
         code: 'WHATSAPP_WEBHOOK_SIGNATURE_REJECTED',
         message: 'WhatsApp webhook signature was rejected',
@@ -189,13 +212,95 @@ export class WhatsAppWebhookService {
     }
   }
 
-  private signatureValid(rawBody: Buffer, signature: string | undefined, secret: string): boolean {
-    if (!signature?.startsWith('sha256=')) return false;
-    const presentedHex = signature.slice('sha256='.length);
-    if (!/^[a-f0-9]{64}$/i.test(presentedHex)) return false;
+  private evaluateSignature(
+    rawBody: Buffer,
+    signature: string | undefined,
+    secret: string,
+  ): SignatureCheckResult {
+    const signaturePresent = signature !== undefined;
+    if (!signaturePresent) {
+      return {
+        valid: false,
+        reason: signatureInvalidReason.HEADER_MISSING,
+        signaturePresent,
+        signatureHasSha256Prefix: false,
+        signatureHexLength: null,
+        signatureHexValid: false,
+      };
+    }
+
+    const signatureHasSha256Prefix = signature.startsWith(signaturePrefix);
+    if (!signatureHasSha256Prefix) {
+      return {
+        valid: false,
+        reason: signatureInvalidReason.PREFIX_INVALID,
+        signaturePresent,
+        signatureHasSha256Prefix,
+        signatureHexLength: null,
+        signatureHexValid: false,
+      };
+    }
+
+    const presentedHex = signature.slice(signaturePrefixLength);
+    const signatureHexLengthValue = presentedHex.length;
+    if (!/^[a-f0-9]+$/i.test(presentedHex)) {
+      return {
+        valid: false,
+        reason: signatureInvalidReason.HEX_INVALID,
+        signaturePresent,
+        signatureHasSha256Prefix,
+        signatureHexLength: signatureHexLengthValue,
+        signatureHexValid: false,
+      };
+    }
+
+    if (presentedHex.length !== expectedSignatureHexLength) {
+      return {
+        valid: false,
+        reason: signatureInvalidReason.LENGTH_INVALID,
+        signaturePresent,
+        signatureHasSha256Prefix,
+        signatureHexLength: signatureHexLengthValue,
+        signatureHexValid: true,
+      };
+    }
+
     const expected = createHmac('sha256', secret).update(rawBody).digest();
     const presented = Buffer.from(presentedHex, 'hex');
-    return expected.length === presented.length && timingSafeEqual(expected, presented);
+    const valid = expected.length === presented.length && timingSafeEqual(expected, presented);
+    return {
+      valid,
+      reason: valid ? null : signatureInvalidReason.MISMATCH,
+      signaturePresent,
+      signatureHasSha256Prefix,
+      signatureHexLength: signatureHexLengthValue,
+      signatureHexValid: true,
+    };
+  }
+
+  private rejectionLog(
+    context: WhatsAppWebhookContext,
+    rawBody: Buffer,
+    details: SignatureCheckResult,
+    appSecret: string,
+  ): void {
+    const appSecretLength = appSecret.length;
+    const reason = details.reason ?? signatureInvalidReason.MISMATCH;
+    this.logger.warn({
+      correlationId: context.correlationId,
+      ip: context.ip,
+      message: 'WhatsApp webhook signature rejected',
+      appSecretLength,
+      appSecretPresent: appSecretLength > 0,
+      rawBodyLength: rawBody.length,
+      rawBodyPresent: true,
+      signatureHexLength: details.signatureHexLength,
+      signatureHasSha256Prefix: details.signatureHasSha256Prefix,
+      signaturePresent: details.signaturePresent,
+      signatureHexValid: details.signatureHexValid,
+      safeReason: reason,
+      userAgent: context.userAgent,
+    });
   }
 
   private safeEqual(left: string, right: string): boolean {
@@ -204,7 +309,13 @@ export class WhatsAppWebhookService {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
-  private async recordRejected(context: WhatsAppWebhookContext): Promise<void> {
+  private async recordRejected(
+    context: WhatsAppWebhookContext,
+    rawBody: Buffer,
+    details: SignatureCheckResult,
+    appSecret: string,
+  ): Promise<void> {
+    this.rejectionLog(context, rawBody, details, appSecret);
     try {
       await this.audit.record({
         action: 'security.whatsapp_webhook_signature_rejected',
