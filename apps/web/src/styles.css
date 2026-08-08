@@ -3533,21 +3533,41 @@ button:disabled,
   border-radius: 11px;
 }
 
+.media-selected-file > .anticon,
+.media-selected-file > span,
+.media-selected-file > small,
+.media-selected-file > .ant-btn {
+  align-self: center;
+}
+
+.media-selected-file > .anticon {
+  line-height: 1;
+}
+
 .media-selected-file > span {
+  display: flex;
+  align-items: center;
   overflow: hidden;
   font-weight: 600;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .media-selected-file > small {
+  display: flex;
+  align-items: center;
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .media-selected-file > .ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 30px;
   width: 30px;
 }

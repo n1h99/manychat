@@ -10,6 +10,7 @@ import {
   type CrmReconciliationResult,
   type CrmResult,
   type CreateOrUpdateLeadInput,
+  type MergeContactsInput,
   type ForwardInboundMessageInput,
   type ForwardOutboundMessageInput,
   type ForwardReactionEventInput,
@@ -38,6 +39,13 @@ export class ProjectCrmClient implements CrmClient {
     input: CreateOrUpdateLeadInput,
   ): Promise<CrmResult> {
     return (await this.resolve(context)).createOrUpdateLead(context, input);
+  }
+
+  async mergeContacts(
+    context: CrmCallContext,
+    input: MergeContactsInput,
+  ): Promise<CrmResult> {
+    return (await this.resolve(context)).mergeContacts(context, input);
   }
 
   async forwardInboundMessage(

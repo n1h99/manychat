@@ -122,6 +122,13 @@ export interface CreateOrUpdateLeadInput {
   username?: string;
 }
 
+export interface MergeContactsInput {
+  primaryContactId: string;
+  primaryCrmLeadId?: string;
+  secondaryContactId: string;
+  secondaryCrmLeadId?: string;
+}
+
 export interface ForwardInboundMessageInput {
   contactId: string;
   identity: CrmIdentityInput;
@@ -243,6 +250,7 @@ export type CrmReconciliationResult =
 
 export interface CrmClient {
   createOrUpdateLead(context: CrmCallContext, input: CreateOrUpdateLeadInput): Promise<CrmResult>;
+  mergeContacts(context: CrmCallContext, input: MergeContactsInput): Promise<CrmResult>;
   forwardInboundMessage(
     context: CrmCallContext,
     input: ForwardInboundMessageInput,
@@ -287,6 +295,12 @@ export class CrmClientError extends Error {
 const leadResultSchema = z.object({
   crmLeadId: z.string().min(1),
   mode: z.enum(['created', 'updated']),
+  operationId: z.string().min(1),
+});
+
+const mergeResultSchema = z.object({
+  leadId: z.string().min(1).optional(),
+  mode: z.enum(['merged', 'noop']),
   operationId: z.string().min(1),
 });
 
@@ -369,6 +383,30 @@ export class HttpCrmClient implements CrmClient {
       mode: result.mode,
       operationId: result.operationId,
       providerReference: result.crmLeadId,
+    };
+  }
+
+  async mergeContacts(
+    context: CrmCallContext,
+    input: MergeContactsInput,
+  ): Promise<CrmResult> {
+    const result = await this.postAndReconcile(
+      '/integrations/v1/omnicus/contacts/merge',
+      context,
+      {
+        crmProjectId: context.crmProjectId,
+        omnicusProjectId: context.projectId,
+        primaryCrmLeadId: input.primaryCrmLeadId,
+        primaryOmnicusContactId: input.primaryContactId,
+        secondaryCrmLeadId: input.secondaryCrmLeadId,
+        secondaryOmnicusContactId: input.secondaryContactId,
+      },
+      mergeResultSchema,
+    );
+    return {
+      mode: result.mode,
+      operationId: result.operationId,
+      providerReference: result.leadId ?? '',
     };
   }
 
@@ -716,6 +754,13 @@ export class MockCrmClient implements CrmClient {
   async createOrUpdateLead(
     context: CrmCallContext,
     _input: CreateOrUpdateLeadInput,
+  ): Promise<CrmResult> {
+    return this.perform(context, 'lead');
+  }
+
+  async mergeContacts(
+    context: CrmCallContext,
+    _input: MergeContactsInput,
   ): Promise<CrmResult> {
     return this.perform(context, 'lead');
   }

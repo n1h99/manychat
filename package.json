@@ -15,6 +15,7 @@
     "build:web": "node scripts/turbo.mjs run build --filter=@omnicus/web... && node scripts/check-web-bundle.mjs && node scripts/prepare-runtime.mjs web",
     "build:worker": "node scripts/turbo.mjs run build --filter=@omnicus/worker... && node scripts/prepare-runtime.mjs worker",
     "clean": "node scripts/turbo.mjs run clean",
+    "contact-merge-backfill": "node scripts/pnpm.mjs --filter @omnicus/worker contact-merge-backfill",
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
     "db:format": "node scripts/run-prisma.mjs format --schema prisma/schema.prisma",
     "db:generate": "node scripts/run-prisma.mjs generate --config prisma.config.ts",

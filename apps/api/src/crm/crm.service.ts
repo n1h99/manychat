@@ -27,6 +27,7 @@ type SafeCrmOperation = {
   status: 'FAILED' | 'PENDING' | 'PROCESSING' | 'RETRY' | 'SUCCEEDED' | 'UNKNOWN';
   type:
     | 'CREATE_OR_UPDATE_LEAD'
+    | 'MERGE_CONTACTS'
     | 'FORWARD_INBOUND_MESSAGE'
     | 'FORWARD_OUTBOUND_MESSAGE'
     | 'FORWARD_REACTION_EVENT'
@@ -458,6 +459,7 @@ export class CrmService {
     resultSafe: unknown;
     type:
       | 'CREATE_OR_UPDATE_LEAD'
+      | 'MERGE_CONTACTS'
       | 'FORWARD_INBOUND_MESSAGE'
       | 'FORWARD_OUTBOUND_MESSAGE'
       | 'FORWARD_REACTION_EVENT'

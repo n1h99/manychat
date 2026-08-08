@@ -48,7 +48,7 @@ export class ContactsService {
   async list(projectId: string, query: ContactsQueryDto) {
     const where: Prisma.ContactWhereInput = {
       projectId,
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.status ? { status: query.status } : { status: { not: 'MERGED' } }),
       ...(query.channel
         ? { channelIdentities: { some: { channel: query.channel as never } } }
         : {}),
@@ -629,16 +629,34 @@ export class ContactsService {
           code: 'CONTACT_NOT_FOUND',
           message: 'Active contact was not found',
         });
-      const primaryIdentityKeys = new Set(
-        primary.channelIdentities.map(
-          (identity) => `${identity.connectionId}:${identity.externalUserId}`,
-        ),
+      const primaryIdentityByKey = new Map(
+        primary.channelIdentities.map((identity) => [
+          `${identity.connectionId}:${identity.externalUserId}`,
+          identity,
+        ]),
       );
-      const duplicateIdentityIds = secondary.channelIdentities
-        .filter((identity) =>
-          primaryIdentityKeys.has(`${identity.connectionId}:${identity.externalUserId}`),
-        )
-        .map((identity) => identity.id);
+      const duplicateIdentities = secondary.channelIdentities.flatMap((identity) => {
+        const survivor = primaryIdentityByKey.get(
+          `${identity.connectionId}:${identity.externalUserId}`,
+        );
+        return survivor ? [{ duplicate: identity, survivor }] : [];
+      });
+      for (const { duplicate, survivor } of duplicateIdentities)
+        await Promise.all([
+          transaction.broadcastRecipient.updateMany({
+            data: { channelIdentityId: survivor.id, contactId: primary.id },
+            where: { channelIdentityId: duplicate.id, projectId },
+          }),
+          transaction.scheduledMessage.updateMany({
+            data: { channelIdentityId: survivor.id, contactId: primary.id },
+            where: { channelIdentityId: duplicate.id, projectId },
+          }),
+          transaction.telegramMediaGroup.updateMany({
+            data: { channelIdentityId: survivor.id, contactId: primary.id },
+            where: { channelIdentityId: duplicate.id, projectId },
+          }),
+        ]);
+      const duplicateIdentityIds = duplicateIdentities.map(({ duplicate }) => duplicate.id);
       if (duplicateIdentityIds.length)
         await transaction.channelIdentity.deleteMany({
           where: { id: { in: duplicateIdentityIds }, projectId },
@@ -674,13 +692,54 @@ export class ContactsService {
           where: { contactId: secondary.id, projectId },
           data: { contactId: primary.id },
         }),
+        transaction.broadcastRecipient.updateMany({
+          where: { contactId: secondary.id, projectId },
+          data: { contactId: primary.id },
+        }),
+        transaction.scheduledMessage.updateMany({
+          where: { contactId: secondary.id, projectId },
+          data: { contactId: primary.id },
+        }),
+        transaction.telegramMediaGroup.updateMany({
+          where: { contactId: secondary.id, projectId },
+          data: { contactId: primary.id },
+        }),
       ]);
       const mergedFields = {
         ...this.jsonObject(secondary.customFields),
         ...this.jsonObject(primary.customFields),
       };
       await transaction.contact.update({
-        data: { customFields: mergedFields as Prisma.InputJsonValue },
+        data: {
+          crmContactId: primary.crmContactId ?? secondary.crmContactId,
+          crmLeadId: primary.crmLeadId ?? secondary.crmLeadId,
+          crmManagerId: primary.crmManagerId ?? secondary.crmManagerId,
+          customFields: mergedFields as Prisma.InputJsonValue,
+          displayName: primary.displayName ?? secondary.displayName,
+          email: primary.email ?? secondary.email,
+          firstInteractionAt:
+            primary.firstInteractionAt && secondary.firstInteractionAt
+              ? new Date(
+                  Math.min(
+                    primary.firstInteractionAt.getTime(),
+                    secondary.firstInteractionAt.getTime(),
+                  ),
+                )
+              : (primary.firstInteractionAt ?? secondary.firstInteractionAt),
+          firstName: primary.firstName ?? secondary.firstName,
+          lastInteractionAt:
+            primary.lastInteractionAt && secondary.lastInteractionAt
+              ? new Date(
+                  Math.max(
+                    primary.lastInteractionAt.getTime(),
+                    secondary.lastInteractionAt.getTime(),
+                  ),
+                )
+              : (primary.lastInteractionAt ?? secondary.lastInteractionAt),
+          lastName: primary.lastName ?? secondary.lastName,
+          phone: primary.phone ?? secondary.phone,
+          username: primary.username ?? secondary.username,
+        },
         where: { projectId_id: { id: primary.id, projectId } },
       });
       await this.syncCustomFieldValues(transaction, projectId, primary.id, mergedFields);
@@ -688,7 +747,49 @@ export class ContactsService {
         data: { archivedAt: new Date(), mergedIntoContactId: primary.id, status: 'MERGED' },
         where: { projectId_id: { id: secondary.id, projectId } },
       });
-      return { primaryContactId: primary.id, secondaryContactId: secondary.id };
+      let crmOperationId: string | null = null;
+      const crmConfig = await transaction.crmProjectConfig.findUnique({
+        select: { enabled: true },
+        where: { projectId },
+      });
+      if (crmConfig?.enabled) {
+        const identity = primary.channelIdentities[0] ?? secondary.channelIdentities[0];
+        const outbox = await transaction.outboxRecord.create({
+          data: {
+            idempotencyKey: `crm-contact-merge-${primary.id}-${secondary.id}`,
+            kind: 'CRM',
+            nextAttemptAt: new Date(),
+            payload: {
+              operationType: 'MERGE_CONTACTS',
+              primaryContactId: primary.id,
+              secondaryContactId: secondary.id,
+            },
+            projectId,
+          },
+        });
+        const operation = await transaction.crmOperation.create({
+          data: {
+            contactId: primary.id,
+            inputSafe: {
+              ...(identity ? { connectionId: identity.connectionId } : {}),
+              correlationId: context.correlationId,
+              primaryContactId: primary.id,
+              ...(primary.crmLeadId ? { primaryCrmLeadId: primary.crmLeadId } : {}),
+              secondaryContactId: secondary.id,
+              ...(secondary.crmLeadId ? { secondaryCrmLeadId: secondary.crmLeadId } : {}),
+            },
+            outboxRecordId: outbox.id,
+            projectId,
+            type: 'MERGE_CONTACTS',
+          },
+        });
+        crmOperationId = operation.id;
+      }
+      return {
+        crmOperationId,
+        primaryContactId: primary.id,
+        secondaryContactId: secondary.id,
+      };
     });
     await this.audit.record({
       action: 'contact.merged',

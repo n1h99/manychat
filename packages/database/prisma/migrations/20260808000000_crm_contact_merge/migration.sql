@@ -1,0 +1,1 @@
+ALTER TYPE "CrmOperationType" ADD VALUE 'MERGE_CONTACTS';

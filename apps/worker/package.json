@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "build": "node ../../scripts/clean-output.mjs apps/worker/dist && tsc -p tsconfig.build.json",
+    "contact-merge-backfill": "tsx src/crm/contact-merge-backfill.cli.ts",
+    "contact-merge-backfill:prod": "node dist/crm/contact-merge-backfill.cli.js",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "test": "vitest run --passWithNoTests --exclude 'src/**/*.integration.test.ts'",

@@ -225,7 +225,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     const identityRow = operation.contact.channelIdentities.find(
       (identity) => identity.connectionId === connectionId,
     );
-    if (!identityRow) {
+    if (!identityRow && operation.type !== 'MERGE_CONTACTS') {
       await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_channel_identity_missing');
       return;
     }
@@ -234,13 +234,19 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       operation.normalizedEvent?.message?.conversation.externalChatId ??
       operation.message?.conversation.externalChatId ??
       this.stringProperty(operation.normalizedEvent?.payload, 'chatId');
-    const identity: CrmIdentityInput = {
-      channel: identityRow.channel === 'WHATSAPP' ? 'whatsapp' : 'telegram',
-      channelIdentityId: identityRow.id,
-      connectionId: identityRow.connectionId,
-      ...(externalChatId ? { externalChatId } : {}),
-      externalUserId: identityRow.externalUserId,
-    };
+    const identity: CrmIdentityInput = identityRow
+      ? {
+          channel: identityRow.channel === 'WHATSAPP' ? 'whatsapp' : 'telegram',
+          channelIdentityId: identityRow.id,
+          connectionId: identityRow.connectionId,
+          ...(externalChatId ? { externalChatId } : {}),
+          externalUserId: identityRow.externalUserId,
+        }
+      : {
+          channel: 'telegram',
+          channelIdentityId: 'contact-merge',
+          connectionId: 'contact-merge',
+        };
     const context = {
       correlationId:
         operation.normalizedEvent?.inboxRecord.rawWebhookEvent.correlationId ??
@@ -274,7 +280,34 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
 
     try {
       let result;
-      if (operation.type === 'CREATE_OR_UPDATE_LEAD')
+      if (operation.type === 'MERGE_CONTACTS') {
+        const primaryContactId = this.stringProperty(
+          operation.inputSafe,
+          'primaryContactId',
+        );
+        const secondaryContactId = this.stringProperty(
+          operation.inputSafe,
+          'secondaryContactId',
+        );
+        if (!primaryContactId || !secondaryContactId) {
+          await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_contact_merge_invalid');
+          return;
+        }
+        const primaryCrmLeadId = this.stringProperty(
+          operation.inputSafe,
+          'primaryCrmLeadId',
+        );
+        const secondaryCrmLeadId = this.stringProperty(
+          operation.inputSafe,
+          'secondaryCrmLeadId',
+        );
+        result = await this.client.mergeContacts(context, {
+          primaryContactId,
+          ...(primaryCrmLeadId ? { primaryCrmLeadId } : {}),
+          secondaryContactId,
+          ...(secondaryCrmLeadId ? { secondaryCrmLeadId } : {}),
+        });
+      } else if (operation.type === 'CREATE_OR_UPDATE_LEAD')
         result = await this.client.createOrUpdateLead(context, {
           contactId: operation.contact.id,
           contactStatus: operation.contact.status,
@@ -532,6 +565,7 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       projectId: string;
       type:
         | 'CREATE_OR_UPDATE_LEAD'
+        | 'MERGE_CONTACTS'
         | 'FORWARD_INBOUND_MESSAGE'
         | 'FORWARD_OUTBOUND_MESSAGE'
         | 'FORWARD_REACTION_EVENT'
@@ -556,7 +590,11 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
         },
         where: { id: operation.id },
       });
-      if (operation.type === 'CREATE_OR_UPDATE_LEAD' && operation.contactId)
+      if (
+        (operation.type === 'CREATE_OR_UPDATE_LEAD' || operation.type === 'MERGE_CONTACTS') &&
+        operation.contactId &&
+        result.providerReference
+      )
         await transaction.contact.update({
           data: { crmLeadId: result.providerReference },
           where: {
