@@ -185,10 +185,7 @@ export function SystemHealthPage() {
       ) : null}
       {resetHealth.isError ? (
         <Alert
-          message={getUserErrorMessage(
-            resetHealth.error,
-            'System statistics could not be reset.',
-          )}
+          message={getUserErrorMessage(resetHealth.error, 'System statistics could not be reset.')}
           showIcon
           type="error"
         />

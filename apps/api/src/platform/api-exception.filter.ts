@@ -74,6 +74,9 @@ export const SAFE_API_CODE_MESSAGES: Readonly<Record<string, string>> = {
   CRM_WHATSAPP_MEDIA_KIND_UNSUPPORTED: 'The WhatsApp media kind is not supported',
   CRM_WHATSAPP_MEDIA_VALIDATION_REQUIRED: 'Validate WhatsApp media before sending this message',
   CRM_WHATSAPP_STRUCTURED_INVALID: 'The WhatsApp structured content is invalid',
+  WHATSAPP_RECURRING_SCHEDULE_UNSUPPORTED:
+    'Recurring schedules are not available for WhatsApp messages',
+  WHATSAPP_SCHEDULE_CONTENT_UNSUPPORTED: 'Only plain text can be scheduled for WhatsApp messages',
   CRM_WHATSAPP_TELEGRAM_FIELDS_UNSUPPORTED:
     'Telegram-only fields are not supported for WhatsApp messages',
   CRM_WHATSAPP_TEMPLATE_COMPONENTS_INVALID: 'Complete every required WhatsApp template field',

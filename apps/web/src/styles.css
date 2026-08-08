@@ -4222,8 +4222,8 @@ button:disabled,
 
 .channel-test-message-card {
   min-width: 0;
-  align-self: stretch;
-  height: 100% !important;
+  align-self: start;
+  height: auto !important;
 }
 
 .channel-management-grid .ant-card-body {

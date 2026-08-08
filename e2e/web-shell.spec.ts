@@ -434,5 +434,6 @@ test('shows polished account management and the complete Telegram connection lay
   expect(overview!.width).toBeGreaterThan(replaceToken!.width * 1.5);
   expect(actions!.y).toBeGreaterThan(replaceToken!.y);
   expect(testMessage!.x).toBeGreaterThan(replaceToken!.x);
-  expect(Math.abs(managementStack!.height - testMessage!.height)).toBeLessThanOrEqual(2);
+  expect(Math.abs(managementStack!.y - testMessage!.y)).toBeLessThanOrEqual(2);
+  expect(testMessage!.height).toBeLessThan(managementStack!.height);
 });

@@ -1,0 +1,1010 @@
+openapi: 3.1.0
+info:
+  title: Omnicus to CRM messaging contract
+  version: 4.0.0
+  description: Exact channel-aware contract implemented by CRM for normalized Telegram and WhatsApp messages, contact/lead merge, WhatsApp delivery status, edits, contact shares, automation state and confirmed outbound history.
+security:
+  - serviceBearer: []
+paths:
+  /integrations/v1/omnicus/messages/inbound:
+    post:
+      operationId: receiveOmnicusInboundMessage
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboundMessage'
+      responses:
+        '200':
+          description: Created or idempotently replayed CRM message.
+        '400':
+          description: Safe validation error.
+        '401':
+          description: Invalid service credential.
+        '409':
+          description: Idempotency or project mapping conflict.
+  /integrations/v1/omnicus/messages/outbound:
+    post:
+      operationId: receiveOmnicusOutboundMessage
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutboundMessage'
+      responses:
+        '200':
+          description: Created or idempotently replayed CRM outbound history message.
+        '400':
+          description: Safe validation error.
+        '401':
+          description: Invalid service credential.
+        '409':
+          description: Idempotency or project mapping conflict.
+  /integrations/v1/omnicus/messages/status:
+    post:
+      operationId: receiveOmnicusWhatsAppMessageStatus
+      summary: Update the existing CRM message bubble from a normalized WhatsApp status event
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WhatsAppMessageStatusEvent'
+      responses:
+        '200':
+          description: Same-bubble status update, ignored monotonic replay, or idempotent duplicate.
+        '400':
+          description: Safe validation error.
+        '401':
+          description: Invalid service credential.
+        '409':
+          description: Idempotency, provider-message identity, or conversation isolation conflict.
+  /integrations/v1/omnicus/reactions/inbound:
+    post:
+      operationId: receiveOmnicusInboundReaction
+      summary: Persist an idempotent Telegram user reaction event in CRM
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReactionEvent'
+      responses:
+        '200':
+          description: Created or idempotently replayed CRM reaction event.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReactionResult' }
+        '400':
+          description: Safe validation error.
+        '401':
+          description: Invalid service credential.
+        '409':
+          description: Idempotency, project mapping, or target message conflict.
+  /integrations/v1/omnicus/messages/edited:
+    post:
+      operationId: receiveOmnicusMessageEdit
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageEditEvent' }
+      responses:
+        '200': { description: Updated or idempotently replayed CRM message. }
+        '409': { description: Project, target message or idempotency conflict. }
+  /integrations/v1/omnicus/contacts/shared:
+    post:
+      operationId: receiveOmnicusContactShare
+      description: Persists a shared contact value. It must not automatically merge leads by phone.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactShareEvent' }
+      responses:
+        '200': { description: Created or idempotently replayed contact-share event. }
+        '409': { description: Project, target message or idempotency conflict. }
+  /integrations/v1/omnicus/contacts/merge:
+    post:
+      operationId: mergeOmnicusContactsInCrm
+      description: Explicitly merge two project-scoped Omnicus contact links and their CRM leads while preserving channel histories. No fuzzy PII matching is performed.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactMergeRequest' }
+      responses:
+        '200':
+          description: Merged, idempotently replayed, or no-op when no linked CRM lead exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContactMergeResult' }
+        '400': { description: Safe validation or conflicting contact request. }
+        '401': { description: Invalid service credential. }
+        '409': { description: Project mapping or survivor conflict. }
+  /integrations/v1/omnicus/conversations/automation-state:
+    post:
+      operationId: receiveOmnicusAutomationState
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AutomationStateEvent' }
+      responses:
+        '200': { description: Created or idempotently replayed state event. }
+        '409': { description: Project, revision or idempotency conflict. }
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-service-token
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  schemas:
+    ContactMergeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - primaryOmnicusContactId
+        - secondaryOmnicusContactId
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        primaryOmnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        secondaryOmnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        primaryCrmLeadId: { type: string, minLength: 1, maxLength: 128 }
+        secondaryCrmLeadId: { type: string, minLength: 1, maxLength: 128 }
+    ContactMergeResult:
+      type: object
+      additionalProperties: false
+      required: [mode, operationId]
+      properties:
+        operationId: { type: string, minLength: 1, maxLength: 128 }
+        mode: { type: string, enum: [merged, noop] }
+        leadId: { type: string, minLength: 1, maxLength: 128 }
+        providerReference: { type: string, minLength: 1, maxLength: 128 }
+    ReactionResult:
+      type: object
+      additionalProperties: false
+      required: [applied, crmLeadId, mode, operationId]
+      properties:
+        applied:
+          type: boolean
+          description: False while the referenced source message has not reached CRM yet.
+        crmLeadId:
+          type: string
+          minLength: 1
+        crmMessageId:
+          type: string
+          minLength: 1
+          description: Present when the reaction is already attached to the CRM message.
+        mode:
+          type: string
+          enum: [created, duplicate]
+        operationId:
+          type: string
+          minLength: 1
+      allOf:
+        - if:
+            properties:
+              applied: { const: true }
+            required: [applied]
+          then:
+            required: [crmMessageId]
+    Identity:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - channelIdentityId
+        - connectionId
+      properties:
+        channel:
+          type: string
+          enum:
+            - telegram
+            - whatsapp
+        channelIdentityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        connectionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        externalChatId:
+          type: string
+        externalUserId:
+          type: string
+    Media:
+      type: object
+      additionalProperties: false
+      required:
+        - assetId
+        - kind
+        - type
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - PHOTO
+            - DOCUMENT
+            - VIDEO
+            - AUDIO
+            - VOICE
+            - VIDEO_NOTE
+            - ANIMATION
+            - STICKER
+        type:
+          type: string
+          enum:
+            - image
+            - file
+            - audio
+            - video
+            - sticker
+        fileName:
+          type: string
+        emoji:
+          type: string
+          description: Telegram sticker emoji when kind is STICKER and the provider supplied it.
+        mimeType:
+          type: string
+        size:
+          type: integer
+          minimum: 0
+        downloadUrl:
+          type: string
+          format: uri
+          description: Short-lived signed URL. Download immediately and never persist it.
+        downloadUrlExpiresAt:
+          type: string
+          format: date-time
+        availability:
+          type: string
+          enum: [available, unavailable]
+          description: Optional normalized materialization state; omission preserves Telegram v3 compatibility.
+        unavailableReason:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_.:-]+$'
+          description: Safe machine code present only when availability is unavailable.
+        hasSpoiler:
+          type: boolean
+          description: Original Telegram spoiler presentation flag for photo, video or animation.
+        mediaGroupId:
+          type: string
+          description: Stable Telegram media_group_id for inbound album grouping; not an outbound album operation.
+        setName:
+          type: string
+          description: Telegram sticker set name when kind is STICKER and the provider supplied it.
+    Interactive:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - callback_query
+            - button_reply
+            - list_reply
+        callbackQueryId:
+          type: string
+          minLength: 1
+        data:
+          type: string
+          maxLength: 64
+        displayText:
+          type: string
+          description: Label resolved from the original Omnicus inline keyboard when available.
+        sourceMessageId:
+          type: string
+          format: uuid
+          description: Omnicus UUID of the outbound message whose button was pressed.
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 512
+    InlineKeyboardButton:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 64
+        callbackData:
+          type: string
+          minLength: 1
+          maxLength: 64
+        url:
+          type: string
+          format: uri
+      oneOf:
+        - required:
+            - callbackData
+        - required:
+            - url
+    InlineKeyboard:
+      type: array
+      maxItems: 8
+      items:
+        type: array
+        maxItems: 8
+        items:
+          $ref: '#/components/schemas/InlineKeyboardButton'
+    MessageEntity:
+      type: object
+      additionalProperties: false
+      required: [type, offset, length]
+      properties:
+        type:
+          type: string
+          enum:
+            [
+              mention,
+              hashtag,
+              bot_command,
+              url,
+              email,
+              bold,
+              italic,
+              underline,
+              strikethrough,
+              spoiler,
+              blockquote,
+              expandable_blockquote,
+              code,
+              pre,
+              text_link,
+              phone_number,
+              custom_emoji,
+            ]
+        offset: { type: integer, minimum: 0, description: UTF-16 code-unit offset }
+        length: { type: integer, minimum: 1, description: UTF-16 code-unit length }
+        url: { type: string, format: uri }
+        language: { type: string }
+        customEmojiId: { type: string }
+    LinkPreviewOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        isDisabled: { type: boolean }
+        url: { type: string, format: uri }
+        preferSmallMedia: { type: boolean }
+        preferLargeMedia: { type: boolean }
+        showAboveText: { type: boolean }
+    Reaction:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, emoji]
+          properties:
+            type: { type: string, enum: [emoji] }
+            emoji: { type: string, minLength: 1 }
+        - type: object
+          additionalProperties: false
+          required: [type, customEmojiId]
+          properties:
+            type: { type: string, enum: [custom_emoji] }
+            customEmojiId: { type: string, minLength: 1 }
+        - type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type: { type: string, enum: [paid] }
+    ReactionActor:
+      type: object
+      additionalProperties: false
+      required: [type, externalUserId, displayName]
+      properties:
+        type: { type: string, enum: [user] }
+        externalUserId: { type: string, minLength: 1 }
+        displayName: { type: string, minLength: 1 }
+        username: { type: string }
+    ReactionEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - normalizedEventId
+        - messageId
+        - occurredAt
+        - oldReactions
+        - newReactions
+        - actor
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+        normalizedEventId: { type: string, format: uuid }
+        messageId:
+          type: string
+          format: uuid
+          description: Omnicus message UUID, never a Telegram provider message ID.
+        occurredAt: { type: string, format: date-time }
+        oldReactions:
+          type: array
+          items: { $ref: '#/components/schemas/Reaction' }
+        newReactions:
+          type: array
+          items: { $ref: '#/components/schemas/Reaction' }
+        actor: { $ref: '#/components/schemas/ReactionActor' }
+    MessageEditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          crmProjectId,
+          omnicusProjectId,
+          omnicusContactId,
+          identity,
+          normalizedEventId,
+          messageId,
+          editedAt,
+        ]
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+        normalizedEventId: { type: string, format: uuid }
+        messageId: { type: string, format: uuid, description: Existing Omnicus message UUID. }
+        editedAt: { type: string, format: date-time }
+        text: { type: string, maxLength: 4096 }
+        caption: { type: string, maxLength: 1024 }
+        entities:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/MessageEntity' }
+      anyOf:
+        - required: [text]
+        - required: [caption]
+    SharedContact:
+      type: object
+      additionalProperties: false
+      required: [firstName, phoneNumber]
+      properties:
+        firstName: { type: string, minLength: 1 }
+        lastName: { type: string }
+        phoneNumber: { type: string, minLength: 1 }
+        telegramUserId: { type: string }
+        vcard: { type: string }
+    ContactShareEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          crmProjectId,
+          omnicusProjectId,
+          omnicusContactId,
+          identity,
+          normalizedEventId,
+          messageId,
+          occurredAt,
+          sharedContact,
+        ]
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+        normalizedEventId: { type: string, format: uuid }
+        messageId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        sharedContact: { $ref: '#/components/schemas/SharedContact' }
+    AutomationStateEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          crmProjectId,
+          omnicusProjectId,
+          omnicusContactId,
+          identity,
+          conversationId,
+          mode,
+          revision,
+          changedAt,
+        ]
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity: { $ref: '#/components/schemas/Identity' }
+        conversationId: { type: string, format: uuid }
+        mode: { type: string, enum: [AUTO, MANUAL, PAUSED] }
+        resumeAt: { type: string, format: date-time }
+        reasonCode: { type: string, maxLength: 128 }
+        revision: { type: integer, minimum: 1 }
+        changedAt: { type: string, format: date-time }
+    WhatsAppContactValue:
+      type: object
+      additionalProperties: false
+      required: [formattedName, phones]
+      properties:
+        type: { const: whatsapp_contact }
+        formattedName: { type: string, minLength: 1, maxLength: 256 }
+        firstName: { type: string, minLength: 1, maxLength: 128 }
+        lastName: { type: string, minLength: 1, maxLength: 128 }
+        phones:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [phone]
+            properties:
+              phone: { type: string, minLength: 1, maxLength: 64 }
+              type: { type: string, maxLength: 32 }
+              waId: { type: string, maxLength: 64 }
+        emails:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [email]
+            properties:
+              email: { type: string, format: email }
+              type: { type: string, maxLength: 32 }
+    WhatsAppContactMessage:
+      allOf:
+        - $ref: '#/components/schemas/WhatsAppContactValue'
+        - type: object
+          required: [type]
+          properties:
+            type: { const: whatsapp_contact }
+    WhatsAppLocationMessage:
+      type: object
+      additionalProperties: false
+      required: [type, latitude, longitude]
+      properties:
+        type: { const: whatsapp_location }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        name: { type: string, maxLength: 1000 }
+        address: { type: string, maxLength: 1000 }
+    WhatsAppOutboundStructuredMessage:
+      oneOf:
+        - $ref: '#/components/schemas/WhatsAppContactMessage'
+        - $ref: '#/components/schemas/WhatsAppLocationMessage'
+    StructuredMessageV4:
+      description: >-
+        Normalized inbound WhatsApp content. Meta may deliver one provider
+        message containing multiple contacts; CRM stores that bounded array in
+        one message bubble and never creates one bubble per contact.
+      oneOf:
+        - $ref: '#/components/schemas/WhatsAppContactMessage'
+        - type: object
+          additionalProperties: false
+          required: [type, contacts]
+          properties:
+            type: { const: whatsapp_contacts }
+            contacts:
+              type: array
+              minItems: 1
+              maxItems: 20
+              items: { $ref: '#/components/schemas/WhatsAppContactValue' }
+        - $ref: '#/components/schemas/WhatsAppLocationMessage'
+    WhatsAppTemplateParameter:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, text]
+          properties:
+            type: { const: text }
+            text: { type: string, minLength: 1, maxLength: 4096 }
+        - type: object
+          additionalProperties: false
+          required: [type, mediaAssetId]
+          properties:
+            type: { type: string, enum: [image, video, document] }
+            mediaAssetId: { type: string, format: uuid }
+        - type: object
+          additionalProperties: false
+          required: [type, payload]
+          properties:
+            type: { const: payload }
+            payload: { type: string, minLength: 1, maxLength: 256 }
+        - type: object
+          additionalProperties: false
+          required: [type, currency]
+          properties:
+            type: { const: currency }
+            currency:
+              type: object
+              additionalProperties: false
+              required: [fallbackValue, code, amount1000]
+              properties:
+                fallbackValue: { type: string, minLength: 1, maxLength: 64 }
+                code: { type: string, pattern: '^[A-Z]{3}$' }
+                amount1000: { type: integer }
+        - type: object
+          additionalProperties: false
+          required: [type, dateTime]
+          properties:
+            type: { const: date_time }
+            dateTime:
+              type: object
+              additionalProperties: false
+              required: [fallbackValue]
+              properties:
+                fallbackValue: { type: string, minLength: 1, maxLength: 128 }
+    WhatsAppTemplateSend:
+      type: object
+      additionalProperties: false
+      required: [name, languageCode]
+      properties:
+        name: { type: string, pattern: '^[a-z0-9_]+$', maxLength: 512 }
+        languageCode: { type: string, minLength: 2, maxLength: 32 }
+        components:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, parameters]
+            properties:
+              type: { type: string, enum: [header, body, button] }
+              subType: { type: string, enum: [quick_reply, url] }
+              index: { type: integer, minimum: 0, maximum: 9 }
+              parameters:
+                type: array
+                maxItems: 10
+                items: { $ref: '#/components/schemas/WhatsAppTemplateParameter' }
+    WhatsAppInteractiveOutbound:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, body, action]
+          properties:
+            type: { const: button }
+            body:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 1024 } }
+            footer:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 60 } }
+            action:
+              type: object
+              additionalProperties: false
+              required: [buttons]
+              properties:
+                buttons:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [id, title]
+                    properties:
+                      id: { type: string, minLength: 1, maxLength: 256 }
+                      title: { type: string, minLength: 1, maxLength: 20 }
+        - type: object
+          additionalProperties: false
+          required: [type, body, action]
+          properties:
+            type: { const: list }
+            body:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 1024 } }
+            action:
+              type: object
+              additionalProperties: false
+              required: [button, sections]
+              properties:
+                button: { type: string, minLength: 1, maxLength: 20 }
+                sections:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [rows]
+                    properties:
+                      title: { type: string, maxLength: 24 }
+                      rows:
+                        type: array
+                        minItems: 1
+                        maxItems: 10
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [id, title]
+                          properties:
+                            id: { type: string, minLength: 1, maxLength: 200 }
+                            title: { type: string, minLength: 1, maxLength: 24 }
+                            description: { type: string, maxLength: 72 }
+    WhatsAppMessageStatusEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - normalizedEventId
+        - messageId
+        - status
+        - occurredAt
+      properties:
+        crmProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusProjectId: { type: string, minLength: 1, maxLength: 128 }
+        omnicusContactId: { type: string, minLength: 1, maxLength: 128 }
+        identity:
+          allOf:
+            - $ref: '#/components/schemas/Identity'
+            - type: object
+              properties:
+                channel: { const: whatsapp }
+        normalizedEventId: { type: string, format: uuid }
+        messageId:
+          type: string
+          format: uuid
+          description: Stable Omnicus Message UUID used to locate the existing CRM bubble.
+        providerMessageId:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Opaque WhatsApp message identifier; never interpreted or logged as a raw provider payload.
+        status:
+          type: string
+          enum: [SENT, DELIVERED, READ, FAILED, UNKNOWN, DELETED]
+        occurredAt: { type: string, format: date-time }
+        errorCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_.:-]+$'
+      allOf:
+        - if:
+            properties:
+              status: { enum: [SENT, DELIVERED, READ, DELETED] }
+          then:
+            required: [providerMessageId]
+    InboundMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - occurredAt
+      properties:
+        crmProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusContactId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        identity:
+          $ref: '#/components/schemas/Identity'
+        messageId:
+          type: string
+          format: uuid
+        normalizedEventId:
+          type: string
+          format: uuid
+        providerMessageId:
+          type: string
+          minLength: 1
+          maxLength: 512
+        occurredAt:
+          type: string
+          format: date-time
+        replyToMessageId:
+          type: string
+          format: uuid
+          description: Omnicus UUID of the replied-to message in the same conversation.
+        senderName:
+          type: string
+        text:
+          type: string
+        media:
+          $ref: '#/components/schemas/Media'
+        interactive:
+          $ref: '#/components/schemas/Interactive'
+        structured:
+          $ref: '#/components/schemas/StructuredMessageV4'
+      anyOf:
+        - required:
+            - text
+        - required:
+            - media
+        - required:
+            - interactive
+        - required:
+            - structured
+    OutboundMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - crmProjectId
+        - omnicusProjectId
+        - omnicusContactId
+        - identity
+        - messageId
+        - providerMessageId
+        - occurredAt
+        - deliveryStatus
+        - source
+      properties:
+        crmProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusProjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        omnicusContactId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        identity:
+          $ref: '#/components/schemas/Identity'
+        messageId:
+          type: string
+          format: uuid
+        providerMessageId:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Telegram IDs are numeric; WhatsApp IDs are opaque and must not be interpreted.
+        occurredAt:
+          type: string
+          format: date-time
+        senderName:
+          type: string
+        text:
+          type: string
+        media:
+          $ref: '#/components/schemas/Media'
+        structured:
+          $ref: '#/components/schemas/WhatsAppOutboundStructuredMessage'
+        interactive:
+          $ref: '#/components/schemas/WhatsAppInteractiveOutbound'
+        template:
+          $ref: '#/components/schemas/WhatsAppTemplateSend'
+        inlineKeyboard:
+          $ref: '#/components/schemas/InlineKeyboard'
+        entities:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/MessageEntity' }
+        linkPreviewOptions:
+          $ref: '#/components/schemas/LinkPreviewOptions'
+        protectContent:
+          type: boolean
+        hasSpoiler:
+          type: boolean
+          description: Outbound Telegram spoiler presentation flag for photo, video or animation.
+        messageEffectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        replyToMessageId:
+          type: string
+          format: uuid
+          description: Omnicus UUID of the replied-to message.
+        quote:
+          type: string
+          maxLength: 1024
+        quotePosition:
+          type: integer
+          minimum: 0
+        deliveryStatus:
+          type: string
+          enum:
+            - SENT
+        source:
+          type: string
+          enum:
+            - AUTOMATION
+            - BROADCAST
+            - SYSTEM
+        sourceContext:
+          type: object
+          additionalProperties: false
+          required: [type, id, displayName]
+          properties:
+            type: { type: string, enum: [scenario, broadcast, system] }
+            id: { type: string, minLength: 1 }
+            displayName: { type: string, minLength: 1 }
+            webUrl: { type: string, format: uri, description: Optional safe Omnicus web URL. }
+        scenarioExecutionId:
+          type: string
+          format: uuid
+        broadcastId:
+          type: string
+          format: uuid
+      anyOf:
+        - required:
+            - text
+        - required:
+            - media
+        - required:
+            - structured
+        - required:
+            - interactive
+        - required:
+            - template

@@ -31,7 +31,11 @@ function database(options: { existing?: boolean; mediaKind?: string; projectId?:
       findFirst: vi.fn().mockResolvedValue({ externalMessageId: 'telegram-message-42' }),
       updateMany: vi.fn(),
     },
-    outboxRecord: { create: vi.fn().mockResolvedValue({ id: 'outbox-a' }), updateMany: vi.fn() },
+    outboxRecord: {
+      create: vi.fn().mockResolvedValue({ id: 'outbox-a' }),
+      findUnique: vi.fn().mockResolvedValue({ kind: 'TELEGRAM' }),
+      updateMany: vi.fn(),
+    },
     scheduledMessage: {
       create: vi.fn().mockResolvedValue({ id: 'schedule-a' }),
       findFirst: vi.fn(),
