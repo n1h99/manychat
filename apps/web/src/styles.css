@@ -484,7 +484,7 @@
 
 .technical-record-drawer .ant-drawer-body {
   display: grid;
-  gap: 24px;
+  gap: 18px;
   padding: 16px;
 }
 
@@ -497,14 +497,14 @@
 .technical-record-top {
   display: grid;
   align-items: stretch;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .technical-record-top-cell {
   display: grid;
-  gap: 6px;
-  padding: 12px;
+  gap: 4px;
+  padding: 10px;
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -519,8 +519,8 @@
 .technical-record-drawer--account-activity .technical-record-top-cell,
 .technical-record-drawer--audit-log .technical-record-top-cell {
   align-content: start;
-  gap: 6px;
-  padding: 12px;
+  gap: 4px;
+  padding: 10px;
   height: auto;
   min-height: 0;
   max-height: none;
@@ -540,7 +540,7 @@
 .technical-record-drawer--audit-log .ant-drawer-body {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
   align-items: stretch;
   align-content: flex-start;
   justify-content: flex-start;
@@ -548,12 +548,12 @@
 
 .technical-record-drawer--account-activity .technical-record-fields,
 .technical-record-drawer--audit-log .technical-record-fields {
-  gap: 14px;
+  gap: 10px;
 }
 
 .technical-record-drawer--account-activity .technical-record-section,
 .technical-record-drawer--audit-log .technical-record-section {
-  gap: 12px;
+  gap: 10px;
 }
 
 .technical-record-drawer--account-activity .technical-record-top-label,
@@ -569,7 +569,7 @@
 
 .technical-record-section {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .technical-record-section .ant-typography {
@@ -586,7 +586,7 @@
 
 .technical-record-fields {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .technical-record-row {
@@ -1461,12 +1461,14 @@ button:disabled,
 
 .account-identity-chip {
   display: inline-flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
   height: 38px;
   min-height: 38px;
   max-width: min(260px, 30vw);
-  padding: 3px 6px 3px 12px;
+  padding: 3px 12px;
   line-height: normal;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid var(--border);
@@ -1477,7 +1479,7 @@ button:disabled,
   overflow: hidden;
   color: var(--text-soft);
   font-size: 13px;
-  line-height: 1.2;
+  line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1485,11 +1487,11 @@ button:disabled,
 .account-identity-chip .ant-tag {
   flex: 0 0 auto;
   margin: 0;
-  padding: 0 8px;
+  padding: 0 6px;
   color: var(--primary);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 750;
-  line-height: 22px;
+  line-height: 15px;
   text-transform: uppercase;
   background: var(--primary-soft);
   border: 0;
@@ -1666,6 +1668,20 @@ button:disabled,
 
 .status-text--danger {
   color: var(--danger);
+}
+
+.status-text.entity-hero-status-key,
+.status-text .entity-hero-status-key {
+  color: var(--text);
+  font-weight: 750;
+}
+
+.crm-operation-retry-button {
+  min-width: 64px;
+}
+
+.template-edit-button {
+  min-width: 64px;
 }
 
 .is-query-updating .ant-table-tbody {
@@ -2264,6 +2280,10 @@ button:disabled,
 
 .ant-drawer .ant-drawer-content {
   border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+
+.ant-drawer:not(.mobile-navigation) .ant-drawer-body {
+  padding: 16px;
 }
 
 .ant-table-wrapper {
@@ -3549,8 +3569,9 @@ button:disabled,
   align-items: center;
   overflow: hidden;
   font-weight: 600;
-  line-height: 1;
+  line-height: 20px;
   text-overflow: ellipsis;
+  transform: translateY(-1px);
   white-space: nowrap;
 }
 
@@ -4157,13 +4178,14 @@ button:disabled,
 .channel-overview-card .ant-descriptions-item-container {
   align-items: center;
   display: grid;
-  grid-template-columns: 130px minmax(0, 1fr);
+  grid-template-columns: 150px minmax(0, 1fr);
 }
 
 .channel-overview-card .ant-descriptions-item-label {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .channel-overview-card .ant-descriptions-item-content {
@@ -4174,7 +4196,7 @@ button:disabled,
 .channel-management-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr);
-  align-items: start;
+  align-items: stretch;
   gap: 18px;
   margin-top: 18px;
 }
@@ -4194,7 +4216,8 @@ button:disabled,
 
 .channel-test-message-card {
   min-width: 0;
-  align-self: start;
+  align-self: stretch;
+  height: 100% !important;
 }
 
 .channel-management-grid .ant-card-body {

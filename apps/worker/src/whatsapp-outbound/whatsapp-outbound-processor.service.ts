@@ -410,13 +410,18 @@ export class WhatsAppOutboundProcessorService
         claimed,
         { contactId: message.contactId, conversationId: message.conversationId },
       );
+      const previewUrl = object(message.metadata)?.previewUrl === true;
+      const outboundMessage =
+        prepared.message.type === 'text'
+          ? { ...prepared.message, previewUrl }
+          : prepared.message;
       let providerMessageId: string;
       try {
         providerMessageId = (
           await this.api.sendMessage({
             accessToken: accessToken.accessToken,
             graphApiVersion: connection.graphApiVersion,
-            message: prepared.message,
+            message: outboundMessage,
             phoneNumberId: connection.phoneNumberId,
             ...(replyToProviderMessageId ? { replyToProviderMessageId } : {}),
             to: recipientNumber,

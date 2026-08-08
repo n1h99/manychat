@@ -33,9 +33,23 @@ declare module 'sharp' {
     jpeg(options?: { chromaSubsampling?: string; mozjpeg?: boolean; quality?: number }): Sharp;
     metadata(): Promise<Metadata>;
     png(): Sharp;
-    resize(width: number, height: number, options?: { fit?: 'fill' }): Sharp;
+    resize(
+      width: number,
+      height: number,
+      options?: {
+        background?: Colour;
+        fit?: 'contain' | 'cover' | 'fill' | 'inside' | 'outside';
+        withoutEnlargement?: boolean;
+      },
+    ): Sharp;
     rotate(): Sharp;
     toBuffer(): Promise<Buffer>;
+    webp(options?: {
+      alphaQuality?: number;
+      effort?: number;
+      quality?: number;
+      smartSubsample?: boolean;
+    }): Sharp;
   }
 
   interface SharpOptions {

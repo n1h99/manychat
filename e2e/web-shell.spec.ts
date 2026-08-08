@@ -409,7 +409,7 @@ test('shows polished account management and the complete Telegram connection lay
   await page.getByRole('button', { name: 'Cancel' }).click();
   await page.getByRole('button', { name: 'Create user' }).click();
   await expect(page.getByRole('heading', { name: 'Create user' })).toBeVisible();
-  await expect(page.getByRole('dialog').getByText('Location', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('Location', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancel' }).click();
 
   await page.setViewportSize({ height: 1000, width: 1440 });

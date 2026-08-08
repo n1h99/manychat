@@ -209,7 +209,11 @@ export function TemplatesPage() {
                     Preview
                   </Button>
                   {canManage && template.status !== 'ARCHIVED' ? (
-                    <Button onClick={() => open(template)} size="small">
+                    <Button
+                      className="template-edit-button"
+                      onClick={() => open(template)}
+                      size="small"
+                    >
                       Edit
                     </Button>
                   ) : null}

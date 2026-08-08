@@ -295,6 +295,7 @@ export function CrmConfigPage() {
             render: (_value: unknown, record: CrmOperation) =>
               record.status === 'FAILED' || record.status === 'UNKNOWN' ? (
                 <Button
+                  className="crm-operation-retry-button"
                   onClick={(event) => {
                     event.stopPropagation();
                     setRetryOperation(record);

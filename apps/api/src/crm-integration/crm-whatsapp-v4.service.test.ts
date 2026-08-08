@@ -452,6 +452,7 @@ describe('CrmWhatsAppV4Service', () => {
         data: expect.objectContaining({
           metadata: {
             channel: 'whatsapp',
+            previewUrl: true,
             replyToMessageId: 'message-reply',
             source: 'crm',
           },

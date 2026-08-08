@@ -110,6 +110,20 @@ const TELEGRAM_STATIC_STICKER_MAX_BYTES = 512 * 1024;
 const TELEGRAM_ANIMATED_STICKER_MAX_BYTES = 64 * 1024;
 const TELEGRAM_VIDEO_STICKER_MAX_BYTES = 256 * 1024;
 const MAXIMUM_IMAGE_INPUT_PIXELS = 100_000_000;
+const OPEN_XML_DOCUMENTS = {
+  docx: {
+    folder: 'word/',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  },
+  pptx: {
+    folder: 'ppt/',
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  },
+  xlsx: {
+    folder: 'xl/',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+} as const;
 
 function readBigEndian16(bytes: Uint8Array, offset: number): number {
   return bytes[offset]! * 256 + bytes[offset + 1]!;
@@ -323,7 +337,10 @@ export class MediaValidationError extends Error {
   }
 }
 
-type DetectedMedia = (typeof signatures)[number];
+interface DetectedMedia {
+  extension: string;
+  mimeType: string;
+}
 
 function validateMediaIdentity(input: MediaValidationInput): DetectedMedia {
   if (input.bytes.byteLength === 0) throw new MediaValidationError('media_empty');
@@ -333,6 +350,35 @@ function validateMediaIdentity(input: MediaValidationInput): DetectedMedia {
     (candidate) => candidate.kinds.has(input.kind) && candidate.matches(input.bytes),
   );
   if (!signature) throw new MediaValidationError('media_type_rejected');
+  const filenameExtension = input.filename?.split('.').pop()?.toLowerCase();
+  const openXmlDocument =
+    input.kind === 'DOCUMENT' &&
+    signature.extension === 'zip' &&
+    filenameExtension &&
+    Object.hasOwn(OPEN_XML_DOCUMENTS, filenameExtension)
+      ? OPEN_XML_DOCUMENTS[filenameExtension as keyof typeof OPEN_XML_DOCUMENTS]
+      : undefined;
+  if (openXmlDocument) {
+    if (
+      !containsAscii(input.bytes, '[Content_Types].xml') ||
+      !containsAscii(input.bytes, openXmlDocument.folder)
+    )
+      throw new MediaValidationError('media_openxml_structure_invalid');
+    if (
+      input.declaredMimeType &&
+      ![
+        openXmlDocument.mimeType,
+        'application/octet-stream',
+        'application/zip',
+        'application/x-zip-compressed',
+      ].includes(input.declaredMimeType)
+    )
+      throw new MediaValidationError('media_mime_mismatch');
+    return {
+      extension: filenameExtension ?? signature.extension,
+      mimeType: openXmlDocument.mimeType,
+    };
+  }
   if (input.declaredMimeType && input.declaredMimeType !== signature.mimeType) {
     const isGenericBinary =
       input.kind === 'STICKER' && input.declaredMimeType === 'application/octet-stream';
@@ -342,7 +388,6 @@ function validateMediaIdentity(input: MediaValidationInput): DetectedMedia {
     if (!isGenericBinary && !isTelegramStickerGzip)
       throw new MediaValidationError('media_mime_mismatch');
   }
-  const filenameExtension = input.filename?.split('.').pop()?.toLowerCase();
   if (
     filenameExtension &&
     !(
@@ -372,7 +417,11 @@ function validateDocumentStructure(bytes: Uint8Array, mimeType: string): void {
       throw new MediaValidationError('media_pdf_structure_invalid');
     return;
   }
-  if (mimeType !== 'application/zip') return;
+  if (
+    mimeType !== 'application/zip' &&
+    !Object.values(OPEN_XML_DOCUMENTS).some((document) => document.mimeType === mimeType)
+  )
+    return;
   const minimumOffset = Math.max(0, bytes.byteLength - 65_557);
   for (let offset = bytes.byteLength - 22; offset >= minimumOffset; offset -= 1) {
     if (
@@ -488,8 +537,64 @@ async function encodeTelegramPhoto(
     .toBuffer();
 }
 
+async function prepareTelegramStaticSticker(
+  input: MediaValidationInput,
+): Promise<PreparedMedia> {
+  try {
+    const existing = validateMedia(input);
+    return { ...existing, bytes: input.bytes, transformed: false };
+  } catch (error) {
+    if (
+      !(error instanceof MediaValidationError) ||
+      !['media_sticker_dimensions_rejected', 'media_sticker_size_exceeded'].includes(error.code)
+    )
+      throw error;
+  }
+
+  let metadata;
+  try {
+    metadata = await sharp(Buffer.from(input.bytes), {
+      failOn: 'error',
+      limitInputPixels: MAXIMUM_IMAGE_INPUT_PIXELS,
+    }).metadata();
+  } catch {
+    throw new MediaValidationError('media_sticker_decode_failed');
+  }
+  if (!metadata.width || !metadata.height)
+    throw new MediaValidationError('media_sticker_dimensions_unreadable');
+
+  for (const quality of [100, 90, 80, 70, 60, 50, 40] as const) {
+    let bytes: Uint8Array;
+    try {
+      bytes = await sharp(Buffer.from(input.bytes), {
+        failOn: 'error',
+        limitInputPixels: MAXIMUM_IMAGE_INPUT_PIXELS,
+      })
+        .rotate()
+        .resize(512, 512, { fit: 'inside', withoutEnlargement: false })
+        .webp({ effort: 6, quality, smartSubsample: true })
+        .toBuffer();
+    } catch {
+      throw new MediaValidationError('media_sticker_transform_failed');
+    }
+    if (bytes.byteLength > TELEGRAM_STATIC_STICKER_MAX_BYTES) continue;
+    const validated = validateMedia({
+      bytes,
+      declaredMimeType: 'image/webp',
+      filename: 'telegram-sticker.webp',
+      kind: 'STICKER',
+      maximumBytes: TELEGRAM_STATIC_STICKER_MAX_BYTES,
+    });
+    return { ...validated, bytes, transformed: true };
+  }
+
+  throw new MediaValidationError('media_sticker_size_exceeded');
+}
+
 export async function prepareMediaForTelegram(input: MediaValidationInput): Promise<PreparedMedia> {
-  validateMediaIdentity(input);
+  const identity = validateMediaIdentity(input);
+  if (input.kind === 'STICKER' && identity.mimeType === 'image/webp')
+    return prepareTelegramStaticSticker(input);
   if (input.kind !== 'PHOTO') {
     const validated = validateMedia(input);
     return { ...validated, bytes: input.bytes, transformed: false };
@@ -639,11 +744,9 @@ function validateWhatsAppFileIdentity(bytes: Uint8Array, mimeType: string): void
     !beginsWith(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
   )
     throw new MediaValidationError('whatsapp_media_signature_mismatch');
-  const openXmlFolder: Readonly<Record<string, string>> = {
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'ppt/',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xl/',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'word/',
-  };
+  const openXmlFolder: Readonly<Record<string, string>> = Object.fromEntries(
+    Object.values(OPEN_XML_DOCUMENTS).map((document) => [document.mimeType, document.folder]),
+  );
   const folder = openXmlFolder[mimeType];
   if (
     folder &&
@@ -666,7 +769,7 @@ function validateWhatsAppFileIdentity(bytes: Uint8Array, mimeType: string): void
 
 /**
  * Validates a file against the official WhatsApp Cloud API media subset used by
- * Omnicus. Unlike Telegram preparation, this never transcodes or pads content.
+ * Omnicus. Static stickers are normalized to Meta's square WebP contract.
  */
 export async function prepareMediaForWhatsApp(input: MediaValidationInput): Promise<PreparedMedia> {
   if (!Object.hasOwn(WHATSAPP_MEDIA_RULES, input.kind))
@@ -674,7 +777,8 @@ export async function prepareMediaForWhatsApp(input: MediaValidationInput): Prom
   if (input.bytes.byteLength === 0) throw new MediaValidationError('media_empty');
   const rule = WHATSAPP_MEDIA_RULES[input.kind as WhatsAppMediaKind];
   const maximumBytes = Math.min(input.maximumBytes, rule.maximumBytes);
-  if (input.bytes.byteLength > maximumBytes)
+  const maximumInputBytes = input.kind === 'STICKER' ? input.maximumBytes : maximumBytes;
+  if (input.bytes.byteLength > maximumInputBytes)
     throw new MediaValidationError('whatsapp_media_size_exceeded');
   const mimeType = input.declaredMimeType?.split(';', 1)[0]?.trim().toLowerCase();
   if (!mimeType || !rule.mimeTypes.includes(mimeType as never))
@@ -698,13 +802,51 @@ export async function prepareMediaForWhatsApp(input: MediaValidationInput): Prom
       (input.bytes[20]! & 0x02) !== 0;
     if (
       !dimensions ||
-      dimensions.width !== 512 ||
-      dimensions.height !== 512 ||
       extendedWebpAnimated ||
       containsAscii(input.bytes, 'ANIM') ||
       containsAscii(input.bytes, 'ANMF')
     )
       throw new MediaValidationError('whatsapp_sticker_dimensions_rejected');
+    if (
+      dimensions.width !== 512 ||
+      dimensions.height !== 512 ||
+      input.bytes.byteLength > maximumBytes
+    ) {
+      for (const quality of [90, 80, 70, 60, 50, 40, 30, 20] as const) {
+        let bytes: Uint8Array;
+        try {
+          bytes = await sharp(Buffer.from(input.bytes), {
+            failOn: 'error',
+            limitInputPixels: MAXIMUM_IMAGE_INPUT_PIXELS,
+          })
+            .rotate()
+            .resize(512, 512, {
+              background: { alpha: 0, b: 0, g: 0, r: 0 },
+              fit: 'contain',
+              withoutEnlargement: false,
+            })
+            .webp({ alphaQuality: quality, effort: 6, quality, smartSubsample: true })
+            .toBuffer();
+        } catch {
+          throw new MediaValidationError('whatsapp_sticker_transform_failed');
+        }
+        if (bytes.byteLength > maximumBytes) continue;
+        validateWhatsAppFileIdentity(bytes, 'image/webp');
+        const preparedDimensions = webpDimensions(bytes);
+        if (preparedDimensions?.width !== 512 || preparedDimensions.height !== 512)
+          throw new MediaValidationError('whatsapp_sticker_dimensions_rejected');
+        return {
+          bytes,
+          extension: 'webp',
+          height: 512,
+          mimeType: 'image/webp',
+          sizeBytes: bytes.byteLength,
+          transformed: true,
+          width: 512,
+        };
+      }
+      throw new MediaValidationError('whatsapp_media_size_exceeded');
+    }
   }
   return {
     bytes: input.bytes,

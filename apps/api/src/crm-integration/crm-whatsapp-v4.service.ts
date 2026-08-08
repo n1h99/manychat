@@ -160,7 +160,7 @@ export class CrmWhatsAppV4Service {
           listRows: { maximum: 10, minimum: 1 },
           types: ['button', 'list'],
         }),
-        linkPreviewOptions: unsupported('WHATSAPP_LINK_PREVIEW_OPTIONS_UNSUPPORTED'),
+        linkPreviewOptions: supported({ modes: ['enabled', 'disabled'] }),
         markMessageRead: supported({ durable: true, idempotent: true }),
         mediaGroups: unsupported('WHATSAPP_MEDIA_GROUPS_UNSUPPORTED'),
         mediaSpoilers: unsupported('WHATSAPP_MEDIA_SPOILERS_UNSUPPORTED'),
@@ -381,6 +381,10 @@ export class CrmWhatsAppV4Service {
             mediaAssetId: mediaAsset?.id ?? null,
             metadata: {
               channel: 'whatsapp',
+              previewUrl:
+                typeof dto.linkPreviewOptions?.isDisabled === 'boolean'
+                  ? !dto.linkPreviewOptions.isDisabled
+                  : true,
               ...(dto.replyToMessageId ? { replyToMessageId: dto.replyToMessageId } : {}),
               source: 'crm',
             },
@@ -1068,7 +1072,6 @@ export class CrmWhatsAppV4Service {
       dto.entities,
       dto.hasSpoiler,
       dto.inlineKeyboard,
-      dto.linkPreviewOptions,
       dto.messageEffectId,
       dto.protectContent,
       dto.quote,

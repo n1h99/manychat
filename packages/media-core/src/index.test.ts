@@ -273,6 +273,35 @@ describe('media validation', () => {
     ).toThrow(expect.objectContaining({ code: 'media_sticker_dimensions_rejected' }));
   });
 
+  it('normalizes a static WebP sticker to Telegram dimensions', async () => {
+    const source = await sharp({
+      create: {
+        background: { alpha: 0.8, b: 40, g: 120, r: 220 },
+        channels: 4,
+        height: 300,
+        width: 400,
+      },
+    })
+      .webp()
+      .toBuffer();
+
+    await expect(
+      prepareMediaForTelegram({
+        bytes: source,
+        declaredMimeType: 'image/webp',
+        filename: 'sticker.webp',
+        kind: 'STICKER',
+        maximumBytes: 20 * 1024 * 1024,
+      }),
+    ).resolves.toMatchObject({
+      extension: 'webp',
+      height: 384,
+      mimeType: 'image/webp',
+      transformed: true,
+      width: 512,
+    });
+  });
+
   it('accepts complete PDF and empty ZIP documents without transforming them', async () => {
     const pdf = new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n');
     const zip = Uint8Array.from([
@@ -303,6 +332,31 @@ describe('media validation', () => {
     ).resolves.toMatchObject({
       extension: 'zip',
       mimeType: 'application/zip',
+      transformed: false,
+    });
+  });
+
+  it('preserves a signature-verified Office Open XML document identity', async () => {
+    const localEntries = Buffer.from(
+      'PK\u0003\u0004[Content_Types].xml word/document.xml',
+      'binary',
+    );
+    const endOfCentralDirectory = Buffer.alloc(22);
+    endOfCentralDirectory.set([0x50, 0x4b, 0x05, 0x06]);
+    const docx = Buffer.concat([localEntries, endOfCentralDirectory]);
+
+    await expect(
+      prepareMediaForTelegram({
+        bytes: docx,
+        declaredMimeType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'document.docx',
+        kind: 'DOCUMENT',
+        maximumBytes: 1_000,
+      }),
+    ).resolves.toMatchObject({
+      extension: 'docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       transformed: false,
     });
   });
@@ -432,6 +486,35 @@ describe('WhatsApp media validation', () => {
         maximumBytes: 20 * 1024 * 1024,
       }),
     ).rejects.toMatchObject({ code: 'whatsapp_sticker_dimensions_rejected' });
+  });
+
+  it('normalizes a static WebP sticker to the WhatsApp square contract', async () => {
+    const source = await sharp({
+      create: {
+        background: { alpha: 0.8, b: 40, g: 120, r: 220 },
+        channels: 4,
+        height: 300,
+        width: 400,
+      },
+    })
+      .webp()
+      .toBuffer();
+    const prepared = await prepareMediaForWhatsApp({
+      bytes: source,
+      declaredMimeType: 'image/webp',
+      filename: 'sticker.webp',
+      kind: 'STICKER',
+      maximumBytes: 20 * 1024 * 1024,
+    });
+
+    expect(prepared).toMatchObject({
+      extension: 'webp',
+      height: 512,
+      mimeType: 'image/webp',
+      transformed: true,
+      width: 512,
+    });
+    expect(prepared.sizeBytes).toBeLessThanOrEqual(100 * 1024);
   });
 
   it('recognizes an Office Open XML document without trusting its MIME alone', async () => {
