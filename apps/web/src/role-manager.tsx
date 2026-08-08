@@ -191,7 +191,11 @@ export function RoleManager({
               if (!deleteRole) return;
               setDeletingRole(true);
               try {
-                await apiRequest(`${rolesPath}/${deleteRole.id}`, { method: 'DELETE' }, accessToken);
+                await apiRequest(
+                  `${rolesPath}/${deleteRole.id}`,
+                  { method: 'DELETE' },
+                  accessToken,
+                );
                 await refresh();
                 void message.success('Role deleted.');
                 setDeleteRole(undefined);

@@ -1,6 +1,5 @@
 import {
   EditOutlined,
-  EnvironmentOutlined,
   KeyOutlined,
   LinkOutlined,
   MailOutlined,
@@ -39,36 +38,26 @@ interface GlobalRole {
 }
 
 interface UserRow {
-  city: string | null;
-  country: string | null;
   createdAt: string;
   email: string;
   firstName: string;
   globalRoles: Array<{ globalRole: GlobalRole }>;
   id: string;
   lastName: string;
-  region: string | null;
   status: 'ACTIVE' | 'DISABLED';
 }
 
 interface UserFormValues {
-  city?: string;
-  country?: string;
   email: string;
   firstName: string;
   globalRoleIds?: string[];
   lastName: string;
   newPassword?: string;
-  region?: string;
   temporaryPassword?: string;
 }
 
 function fullName(user: Pick<UserRow, 'firstName' | 'lastName'>): string {
   return `${user.firstName} ${user.lastName}`.trim();
-}
-
-function locationLabel(user: Pick<UserRow, 'city' | 'country' | 'region'>): string {
-  return [user.city, user.region, user.country].filter(Boolean).join(', ') || 'Not set';
 }
 
 export function UsersPage() {
@@ -135,13 +124,10 @@ export function UsersPage() {
   const openEdit = (user: UserRow) => {
     setEditing(user);
     form.setFieldsValue({
-      city: user.city ?? '',
-      country: user.country ?? '',
       email: user.email,
       firstName: user.firstName,
       globalRoleIds: user.globalRoles.map(({ globalRole }) => globalRole.id),
       lastName: user.lastName,
-      region: user.region ?? '',
     });
     setOpen(true);
   };
@@ -235,20 +221,6 @@ export function UsersPage() {
               ),
               title: 'Roles',
               width: 145,
-            },
-            {
-              render: (_, row) => {
-                const location = locationLabel(row);
-                return location === 'Not set' ? (
-                  <Typography.Text className="user-location-cell" type="secondary">
-                    {location}
-                  </Typography.Text>
-                ) : (
-                  <Typography.Text className="user-location-cell">{location}</Typography.Text>
-                );
-              },
-              title: 'Location',
-              width: 160,
             },
             {
               render: (_, row) => <StatusText status={row.status} />,
@@ -417,7 +389,7 @@ export function UsersPage() {
             </Typography.Title>
             <Typography.Text type="secondary">
               {editing
-                ? 'Update account details, access and location.'
+                ? 'Update account details and access.'
                 : 'Create an account and assign its system access.'}
             </Typography.Text>
           </div>
@@ -428,23 +400,17 @@ export function UsersPage() {
           onFinish={async (values) => {
             const payload = editing
               ? {
-                  city: values.city ?? '',
-                  country: values.country ?? '',
                   email: values.email,
                   firstName: values.firstName,
                   globalRoleIds: values.globalRoleIds ?? [],
                   lastName: values.lastName,
                   ...(values.newPassword ? { newPassword: values.newPassword } : {}),
-                  region: values.region ?? '',
                 }
               : {
-                  city: values.city ?? '',
-                  country: values.country ?? '',
                   email: values.email,
                   firstName: values.firstName,
                   globalRoleIds: values.globalRoleIds ?? [],
                   lastName: values.lastName,
-                  region: values.region ?? '',
                   temporaryPassword: values.temporaryPassword,
                 };
             try {
@@ -503,24 +469,6 @@ export function UsersPage() {
                 placeholder="Select system roles"
               />
             </Form.Item>
-          </section>
-
-          <section className="account-form-section">
-            <div className="account-form-section-title">
-              <EnvironmentOutlined />
-              <span>Location</span>
-            </div>
-            <div className="account-form-grid account-form-grid--three">
-              <Form.Item label="Country" name="country">
-                <Input autoComplete="country-name" />
-              </Form.Item>
-              <Form.Item label="Region / area" name="region">
-                <Input autoComplete="address-level1" />
-              </Form.Item>
-              <Form.Item label="City" name="city">
-                <Input autoComplete="address-level2" />
-              </Form.Item>
-            </div>
           </section>
 
           <div className="modal-form-actions">

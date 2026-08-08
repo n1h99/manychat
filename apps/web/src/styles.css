@@ -1809,13 +1809,6 @@ button:disabled,
   height: 15px;
 }
 
-.user-location-cell {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .user-name-cell {
   display: flex;
   align-items: center;
@@ -3531,9 +3524,9 @@ button:disabled,
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 9px;
+  height: 40px;
   min-width: min(100%, 280px);
-  min-height: 42px;
-  padding: 5px 7px 5px 11px;
+  padding: 0 7px 0 11px;
   color: var(--text-soft);
   background: var(--surface-muted);
   border: 1px solid var(--border);
@@ -3549,7 +3542,18 @@ button:disabled,
 
 .media-selected-file > small {
   color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
+}
+
+.media-selected-file > .ant-btn {
+  height: 30px;
+  width: 30px;
+}
+
+.media-selected-file > .ant-btn .anticon {
+  font-size: 16px;
 }
 
 .media-upload-limit-note {
@@ -4130,6 +4134,12 @@ button:disabled,
   padding: 20px 22px;
 }
 
+.channel-overview-card .ant-descriptions-item-container {
+  align-items: center;
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+}
+
 .channel-overview-card .ant-descriptions-item-label {
   color: var(--text-muted);
   font-size: 12px;
@@ -4302,7 +4312,7 @@ button:disabled,
 }
 
 .contact-summary-row {
-  align-items: flex-start;
+  align-items: center;
   column-gap: 10px;
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);

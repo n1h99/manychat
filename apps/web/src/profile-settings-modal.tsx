@@ -1,4 +1,4 @@
-import { EnvironmentOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import { SettingOutlined, UserOutlined } from '@ant-design/icons';
 import { Alert, Button, Form, Input, Modal, Typography, message } from 'antd';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -7,12 +7,9 @@ import { apiRequest, getUserErrorMessage } from './api';
 import { useAuth } from './auth';
 
 interface AccountProfile {
-  city: string | null;
-  country: string | null;
   email: string;
   firstName: string;
   lastName: string;
-  region: string | null;
 }
 
 interface ProfileFormValues extends AccountProfile {
@@ -55,9 +52,7 @@ export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open:
         </span>
         <div>
           <Typography.Title level={3}>Profile settings</Typography.Title>
-          <Typography.Text type="secondary">
-            Manage your account details and location.
-          </Typography.Text>
+          <Typography.Text type="secondary">Manage your account details.</Typography.Text>
         </div>
       </div>
       {profile.isError ? (
@@ -73,13 +68,10 @@ export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open:
         layout="vertical"
         onFinish={async (values) => {
           const payload = {
-            city: values.city ?? '',
-            country: values.country ?? '',
             email: values.email,
             firstName: values.firstName,
             lastName: values.lastName,
             ...(values.newPassword ? { newPassword: values.newPassword } : {}),
-            region: values.region ?? '',
           };
           setSaving(true);
           try {
@@ -125,24 +117,6 @@ export function ProfileSettingsModal({ onClose, open }: { onClose(): void; open:
               placeholder="Enter at least 12 characters"
             />
           </Form.Item>
-        </section>
-
-        <section className="account-form-section">
-          <div className="account-form-section-title">
-            <EnvironmentOutlined />
-            <span>Location</span>
-          </div>
-          <div className="account-form-grid account-form-grid--three">
-            <Form.Item label="Country" name="country">
-              <Input autoComplete="country-name" />
-            </Form.Item>
-            <Form.Item label="Region / area" name="region">
-              <Input autoComplete="address-level1" />
-            </Form.Item>
-            <Form.Item label="City" name="city">
-              <Input autoComplete="address-level2" />
-            </Form.Item>
-          </div>
         </section>
 
         <div className="modal-form-actions">

@@ -128,7 +128,10 @@ export function AutomationNodeConfig({
 }: Props) {
   const updateConfig = (next: Record<string, unknown>) => onChange({ ...config, ...next });
   const set = (key: string, value: unknown) => onChange({ ...config, [key]: value });
-  const channels = useChannels(projectId, nodeType === 'SEND_TEMPLATE' || nodeType === 'SEND_MESSAGE');
+  const channels = useChannels(
+    projectId,
+    nodeType === 'SEND_TEMPLATE' || nodeType === 'SEND_MESSAGE',
+  );
   const assets = useMediaAssets(projectId, nodeType === 'SEND_TEMPLATE');
   const activeTelegramChannels = (channels.data ?? []).filter(
     (channel) => channel.type === 'TELEGRAM' && channel.status === 'ACTIVE',
@@ -191,8 +194,7 @@ export function AutomationNodeConfig({
 
   const sendDeliveryInfo = {
     INCOMING_CONVERSATION: {
-      description:
-        'Uses the channel that started the automation.',
+      description: 'Uses the channel that started the automation.',
       message: 'Automatic channel selection',
     },
     TELEGRAM: {
@@ -336,7 +338,7 @@ export function AutomationNodeConfig({
                       type="warning"
                     />
                   </Space>
-                  )}
+                )}
               </Space>
             </Form.Item>
             {messageTextField}

@@ -365,17 +365,14 @@ export function ContactDetailPage() {
                   }
                 }}
               >
-                <Form.Item
-                  label="Contact ID"
-                  name="primaryContactId"
-                  rules={[{ required: true }]}
-                >
+                <Form.Item label="Contact ID" name="primaryContactId" rules={[{ required: true }]}>
                   <Input />
                 </Form.Item>
                 <div className="contact-settings-actions">
                   <div className="contact-settings-action-group">
                     <Typography.Paragraph className="contact-settings-note" type="secondary">
-                      Move this record into another contact. This action cannot be undone from the UI.
+                      Move this record into another contact. This action cannot be undone from the
+                      UI.
                     </Typography.Paragraph>
                     <Button block danger htmlType="submit">
                       Merge contacts
@@ -383,7 +380,8 @@ export function ContactDetailPage() {
                   </div>
                   <div className="contact-settings-action-group">
                     <Typography.Paragraph className="contact-settings-note" type="secondary">
-                      Delete this contact from the project. This action cannot be undone from the UI.
+                      Delete this contact from the project. This action cannot be undone from the
+                      UI.
                     </Typography.Paragraph>
                     <Button block danger onClick={() => setDeleteOpen(true)}>
                       Delete contact

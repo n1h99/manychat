@@ -60,7 +60,6 @@ import {
 } from '../whatsapp-embedded-signup';
 import {
   TechnicalRecordDrawer,
-  type TechnicalRecordField,
   type TechnicalRecordSection,
   type TechnicalRecordTopField,
 } from '../technical-record-drawer';
@@ -523,13 +522,12 @@ export function ChannelDetailPage() {
     });
   };
 
-  const activatePipelineRow = (callback: () => void) =>
-    (event: KeyboardEvent<HTMLElement>) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        callback();
-      }
-    };
+  const activatePipelineRow = (callback: () => void) => (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      callback();
+    }
+  };
 
   const inboundPipelineSections = (event: ChannelInboundEvent): TechnicalRecordSection[] => {
     const normalizedType = event.inboxRecord?.normalizedEvent?.type ?? 'Not available';
@@ -570,7 +568,9 @@ export function ChannelDetailPage() {
       },
       {
         title: 'Additional details',
-        fields: normalizedEvent ? [{ label: 'Normalized event details', value: normalizedEvent }] : [],
+        fields: normalizedEvent
+          ? [{ label: 'Normalized event details', value: normalizedEvent }]
+          : [],
       },
     ];
   };
@@ -697,7 +697,7 @@ export function ChannelDetailPage() {
             key: 'graph-version',
             label: 'Graph API version',
           },
-    ];
+        ];
 
   const inboundOperationsLink = `/projects/${projectId}/operations?${new URLSearchParams({
     connectionId: connection.id,
@@ -1021,11 +1021,7 @@ export function ChannelDetailPage() {
                   Test connection
                 </Button>
                 {canRotateSecrets && connection.type === 'TELEGRAM' ? (
-                  <Button
-                    block
-                    icon={<KeyOutlined />}
-                    onClick={() => setRotatingOpen(true)}
-                  >
+                  <Button block icon={<KeyOutlined />} onClick={() => setRotatingOpen(true)}>
                     Rotate webhook secret
                   </Button>
                 ) : null}
@@ -1129,7 +1125,7 @@ export function ChannelDetailPage() {
                 Queue test message
               </Button>
             </Form>
-      </Card>
+          </Card>
         </div>
       ) : null}
 
@@ -1236,7 +1232,7 @@ export function ChannelDetailPage() {
           locale={{
             emptyText: inbound.isError
               ? 'Inbound diagnostics could not be loaded'
-            : pipelineCopy.inboundEmpty,
+              : pipelineCopy.inboundEmpty,
           }}
           pagination={false}
           onRow={(row) => ({
@@ -1286,7 +1282,7 @@ export function ChannelDetailPage() {
           locale={{
             emptyText: outbound.isError
               ? 'Outbound diagnostics could not be loaded'
-            : pipelineCopy.outboundEmpty,
+              : pipelineCopy.outboundEmpty,
           }}
           pagination={false}
           onRow={(row) => ({
@@ -1311,7 +1307,9 @@ export function ChannelDetailPage() {
       <TechnicalRecordDrawer
         onClose={closePipelineEvent}
         open={Boolean(selectedOutboundEvent)}
-        sections={selectedOutboundEvent ? outboundPipelineSections(selectedOutboundEvent.event) : []}
+        sections={
+          selectedOutboundEvent ? outboundPipelineSections(selectedOutboundEvent.event) : []
+        }
         title="Outbound event details"
         top={selectedOutboundEvent?.top ?? []}
       />

@@ -159,8 +159,8 @@ export function ScenariosPage() {
         open={Boolean(removing)}
         title="Delete this automation?"
       >
-        The automation will be deleted and removed from this list. Its version and execution history will
-        remain available for audit.
+        The automation will be deleted and removed from this list. Its version and execution history
+        will remain available for audit.
       </Modal>
     </section>
   );

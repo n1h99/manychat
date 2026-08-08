@@ -237,11 +237,7 @@ export function MediaAssetsPage() {
                   </Button>
                 ) : null}
                 {canManage ? (
-                  <Button
-                    danger
-                    onClick={() => setDeleteAsset(asset)}
-                    size="small"
-                  >
+                  <Button danger onClick={() => setDeleteAsset(asset)} size="small">
                     Delete
                   </Button>
                 ) : null}

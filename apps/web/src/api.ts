@@ -124,8 +124,7 @@ const codeReasons: Record<string, string> = {
     'This contact is outside the customer service window. Use an approved WhatsApp template.',
   WHATSAPP_TEMPLATE_REQUIRED:
     'Choose an approved WhatsApp template for recipients outside their customer service window.',
-  WHATSAPP_TEMPLATE_SYNC_FAILED:
-    'Meta templates could not be synced. Check the channel token and try again.',
+  WHATSAPP_TEMPLATE_SYNC_FAILED: 'Check the channel token and try again.',
   WHATSAPP_MEDIA_UNAVAILABLE: 'This WhatsApp media file is no longer available from Meta.',
   WHATSAPP_WEBHOOK_CONNECT_FAILED: 'Meta could not connect this WhatsApp business account.',
   USER_EMAIL_EXISTS: 'A user with this email already exists.',

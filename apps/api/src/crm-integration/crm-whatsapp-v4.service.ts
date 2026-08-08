@@ -442,7 +442,12 @@ export class CrmWhatsAppV4Service {
     const target = await this.resolveMessage(messageId, dto, authenticatedProjectId);
     if (
       target.direction !== 'INBOUND' ||
-      !this.isReadableIncomingMessage(target.messageType, target.status, target.content, target.metadata)
+      !this.isReadableIncomingMessage(
+        target.messageType,
+        target.status,
+        target.content,
+        target.metadata,
+      )
     )
       throw new ConflictException({ code: 'WHATSAPP_READ_TARGET_INVALID' });
     if (!target.providerMessageId)
@@ -451,7 +456,12 @@ export class CrmWhatsAppV4Service {
       const existing = await this.findExistingMarkReadAction(target);
       return existing
         ? { ...existing, status: 'QUEUED', replayed: true }
-        : { messageId: target.messageId, operationId: target.messageId, replayed: true, status: 'QUEUED' };
+        : {
+            messageId: target.messageId,
+            operationId: target.messageId,
+            replayed: true,
+            status: 'QUEUED',
+          };
     }
     return this.queueAction('MARK_READ', target, {}, idempotencyKey, correlationId);
   }
@@ -973,11 +983,7 @@ export class CrmWhatsAppV4Service {
   private isSyntheticSource(metadata: unknown): boolean {
     const source = this.nonEmptyString(this.object(metadata)?.source);
     const sourceValue = source?.toLowerCase();
-    return (
-      sourceValue === 'automation' ||
-      sourceValue === 'broadcast' ||
-      sourceValue === 'system'
-    );
+    return sourceValue === 'automation' || sourceValue === 'broadcast' || sourceValue === 'system';
   }
 
   private isSyntheticInteractive(content: unknown): boolean {

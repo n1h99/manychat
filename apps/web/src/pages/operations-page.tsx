@@ -213,7 +213,10 @@ export function OperationsPage() {
           label: 'Attempts',
           value: row.attempts === undefined ? '—' : `${row.attempts}/${row.maxAttempts ?? '—'}`,
         },
-        { label: 'Safe error', value: row.errorCode ? humanizeReason(row.errorCode) : 'No safe error' },
+        {
+          label: 'Safe error',
+          value: row.errorCode ? humanizeReason(row.errorCode) : 'No safe error',
+        },
       ],
     },
     {
@@ -248,7 +251,10 @@ export function OperationsPage() {
         { label: 'Who', value: row.actorEmailSnapshot ?? humanizeEntity(row.actorType) },
         {
           label: 'What',
-          value: row.entityId === null ? humanizeEntity(row.entityType) : `${humanizeEntity(row.entityType)} (${row.entityId})`,
+          value:
+            row.entityId === null
+              ? humanizeEntity(row.entityType)
+              : `${humanizeEntity(row.entityType)} (${row.entityId})`,
         },
         { label: 'Why', value: humanizeReason(row.reason) },
       ],
@@ -389,7 +395,7 @@ export function OperationsPage() {
                       dataIndex: 'status',
                       render: (value) => <StatusText status={value} />,
                       title: 'Status',
-                      width: 135,
+                      width: 200,
                     },
                     {
                       dataIndex: 'errorCode',
@@ -468,7 +474,7 @@ export function OperationsPage() {
                   }}
                   rowClassName="clickable-table-row"
                   rowKey={(row) => `${row.source}-${row.id}`}
-                  scroll={{ x: 1400 }}
+                  scroll={{ x: 1465 }}
                 />
               </>
             ),

@@ -152,10 +152,7 @@ export function BroadcastDetailPage() {
         ) : null}
         {canCancel &&
         ['DRAFT', 'SCHEDULED', 'PREPARING', 'RUNNING', 'PAUSED'].includes(broadcast.status) ? (
-          <Button
-            danger
-            onClick={() => setCancelling(true)}
-          >
+          <Button danger onClick={() => setCancelling(true)}>
             Cancel
           </Button>
         ) : null}

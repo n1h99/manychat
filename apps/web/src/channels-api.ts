@@ -176,12 +176,7 @@ export function useWhatsAppSetup(projectId?: string, enabled = true) {
 function unwrapChannelEvents<T>(payload: T[] | Paged<T>) {
   return Array.isArray(payload) ? payload : payload.items;
 }
-export function useChannelInboundEvents(
-  projectId?: string,
-  id?: string,
-  page = 1,
-  pageSize = 20,
-) {
+export function useChannelInboundEvents(projectId?: string, id?: string, page = 1, pageSize = 20) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId && id),
@@ -209,12 +204,7 @@ export function useChannelIdentities(projectId?: string, id?: string) {
     queryKey: ['channel-identities', projectId, id],
   });
 }
-export function useChannelOutboundEvents(
-  projectId?: string,
-  id?: string,
-  page = 1,
-  pageSize = 20,
-) {
+export function useChannelOutboundEvents(projectId?: string, id?: string, page = 1, pageSize = 20) {
   const { accessToken } = useAuth();
   return useQuery({
     enabled: Boolean(projectId && id),
