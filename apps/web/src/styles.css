@@ -3649,7 +3649,12 @@ button:disabled,
 
 .channel-provider-switch .ant-segmented-item {
   min-height: 40px;
-  border-radius: 11px;
+  border-radius: 13px;
+}
+
+.channel-provider-switch .ant-segmented-thumb,
+.channel-provider-switch .ant-segmented-item-selected {
+  border-radius: 13px;
 }
 
 .channel-provider-switch .ant-segmented-item-label {
