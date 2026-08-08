@@ -50,7 +50,6 @@ import {
   useChannelOutboundEvents,
   useWhatsAppSetup,
 } from '../channels-api';
-import { humanizeStatus } from '../humanize';
 import { hasProjectPermission, useProjectAccess } from '../project-access';
 import { StatusText } from '../status-text';
 import {
@@ -722,25 +721,6 @@ export function ChannelDetailPage() {
             <Typography.Text type="secondary">{channelAccountLabel(connection)}</Typography.Text>
           </div>
         </div>
-        {isWhatsAppChannel(connection) ? (
-          <div className="entity-hero-statuses">
-            <StatusText
-              className="entity-hero-status-key"
-              label={channelProviderLabel(connection.type)}
-              status="AVAILABLE"
-            />
-            <StatusText status={connection.status} />
-            <StatusText
-              label={
-                <>
-                  <span className="entity-hero-status-key">Webhook:</span>{' '}
-                  {humanizeStatus(connection.webhookStatus)}
-                </>
-              }
-              status={connection.webhookStatus}
-            />
-          </div>
-        ) : null}
       </div>
 
       {isWhatsAppChannel(connection) && !connection.setupReady ? (

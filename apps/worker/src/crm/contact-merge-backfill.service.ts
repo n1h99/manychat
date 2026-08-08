@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Prisma } from '@omnicus/database';
+import type { Prisma } from '@omnicus/database';
 
 import { DatabaseService } from '../database/database.service';
 
@@ -258,10 +258,7 @@ export class ContactMergeBackfillService {
             secondary.firstInteractionAt,
           ),
           firstName: primary.firstName ?? secondary.firstName,
-          lastInteractionAt: this.latest(
-            primary.lastInteractionAt,
-            secondary.lastInteractionAt,
-          ),
+          lastInteractionAt: this.latest(primary.lastInteractionAt, secondary.lastInteractionAt),
           lastName: primary.lastName ?? secondary.lastName,
           phone: primary.phone ?? secondary.phone,
           username: primary.username ?? secondary.username,

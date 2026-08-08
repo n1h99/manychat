@@ -93,10 +93,12 @@ const expectedTables = new Set([
   'media_assets',
   'message_templates',
   'message_template_versions',
+  'message_status_events',
   'scheduled_messages',
   'telegram_bot_interfaces',
   'telegram_media_group_items',
   'telegram_media_groups',
+  'whatsapp_message_templates',
 ]);
 const generatedTables = new Set(
   [...sql.matchAll(/CREATE TABLE "([^"]+)"/g)].map((match) => match[1]),

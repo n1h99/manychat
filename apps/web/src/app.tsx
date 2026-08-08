@@ -72,6 +72,10 @@ const BroadcastDetailPage = lazyPage(
   () => import('./pages/broadcast-detail-page'),
   'BroadcastDetailPage',
 );
+const EmailSmsBroadcastPage = lazyPage(
+  () => import('./pages/email-sms-broadcast-page'),
+  'EmailSmsBroadcastPage',
+);
 const MediaAssetsPage = lazyPage(() => import('./pages/media-assets-page'), 'MediaAssetsPage');
 const TemplatesPage = lazyPage(() => import('./pages/templates-page'), 'TemplatesPage');
 const OperationsPage = lazyPage(() => import('./pages/operations-page'), 'OperationsPage');
@@ -146,6 +150,10 @@ export function App() {
             </Route>
             <Route element={<ProjectPermissionRoute permission="broadcasts:read" />}>
               <Route element={<BroadcastsPage />} path="/projects/:projectId/broadcasts" />
+              <Route
+                element={<EmailSmsBroadcastPage />}
+                path="/projects/:projectId/email-sms-broadcast"
+              />
               <Route
                 element={<BroadcastDetailPage />}
                 path="/projects/:projectId/broadcasts/:broadcastId"

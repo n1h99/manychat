@@ -41,10 +41,7 @@ export class ProjectCrmClient implements CrmClient {
     return (await this.resolve(context)).createOrUpdateLead(context, input);
   }
 
-  async mergeContacts(
-    context: CrmCallContext,
-    input: MergeContactsInput,
-  ): Promise<CrmResult> {
+  async mergeContacts(context: CrmCallContext, input: MergeContactsInput): Promise<CrmResult> {
     return (await this.resolve(context)).mergeContacts(context, input);
   }
 

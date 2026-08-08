@@ -3,6 +3,7 @@ import {
   ContactsOutlined,
   DatabaseOutlined,
   FileImageOutlined,
+  MailOutlined,
   RobotOutlined,
   SendOutlined,
   SettingOutlined,
@@ -135,6 +136,13 @@ export function ProjectDetailPage() {
       label: 'Media',
       path: `/projects/${project.id}/media-assets`,
       visible: hasProjectPermission(access.data, 'media:read'),
+    },
+    {
+      description: 'Email and SMS campaign delivery',
+      icon: <MailOutlined />,
+      label: 'Email & SMS Broadcast',
+      path: `/projects/${project.id}/email-sms-broadcast`,
+      visible: hasProjectPermission(access.data, 'broadcasts:read'),
     },
     {
       description: 'Delivery journals, recovery and audit',

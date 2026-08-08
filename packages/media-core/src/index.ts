@@ -537,9 +537,7 @@ async function encodeTelegramPhoto(
     .toBuffer();
 }
 
-async function prepareTelegramStaticSticker(
-  input: MediaValidationInput,
-): Promise<PreparedMedia> {
+async function prepareTelegramStaticSticker(input: MediaValidationInput): Promise<PreparedMedia> {
   try {
     const existing = validateMedia(input);
     return { ...existing, bytes: input.bytes, transformed: false };

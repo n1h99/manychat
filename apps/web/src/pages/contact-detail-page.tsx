@@ -90,6 +90,9 @@ export function ContactDetailPage() {
   const telegramIdentity = value.channelIdentities.find(
     (identity) => identity.channel.toLowerCase() === 'telegram',
   );
+  const whatsappIdentity = value.channelIdentities.find(
+    (identity) => identity.channel.toLowerCase() === 'whatsapp',
+  );
   const deleteContact = async () => {
     try {
       await apiRequest(
@@ -129,6 +132,12 @@ export function ContactDetailPage() {
                   <div className="contact-summary-label">Telegram:</div>
                   <div className="contact-summary-value">
                     {telegramIdentity ? formatIdentityValue(telegramIdentity) : '\u2014'}
+                  </div>
+                </div>
+                <div className="contact-summary-row">
+                  <div className="contact-summary-label">WhatsApp:</div>
+                  <div className="contact-summary-value">
+                    {whatsappIdentity ? 'Connected' : '\u2014'}
                   </div>
                 </div>
                 <div className="contact-summary-row">

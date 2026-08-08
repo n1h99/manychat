@@ -148,6 +148,35 @@ export class ContactsService {
       });
       if (input.customFields)
         await this.syncCustomFieldValues(transaction, projectId, contactId, input.customFields);
+      const crmConfig = updated.crmLeadId
+        ? await transaction.crmProjectConfig.findUnique({
+            select: { enabled: true },
+            where: { projectId },
+          })
+        : null;
+      if (crmConfig?.enabled) {
+        const outbox = await transaction.outboxRecord.create({
+          data: {
+            idempotencyKey: `crm-contact-sync-${contactId}-${updated.updatedAt.toISOString()}`,
+            kind: 'CRM',
+            nextAttemptAt: new Date(),
+            payload: { contactId, operationType: 'CREATE_OR_UPDATE_LEAD' },
+            projectId,
+          },
+        });
+        await transaction.crmOperation.create({
+          data: {
+            contactId,
+            inputSafe: {
+              correlationId: context.correlationId,
+              source: 'contact_manual_update',
+            },
+            outboxRecordId: outbox.id,
+            projectId,
+            type: 'CREATE_OR_UPDATE_LEAD',
+          },
+        });
+      }
       return updated;
     });
     await this.audit.record({

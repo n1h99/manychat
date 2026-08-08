@@ -484,6 +484,7 @@
 
 .technical-record-drawer .ant-drawer-body {
   display: grid;
+  align-content: start;
   gap: 18px;
   padding: 16px;
 }
@@ -1461,10 +1462,10 @@ button:disabled,
 
 .account-identity-chip {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: center;
   justify-content: center;
-  gap: 0;
+  gap: 8px;
   height: 38px;
   min-height: 38px;
   max-width: min(260px, 30vw);

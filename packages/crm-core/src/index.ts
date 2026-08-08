@@ -386,10 +386,7 @@ export class HttpCrmClient implements CrmClient {
     };
   }
 
-  async mergeContacts(
-    context: CrmCallContext,
-    input: MergeContactsInput,
-  ): Promise<CrmResult> {
+  async mergeContacts(context: CrmCallContext, input: MergeContactsInput): Promise<CrmResult> {
     const result = await this.postAndReconcile(
       '/integrations/v1/omnicus/contacts/merge',
       context,
@@ -758,10 +755,7 @@ export class MockCrmClient implements CrmClient {
     return this.perform(context, 'lead');
   }
 
-  async mergeContacts(
-    context: CrmCallContext,
-    _input: MergeContactsInput,
-  ): Promise<CrmResult> {
+  async mergeContacts(context: CrmCallContext, _input: MergeContactsInput): Promise<CrmResult> {
     return this.perform(context, 'lead');
   }
 

@@ -348,8 +348,7 @@ describe('media validation', () => {
     await expect(
       prepareMediaForTelegram({
         bytes: docx,
-        declaredMimeType:
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        declaredMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         filename: 'document.docx',
         kind: 'DOCUMENT',
         maximumBytes: 1_000,

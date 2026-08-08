@@ -412,9 +412,7 @@ export class WhatsAppOutboundProcessorService
       );
       const previewUrl = object(message.metadata)?.previewUrl === true;
       const outboundMessage =
-        prepared.message.type === 'text'
-          ? { ...prepared.message, previewUrl }
-          : prepared.message;
+        prepared.message.type === 'text' ? { ...prepared.message, previewUrl } : prepared.message;
       let providerMessageId: string;
       try {
         providerMessageId = (

@@ -535,6 +535,7 @@ export function OperationsPage() {
         ]}
       />
       <TechnicalRecordDrawer
+        className="technical-record-drawer--operation-details"
         onClose={() => setSelectedOperation(undefined)}
         open={Boolean(selectedOperation)}
         sections={selectedOperation ? operationSections(selectedOperation) : []}

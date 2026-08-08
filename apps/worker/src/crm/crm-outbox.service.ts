@@ -281,26 +281,14 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
     try {
       let result;
       if (operation.type === 'MERGE_CONTACTS') {
-        const primaryContactId = this.stringProperty(
-          operation.inputSafe,
-          'primaryContactId',
-        );
-        const secondaryContactId = this.stringProperty(
-          operation.inputSafe,
-          'secondaryContactId',
-        );
+        const primaryContactId = this.stringProperty(operation.inputSafe, 'primaryContactId');
+        const secondaryContactId = this.stringProperty(operation.inputSafe, 'secondaryContactId');
         if (!primaryContactId || !secondaryContactId) {
           await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_contact_merge_invalid');
           return;
         }
-        const primaryCrmLeadId = this.stringProperty(
-          operation.inputSafe,
-          'primaryCrmLeadId',
-        );
-        const secondaryCrmLeadId = this.stringProperty(
-          operation.inputSafe,
-          'secondaryCrmLeadId',
-        );
+        const primaryCrmLeadId = this.stringProperty(operation.inputSafe, 'primaryCrmLeadId');
+        const secondaryCrmLeadId = this.stringProperty(operation.inputSafe, 'secondaryCrmLeadId');
         result = await this.client.mergeContacts(context, {
           primaryContactId,
           ...(primaryCrmLeadId ? { primaryCrmLeadId } : {}),
