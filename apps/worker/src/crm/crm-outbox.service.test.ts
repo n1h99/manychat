@@ -220,6 +220,7 @@ describe('CrmOutboxService', () => {
       forwardInboundMessage: vi.fn(),
       forwardOutboundMessage: vi.fn(),
       forwardReactionEvent: vi.fn(),
+      mergeContacts: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -275,6 +276,7 @@ describe('CrmOutboxService', () => {
       }),
       forwardOutboundMessage: vi.fn(),
       forwardReactionEvent: vi.fn(),
+      mergeContacts: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -346,6 +348,7 @@ describe('CrmOutboxService', () => {
         providerReference: 'crm-message-a',
       }),
       forwardReactionEvent: vi.fn(),
+      mergeContacts: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);
@@ -415,6 +418,7 @@ describe('CrmOutboxService', () => {
         operationId: 'provider-reaction-operation-a',
         providerReference: 'crm-reaction-a',
       }),
+      mergeContacts: vi.fn(),
       reconcile: vi.fn(),
     };
     const service = new CrmOutboxService(config as never, database as never, client);

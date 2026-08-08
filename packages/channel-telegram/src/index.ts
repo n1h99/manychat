@@ -1217,6 +1217,7 @@ export class TelegramAdapter {
       captionEntities?: TelegramMessageEntity[];
       chatId: string;
       disableNotification?: boolean;
+      duration?: number;
       inlineKeyboard?: TelegramInlineKeyboard;
       kind: TelegramMediaKind;
       media: string | TelegramMediaUpload;
@@ -1243,6 +1244,7 @@ export class TelegramAdapter {
     const fields = {
       chat_id: input.chatId,
       disable_notification: input.disableNotification,
+      ...(input.duration === undefined ? {} : { duration: input.duration }),
       ...(input.protectContent === undefined ? {} : { protect_content: input.protectContent }),
       ...(input.hasSpoiler ? { has_spoiler: true } : {}),
       ...(['STICKER', 'VIDEO_NOTE'].includes(input.kind) || input.caption === undefined

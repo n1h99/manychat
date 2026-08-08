@@ -344,6 +344,9 @@ export class CrmOutboundService {
             mediaAssetId: mediaAsset?.id ?? null,
             metadata: {
               disableNotification: dto.disableNotification ?? false,
+              ...(dto.media?.durationSeconds === undefined
+                ? {}
+                : { durationSeconds: dto.media.durationSeconds }),
               ...(entities ? { entities } : {}),
               ...(dto.hasSpoiler ? { hasSpoiler: true } : {}),
               ...(inlineKeyboard ? { inlineKeyboard } : {}),

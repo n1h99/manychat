@@ -53,6 +53,13 @@ export class CrmOutboundMediaDto {
   @ApiProperty({ format: 'uuid', type: String })
   @IsUUID()
   mediaAssetId!: string;
+
+  @ApiPropertyOptional({ maximum: 86_400, minimum: 1, type: Number })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(86_400)
+  durationSeconds?: number;
 }
 
 export class CrmMediaUploadDto {

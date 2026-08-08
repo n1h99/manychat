@@ -239,6 +239,7 @@ export class TelegramOutboundProcessorService
         });
       const metadata = message.metadata as {
         disableNotification?: boolean;
+        durationSeconds?: number;
         entities?: TelegramMessageEntity[];
         hasSpoiler?: boolean;
         inlineKeyboard?: TelegramInlineKeyboard;
@@ -356,6 +357,9 @@ export class TelegramOutboundProcessorService
             ...(content.caption ? { caption: content.caption } : {}),
             ...(metadata?.entities ? { captionEntities: metadata.entities } : {}),
             ...(metadata?.hasSpoiler ? { hasSpoiler: true } : {}),
+            ...(metadata?.durationSeconds === undefined
+              ? {}
+              : { duration: metadata.durationSeconds }),
             kind: message.type as TelegramMediaKind,
             media: await this.mediaReference(
               message.mediaAsset,
