@@ -8,6 +8,9 @@ import {
 import { Queue, QueueEvents } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 
+import { AuditService } from '../audit/audit.service';
+import type { RequestSecurityContext } from '../auth/auth.service';
+import type { AuthenticatedUser } from '../auth/auth.types';
 import type { AuditQueryDto } from '../operations/dto';
 import { DatabaseService } from '../database/database.service';
 import { DatabaseHealthService } from '../health/database-health.service';
@@ -54,6 +57,7 @@ export class SystemHealthService implements OnApplicationShutdown {
     @Inject(DatabaseHealthService) private readonly databaseHealth: DatabaseHealthService,
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(RedisHealthService) private readonly redisHealth: RedisHealthService,
+    @Inject(AuditService) private readonly auditService: AuditService,
   ) {}
 
   private queueClients(): { events: QueueEvents; queues: Record<string, Queue> } {
@@ -219,6 +223,23 @@ export class SystemHealthService implements OnApplicationShutdown {
     return { items, page: query.page, pageSize: query.pageSize, total };
   }
 
+  async reset(actor: AuthenticatedUser, context: RequestSecurityContext) {
+    const resetAt = new Date();
+    await this.auditService.record({
+      action: 'system.health.reset',
+      actorEmailSnapshot: actor.email,
+      actorUserId: actor.userId,
+      afterSafeJson: { resetAt: resetAt.toISOString() },
+      correlationId: context.correlationId,
+      entityId: 'global',
+      entityType: 'SystemHealth',
+      ip: context.ip,
+      reason: 'Operational statistics acknowledged by an administrator',
+      userAgent: context.userAgent,
+    });
+    return { resetAt: resetAt.toISOString() };
+  }
+
   async onApplicationShutdown(): Promise<void> {
     if (!this.queues || !this.events) return;
     await Promise.allSettled([
@@ -289,7 +310,15 @@ export class SystemHealthService implements OnApplicationShutdown {
 
   private async safeAggregates() {
     try {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1_000);
+      const since24h = new Date(Date.now() - 24 * 60 * 60 * 1_000);
+      const latestReset = await this.database.client.auditLog.findFirst({
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+        where: { action: 'system.health.reset' },
+      });
+      const resetAt = latestReset?.createdAt;
+      const recentSince = resetAt && resetAt > since24h ? resetAt : since24h;
+      const afterReset = resetAt ? { updatedAt: { gt: resetAt } } : {};
       const [
         inboxTerminalAllByProject,
         inboxTerminalRecentByProject,
@@ -303,32 +332,35 @@ export class SystemHealthService implements OnApplicationShutdown {
         this.database.client.inboxRecord.groupBy({
           _count: { _all: true },
           by: ['projectId', 'status'],
-          where: { status: { in: ['DEAD_LETTER', 'FAILED'] } },
+          where: { ...afterReset, status: { in: ['DEAD_LETTER', 'FAILED'] } },
         }),
         this.database.client.inboxRecord.groupBy({
           _count: { _all: true },
           by: ['projectId', 'status'],
-          where: { status: { in: ['DEAD_LETTER', 'FAILED'] }, updatedAt: { gte: since } },
+          where: {
+            status: { in: ['DEAD_LETTER', 'FAILED'] },
+            updatedAt: { gte: recentSince },
+          },
         }),
         this.database.client.outboxRecord.groupBy({
           _count: { _all: true },
           by: ['projectId', 'status'],
-          where: { status: { in: ['FAILED', 'UNKNOWN'] } },
+          where: { ...afterReset, status: { in: ['FAILED', 'UNKNOWN'] } },
         }),
         this.database.client.outboxRecord.groupBy({
           _count: { _all: true },
           by: ['projectId', 'status'],
-          where: { status: { in: ['FAILED', 'UNKNOWN'] }, updatedAt: { gte: since } },
+          where: { status: { in: ['FAILED', 'UNKNOWN'] }, updatedAt: { gte: recentSince } },
         }),
         this.database.client.channelConnection.count({ where: { status: 'ERROR' } }),
         this.database.client.crmProjectConfig.count({ where: { status: 'ERROR' } }),
         this.database.client.auditLog.findMany({
           select: { createdAt: true, entityId: true },
-          where: { action: 'auth.password_reset.requested', createdAt: { gte: since } },
+          where: { action: 'auth.password_reset.requested', createdAt: { gte: since24h } },
         }),
         this.database.client.auditLog.findMany({
           select: { createdAt: true, entityId: true },
-          where: { action: 'auth.password_reset.link_created', createdAt: { gte: since } },
+          where: { action: 'auth.password_reset.link_created', createdAt: { gte: since24h } },
         }),
       ]);
       const passwordResetRequests24h = passwordResetRequests.filter(

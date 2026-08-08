@@ -1,14 +1,15 @@
 import {
   ApartmentOutlined,
   CheckCircleOutlined,
+  ClearOutlined,
   CloudServerOutlined,
   CloseCircleOutlined,
   DatabaseOutlined,
   ReloadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Card, Col, Row, Table, Tabs, Tag, Typography } from 'antd';
-import { useQuery } from '@tanstack/react-query';
+import { Alert, Button, Card, Col, Modal, Row, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { type KeyboardEvent, useState } from 'react';
 import { Link } from 'react-router';
 
@@ -84,6 +85,17 @@ export function SystemHealthPage() {
     queryKey: ['system-health', accessToken],
     refetchInterval: 15_000,
   });
+  const resetHealth = useMutation({
+    mutationFn: () =>
+      apiRequest<{ resetAt: string }>(
+        '/api/v1/system/health/reset',
+        { method: 'POST' },
+        accessToken,
+      ),
+    onSuccess: async () => {
+      await health.refetch();
+    },
+  });
   const audit = useQuery({
     queryFn: () =>
       apiRequest<Paged<GlobalAudit>>(
@@ -136,17 +148,47 @@ export function SystemHealthPage() {
             Check whether the platform is working normally and see what needs attention.
           </Typography.Text>
         </div>
-        <Button
-          icon={<ReloadOutlined />}
-          loading={health.isFetching}
-          onClick={() => void health.refetch()}
-        >
-          Refresh
-        </Button>
+        <Space wrap>
+          <Button
+            danger
+            icon={<ClearOutlined />}
+            loading={resetHealth.isPending}
+            onClick={() =>
+              Modal.confirm({
+                cancelText: 'Cancel',
+                content:
+                  'Existing operation and audit records will remain available. Only their accumulated health warnings will be acknowledged.',
+                okButtonProps: { danger: true },
+                okText: 'Reset statistics',
+                onOk: () => resetHealth.mutateAsync(),
+                title: 'Reset system statistics?',
+              })
+            }
+          >
+            Reset statistics
+          </Button>
+          <Button
+            icon={<ReloadOutlined />}
+            loading={health.isFetching}
+            onClick={() => void health.refetch()}
+          >
+            Refresh
+          </Button>
+        </Space>
       </div>
       {health.isError ? (
         <Alert
           message={getUserErrorMessage(health.error, 'System health could not be loaded.')}
+          showIcon
+          type="error"
+        />
+      ) : null}
+      {resetHealth.isError ? (
+        <Alert
+          message={getUserErrorMessage(
+            resetHealth.error,
+            'System statistics could not be reset.',
+          )}
           showIcon
           type="error"
         />

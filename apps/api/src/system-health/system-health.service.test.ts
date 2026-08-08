@@ -20,7 +20,10 @@ describe('SystemHealthService operation windows', () => {
       {} as never,
       {
         client: {
-          auditLog: { findMany: vi.fn().mockResolvedValue([]) },
+          auditLog: {
+            findFirst: vi.fn().mockResolvedValue(null),
+            findMany: vi.fn().mockResolvedValue([]),
+          },
           channelConnection: { count: vi.fn().mockResolvedValue(0) },
           crmProjectConfig: { count: vi.fn().mockResolvedValue(0) },
           inboxRecord: { groupBy: inboxGroupBy },
@@ -34,6 +37,7 @@ describe('SystemHealthService operation windows', () => {
         },
       } as never,
       {} as never,
+      { record: vi.fn() } as never,
     );
 
     const aggregates = await (
