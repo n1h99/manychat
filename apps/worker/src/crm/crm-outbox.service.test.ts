@@ -8,6 +8,7 @@ function createDatabase() {
     contact: {
       channelIdentities: [
         {
+          channel: 'TELEGRAM',
           connectionId: 'connection-a',
           externalUserId: '123',
           id: 'identity-a',
@@ -187,6 +188,45 @@ describe('CrmOutboxService', () => {
             providerReference: expect.any(String),
           }),
         },
+      }),
+    );
+    expect(database.transaction.outboxRecord.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'SUCCEEDED' }) }),
+    );
+  });
+
+  it('uses a linked identity when a manual contact update has no connection context', async () => {
+    const database = createDatabase();
+    Object.assign(database.operation, {
+      inputSafe: {
+        correlationId: 'manual-contact-update-a',
+        source: 'contact_manual_update',
+      },
+    });
+    const client = {
+      createOrUpdateLead: vi.fn().mockResolvedValue({
+        mode: 'updated',
+        operationId: 'provider-operation-a',
+        providerReference: 'crm-lead-a',
+      }),
+      forwardInboundMessage: vi.fn(),
+      forwardOutboundMessage: vi.fn(),
+      forwardReactionEvent: vi.fn(),
+      mergeContacts: vi.fn(),
+      reconcile: vi.fn(),
+    };
+    const service = new CrmOutboxService(config as never, database as never, client);
+
+    await service.scanOnce(new Date());
+
+    expect(client.createOrUpdateLead).toHaveBeenCalledWith(
+      expect.objectContaining({ correlationId: 'manual-contact-update-a' }),
+      expect.objectContaining({
+        identity: expect.objectContaining({
+          channel: 'telegram',
+          channelIdentityId: 'identity-a',
+          connectionId: 'connection-a',
+        }),
       }),
     );
     expect(database.transaction.outboxRecord.updateMany).toHaveBeenCalledWith(

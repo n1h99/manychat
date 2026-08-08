@@ -222,9 +222,13 @@ export class CrmOutboxService implements OnApplicationBootstrap, OnApplicationSh
       operation.normalizedEvent?.connectionId ??
       operation.message?.connectionId ??
       this.stringProperty(operation.inputSafe, 'connectionId');
-    const identityRow = operation.contact.channelIdentities.find(
-      (identity) => identity.connectionId === connectionId,
-    );
+    const identityRow = connectionId
+      ? operation.contact.channelIdentities.find(
+          (identity) => identity.connectionId === connectionId,
+        )
+      : operation.type === 'CREATE_OR_UPDATE_LEAD'
+        ? operation.contact.channelIdentities[0]
+        : undefined;
     if (!identityRow && operation.type !== 'MERGE_CONTACTS') {
       await this.finish(outboxRecordId, leaseToken, 'FAILED', 'crm_channel_identity_missing');
       return;
