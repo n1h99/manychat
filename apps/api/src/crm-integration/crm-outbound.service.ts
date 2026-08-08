@@ -95,6 +95,7 @@ export class CrmOutboundService {
   ): Promise<CrmOutboundQueuedResult> {
     const structured = this.structured(dto.structured);
     const richMessage = this.richMessage(dto.richMessage);
+    const providerKind = dto.identity.channel === 'whatsapp' ? 'WHATSAPP' : 'TELEGRAM';
     if (
       (structured &&
         (dto.text !== undefined || dto.media !== undefined || richMessage !== undefined)) ||
@@ -127,6 +128,27 @@ export class CrmOutboundService {
         Date.parse(schedule.recurrence.until) <= schedule.scheduledAt.getTime()
       )
         throw new ConflictException({ code: 'CRM_RECURRENCE_END_INVALID' });
+      if (providerKind === 'WHATSAPP') {
+        if (schedule.recurrence)
+          throw new ConflictException({ code: 'WHATSAPP_RECURRING_SCHEDULE_UNSUPPORTED' });
+        if (
+          !dto.text?.trim() ||
+          dto.media ||
+          structured ||
+          richMessage ||
+          dto.inlineKeyboard ||
+          dto.replyMarkup ||
+          dto.entities ||
+          dto.linkPreviewOptions ||
+          dto.quote ||
+          dto.quotePosition !== undefined ||
+          dto.protectContent ||
+          dto.messageEffectId ||
+          dto.disableNotification ||
+          dto.hasSpoiler
+        )
+          throw new ConflictException({ code: 'WHATSAPP_SCHEDULE_CONTENT_UNSUPPORTED' });
+      }
     }
     if (
       dto.media?.kind === 'STICKER' &&
@@ -170,8 +192,8 @@ export class CrmOutboundService {
       !identity ||
       identity.contactId !== dto.omnicusContactId ||
       identity.connectionId !== dto.identity.connectionId ||
-      identity.channel !== 'TELEGRAM' ||
-      identity.connection.type !== 'TELEGRAM'
+      identity.channel !== providerKind ||
+      identity.connection.type !== providerKind
     )
       throw new NotFoundException({
         code: 'CRM_CHANNEL_IDENTITY_NOT_FOUND',
@@ -203,7 +225,12 @@ export class CrmOutboundService {
         message: 'CRM lead mapping does not match',
       });
 
-    const storedKey = `${schedule ? 'crm-scheduled' : 'crm-to-telegram'}-${idempotencyKey}`;
+    const idempotencyScope = schedule
+      ? providerKind === 'WHATSAPP'
+        ? 'crm-scheduled-whatsapp'
+        : 'crm-scheduled'
+      : 'crm-to-telegram';
+    const storedKey = `${idempotencyScope}-${idempotencyKey}`;
     const existing = await this.existing(dto.omnicusProjectId, storedKey);
     if (existing) return { ...existing, replayed: true };
 
@@ -343,6 +370,7 @@ export class CrmOutboundService {
             direction: 'OUTBOUND',
             mediaAssetId: mediaAsset?.id ?? null,
             metadata: {
+              channel: dto.identity.channel,
               disableNotification: dto.disableNotification ?? false,
               ...(dto.media?.durationSeconds === undefined
                 ? {}
@@ -378,7 +406,7 @@ export class CrmOutboundService {
           data: {
             connectionId: identity.connectionId,
             idempotencyKey: storedKey,
-            kind: 'TELEGRAM',
+            kind: providerKind,
             nextAttemptAt: schedule?.scheduledAt ?? new Date(),
             payload: { channelIdentityId: identity.id, messageId: message.id },
             projectId: dto.omnicusProjectId,
@@ -409,7 +437,7 @@ export class CrmOutboundService {
           data: {
             key: idempotencyKey,
             projectId: dto.omnicusProjectId,
-            scope: 'crm-to-telegram',
+            scope: idempotencyScope,
           },
         });
         await transaction.auditLog.create({
@@ -586,6 +614,17 @@ export class CrmOutboundService {
         throw new ConflictException({ code: 'CRM_SCHEDULE_REVISION_CONFLICT' });
       const nextAt = scheduledAt ?? schedule.scheduledAt;
       const effectiveRecurrence = recurrence === undefined ? schedule.recurrence : recurrence;
+      const outbox = await transaction.outboxRecord.findUnique({
+        select: { kind: true },
+        where: {
+          projectId_id: {
+            id: schedule.outboxRecordId,
+            projectId: query.omnicusProjectId,
+          },
+        },
+      });
+      if (outbox?.kind === 'WHATSAPP' && effectiveRecurrence)
+        throw new ConflictException({ code: 'WHATSAPP_RECURRING_SCHEDULE_UNSUPPORTED' });
       if (
         effectiveRecurrence &&
         typeof effectiveRecurrence === 'object' &&

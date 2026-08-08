@@ -177,7 +177,15 @@ export class CrmWhatsAppV4Service {
         reactions: supported({ maximumBusinessReactions: 1, standardEmojiOnly: true }),
         replyKeyboard: unsupported('WHATSAPP_REPLY_KEYBOARD_UNSUPPORTED'),
         richMessages: unsupported('WHATSAPP_RICH_MESSAGES_UNSUPPORTED'),
-        scheduling: unsupported('WHATSAPP_SCHEDULING_UNSUPPORTED'),
+        scheduling: supported({
+          applicationOwned: true,
+          frequencies: [],
+          maximumCount: 1,
+          maximumInterval: 1,
+          optimisticConcurrency: 'revision',
+          recurring: false,
+          timezone: 'IANA',
+        }),
         stickers: supported({
           animated: false,
           captions: false,

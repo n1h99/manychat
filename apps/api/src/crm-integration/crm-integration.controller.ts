@@ -284,19 +284,12 @@ export class CrmIntegrationController {
     @Req() request: AuthenticatedCrmIntegrationRequest,
   ) {
     this.assertHeaders(idempotencyKey, correlationId);
-    return dto.identity.channel === 'whatsapp'
-      ? this.whatsappV4.queue(
-          dto,
-          idempotencyKey!,
-          correlationId!,
-          request.crmIntegration?.projectId,
-        )
-      : this.outbound.queue(
-          dto,
-          idempotencyKey!,
-          correlationId!,
-          request.crmIntegration?.projectId,
-        );
+    return this.outbound.queue(
+      dto,
+      idempotencyKey!,
+      correlationId!,
+      request.crmIntegration?.projectId,
+    );
   }
 
   @Get('message-templates')
